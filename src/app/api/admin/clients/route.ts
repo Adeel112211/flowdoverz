@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { isAdminUiRequest } from "@/lib/admin";
-import { db, adminAuth } from "@/lib/firebase-admin";
+import { getDb, getAdminAuth } from "@/lib/firebase-admin";
 import { sendAccountActivatedEmail } from "@/lib/email";
 
 export async function GET() {
@@ -8,6 +8,7 @@ export async function GET() {
     return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
   }
 
+  const db = getDb();
   if (!db) {
     return NextResponse.json({ success: false, error: "Database not available" }, { status: 500 });
   }
@@ -29,6 +30,7 @@ export async function PUT(request: NextRequest) {
     return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
   }
 
+  const db = getDb();
   if (!db) {
     return NextResponse.json({ success: false, error: "Database not available" }, { status: 500 });
   }
@@ -70,6 +72,7 @@ export async function DELETE(request: NextRequest) {
     return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
   }
 
+  const db = getDb();
   if (!db) {
     return NextResponse.json({ success: false, error: "Database not available" }, { status: 500 });
   }
@@ -83,6 +86,7 @@ export async function DELETE(request: NextRequest) {
 
     await db.collection("users").doc(email).delete();
 
+    const adminAuth = getAdminAuth();
     if (adminAuth) {
       try {
         const userRecord = await adminAuth.getUserByEmail(email);

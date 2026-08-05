@@ -3,8 +3,15 @@ import { isAdminUiRequest } from "@/lib/admin";
 import { AdminLogin } from "@/components/admin-login";
 import { AdminSidebar } from "@/components/admin-sidebar";
 
+export const dynamic = "force-dynamic";
+
 export default async function AdminLayout({ children }: { children: ReactNode }) {
-  const isAdmin = await isAdminUiRequest();
+  let isAdmin = false;
+  try {
+    isAdmin = await isAdminUiRequest();
+  } catch (error) {
+    console.error("Admin auth check failed:", error);
+  }
 
   if (!isAdmin) {
     return (

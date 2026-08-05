@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db } from "@/lib/firebase-admin";
+import { getDb } from "@/lib/firebase-admin";
 import { sendSubscriptionExpiredEmail } from "@/lib/email";
 
 // This endpoint can be hit via a CRON job (e.g. Vercel Cron, GitHub Actions)
@@ -8,6 +8,7 @@ export async function GET(request: NextRequest) {
   // To secure this endpoint, you could check for a secret cron token in the headers
   // For example: if (request.headers.get("Authorization") !== `Bearer ${process.env.CRON_SECRET}`) ...
   
+  const db = getDb();
   if (!db) {
     return NextResponse.json({ success: false, error: "Database not available" }, { status: 500 });
   }

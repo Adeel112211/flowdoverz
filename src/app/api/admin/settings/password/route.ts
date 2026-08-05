@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { isAdminUiRequest, verifyAdminPassword } from "@/lib/admin";
-import { db } from "@/lib/firebase-admin";
+import { getDb } from "@/lib/firebase-admin";
 
 export async function POST(request: NextRequest) {
   if (!(await isAdminUiRequest())) {
     return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
   }
 
+  const db = getDb();
   if (!db) {
     return NextResponse.json({ success: false, error: "Database not available" }, { status: 500 });
   }

@@ -1,5 +1,5 @@
 import { createHash } from "crypto";
-import { db } from "@/lib/firebase-admin";
+import { getDb } from "@/lib/firebase-admin";
 
 export type FlowCookie = {
   name: string;
@@ -87,6 +87,7 @@ export async function saveSlotCookies(
   cookies: FlowCookie[],
   label?: string,
 ): Promise<SlotRecord> {
+  const db = getDb();
   if (!db) throw new Error("Database not initialized");
   
   const record: SlotRecord = {
@@ -110,6 +111,7 @@ export async function saveSlotCookies(
 }
 
 export async function getSlotCookies(ownerKey: string, slot: string): Promise<SlotRecord | null> {
+  const db = getDb();
   if (!db) return null;
   const doc = await db.collection("cookies").doc(ownerKey).get();
   if (!doc.exists) return null;
@@ -118,6 +120,7 @@ export async function getSlotCookies(ownerKey: string, slot: string): Promise<Sl
 }
 
 export async function listSlots(ownerKey: string): Promise<Array<{ key: string; record: SlotRecord }>> {
+  const db = getDb();
   if (!db) return [];
   const doc = await db.collection("cookies").doc(ownerKey).get();
   if (!doc.exists) return [];
@@ -127,6 +130,7 @@ export async function listSlots(ownerKey: string): Promise<Array<{ key: string; 
 }
 
 export async function clearSlotCookies(ownerKey: string, slot: string): Promise<void> {
+  const db = getDb();
   if (!db) return;
   const docRef = db.collection("cookies").doc(ownerKey);
   await db.runTransaction(async (transaction) => {

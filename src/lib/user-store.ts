@@ -1,5 +1,5 @@
 import { randomBytes, scryptSync, timingSafeEqual } from "crypto";
-import { db } from "./firebase-admin";
+import { getDb } from "./firebase-admin";
 
 export type StoredUser = {
   email: string;
@@ -31,6 +31,7 @@ export async function registerUser(
   password: string,
   name: string,
 ): Promise<{ ok: true; user: { email: string; name: string; sid: string } } | { ok: false; error: string }> {
+  const db = getDb();
   if (!db) {
     return { ok: false, error: "Database not configured." };
   }
@@ -86,6 +87,7 @@ export async function authenticateUser(
   email: string,
   password: string,
 ): Promise<{ ok: true; user: { email: string; name: string; sid: string } } | { ok: false; error: string }> {
+  const db = getDb();
   if (!db) {
     return { ok: false, error: "Database not configured." };
   }
@@ -124,6 +126,7 @@ export async function getUserStatus(email: string): Promise<{
   subscriptionPlan: string;
   subscriptionExpiresAt: string | null;
 } | null> {
+  const db = getDb();
   if (!db) return null;
   
   const normalized = normalizeEmail(email);

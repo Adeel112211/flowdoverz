@@ -9,11 +9,11 @@ export const WORKSPACE_OWNER = "workspace";
 const DATA_DIR = path.join(process.cwd(), ".data");
 const SYNC_KEY_PATH = path.join(DATA_DIR, "admin-sync.json");
 
-import { db } from "@/lib/firebase-admin";
-
 async function adminPassword() {
-  if (db) {
-    try {
+  try {
+    const { getDb } = await import("@/lib/firebase-admin");
+    const db = getDb();
+    if (db) {
       const doc = await db.collection("settings").doc("admin").get();
       if (doc.exists) {
         const data = doc.data();
@@ -21,9 +21,9 @@ async function adminPassword() {
           return data.password;
         }
       }
-    } catch (err) {
-      console.error("Error reading admin password from Firestore:", err);
     }
+  } catch (err) {
+    console.error("Error reading admin password from Firestore:", err);
   }
   return process.env.FLOWBRIDGE_ADMIN_PASSWORD || "AdeelAdmin@2026";
 }

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { isAdminRequest } from "@/lib/admin";
-import { db } from "@/lib/firebase-admin";
+import { getDb } from "@/lib/firebase-admin";
 import { sendAccountActivatedEmail, sendPaymentRejectedEmail } from "@/lib/email";
 
 // GET all payments
@@ -11,6 +11,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
+    const db = getDb();
     if (!db) {
       return NextResponse.json({ error: "Database not available" }, { status: 500 });
     }
@@ -42,6 +43,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
+    const db = getDb();
     if (!db) {
       return NextResponse.json({ error: "Database not available" }, { status: 500 });
     }

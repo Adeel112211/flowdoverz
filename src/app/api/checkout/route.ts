@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { emailFromSid } from "@/lib/cookie-store";
-import { db } from "@/lib/firebase-admin";
+import { getDb } from "@/lib/firebase-admin";
 
 const SID_COOKIE = "flowdoverz_sid";
 
@@ -21,6 +21,7 @@ export async function POST(request: NextRequest) {
       ? emailFromSid(sid).slice(4)
       : emailFromSid(sid);
 
+    const db = getDb();
     if (!email || !db) {
       return NextResponse.json(
         { success: false, error: "Database not available or invalid session." },
