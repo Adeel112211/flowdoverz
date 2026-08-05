@@ -1,0 +1,527 @@
+"use client";
+
+import { FormEvent, useEffect, useRef, useState } from "react";
+import { ChevronDown } from "lucide-react";
+import { AdminPageHeader } from "@/components/admin-page-header";
+
+const SLOTS = ["C1", "C2", "C3", "C4", "C5"] as const;
+
+type SlotInfo = {
+  key: string;
+  name: string;
+  has_cookies: boolean;
+  updated_at: string | null;
+  cookie_count?: number;
+};
+
+export function CookiesPage() {
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [admin, setAdmin] = useState(false);
+  const [checking, setChecking] = useState(true);
+  const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [slot, setSlot] = useState("C1");
+  const [dropdownOpen, setDropdownOpen] = useState(false);
+  const [jsonText, setJsonText] = useState("");
+  const [status, setStatus] = useState<{ type: "ok" | "err"; text: string } | null>(
+    null,
+  );
+  const [saving, setSaving] = useState(false);
+  const [unlocking, setUnlocking] = useState(false);
+  const [dragging, setDragging] = useState(false);
+  const [syncKey, setSyncKey] = useState("");
+  const [slots, setSlots] = useState<SlotInfo[]>([]);
+  const [meta, setMeta] = useState<{
+    count: number;
+    updated: string | null;
+    names: string[];
+  }>({ count: 0, updated: null, names: [] });
+
+  async function checkAdmin() {
+    setChecking(true);
+    try {
+      const res = await fetch("/api/admin", { credentials: "include" });
+      const data = await res.json();
+      const ok = Boolean(data.admin);
+      setAdmin(ok);
+      if (ok) {
+        const savedKey = sessionStorage.getItem("flowdoverz_admin_sync_key") || "";
+        if (savedKey) setSyncKey(savedKey);
+        await refreshMeta("C1");
+      } else {
+        sessionStorage.removeItem("flowdoverz_admin_sync_key");
+        setSyncKey("");
+      }
+    } catch {
+      setAdmin(false);
+    } finally {
+      setChecking(false);
+    }
+  }
+
+  async function refreshMeta(active = slot) {
+    const res = await fetch(`/api/cookies?slot=${active}`, { credentials: "include" });
+    if (res.status === 401) {
+      setAdmin(false);
+      return;
+    }
+    if (!res.ok) return;
+    const data = await res.json();
+    setSlots(data.available_slots || []);
+    setMeta({
+      count: data.cookie_count || 0,
+      updated: data.updated_at || null,
+      names: data.cookie_names || [],
+    });
+  }
+
+  useEffect(() => {
+    checkAdmin();
+  }, []);
+
+  useEffect(() => {
+    if (admin) refreshMeta(slot);
+  }, [slot, admin]);
+
+  async function saveCookies(raw: string, targetSlot = slot) {
+    const text = raw.trim();
+    if (!text) {
+      setStatus({ type: "err", text: "Nothing to save — paste or upload cookies first." });
+      return false;
+    }
+
+    setSaving(true);
+    setStatus(null);
+    try {
+      const res = await fetch("/api/cookies", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ slot: targetSlot, cookies: text }),
+      });
+      const data = await res.json();
+      if (res.status === 401) {
+        setAdmin(false);
+        setStatus({ type: "err", text: "Admin session expired. Unlock again." });
+        return false;
+      }
+      if (!res.ok || !data.success) {
+        setStatus({ type: "err", text: data.error || "Save failed" });
+        return false;
+      }
+      setStatus({
+        type: "ok",
+        text: `Replaced ${targetSlot} with ${data.cookie_count} cookies. Clients will get them after they sign in.`,
+      });
+      setJsonText("");
+      await refreshMeta(targetSlot);
+      return true;
+    } catch {
+      setStatus({ type: "err", text: "Network error while saving." });
+      return false;
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleUnlock(e: FormEvent) {
+    e.preventDefault();
+    setStatus(null);
+    setUnlocking(true);
+    try {
+      const res = await fetch("/api/admin", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        setStatus({ type: "err", text: data.error || "Wrong password" });
+        return;
+      }
+      setPassword("");
+      setAdmin(true);
+      if (typeof data.sync_key === "string" && data.sync_key) {
+        setSyncKey(data.sync_key);
+        sessionStorage.setItem("flowdoverz_admin_sync_key", data.sync_key);
+      }
+      await refreshMeta("C1");
+      setStatus({
+        type: "ok",
+        text: "Unlocked. Keep this tab open and click Connect now in the extension.",
+      });
+    } catch {
+      setStatus({ type: "err", text: "Could not unlock admin panel." });
+    } finally {
+      setUnlocking(false);
+    }
+  }
+
+  async function handleLock() {
+    await fetch("/api/admin", { method: "DELETE", credentials: "include" });
+    sessionStorage.removeItem("flowdoverz_admin_sync_key");
+    setAdmin(false);
+    setSyncKey("");
+    setJsonText("");
+    setStatus(null);
+  }
+
+  async function pasteFromClipboard(autoSave = false) {
+    try {
+      const text = await navigator.clipboard.readText();
+      if (!text.trim()) {
+        setStatus({ type: "err", text: "Clipboard is empty." });
+        return;
+      }
+      setJsonText(text);
+      if (autoSave) {
+        await saveCookies(text);
+      } else {
+        setStatus({ type: "ok", text: "Pasted from clipboard. Click Save, or use Paste & replace." });
+      }
+    } catch {
+      setStatus({
+        type: "err",
+        text: "Clipboard blocked. Allow clipboard permission, or paste with Ctrl+V.",
+      });
+    }
+  }
+
+  async function readFile(file: File) {
+    const text = await file.text();
+    setJsonText(text);
+    setStatus({
+      type: "ok",
+      text: `Loaded ${file.name}. Click Save or press Ctrl+Enter.`,
+    });
+  }
+
+  async function loadCurrentIntoEditor() {
+    const res = await fetch(`/api/cookies?slot=${slot}&full=1`, {
+      credentials: "include",
+    });
+    if (res.status === 401) {
+      setAdmin(false);
+      return;
+    }
+    const data = await res.json();
+    if (!data.cookies?.length) {
+      setStatus({ type: "err", text: `No cookies saved in ${slot} yet.` });
+      return;
+    }
+    setJsonText(JSON.stringify(data.cookies, null, 2));
+    setStatus({ type: "ok", text: `Loaded ${data.cookies.length} cookies from ${slot} into the editor.` });
+  }
+
+  async function handleClear() {
+    setStatus(null);
+    const res = await fetch(`/api/cookies?slot=${slot}`, {
+      method: "DELETE",
+      credentials: "include",
+    });
+    const data = await res.json();
+    if (res.status === 401) {
+      setAdmin(false);
+      return;
+    }
+    if (!res.ok) {
+      setStatus({ type: "err", text: data.error || "Clear failed" });
+      return;
+    }
+    setStatus({ type: "ok", text: `Cleared cookies for ${slot}.` });
+    await refreshMeta(slot);
+  }
+
+  async function copySlotTo(target: string) {
+    if (target === slot) return;
+    const res = await fetch(`/api/cookies?slot=${slot}&full=1`, {
+      credentials: "include",
+    });
+    const data = await res.json();
+    if (!data.cookies?.length) {
+      setStatus({ type: "err", text: `${slot} has no cookies to copy.` });
+      return;
+    }
+    await saveCookies(JSON.stringify(data.cookies), target);
+    setSlot(target);
+  }
+
+  if (checking) {
+    return (
+      <div className="flex min-h-screen items-center justify-center text-slate-400">
+        Checking admin access…
+      </div>
+    );
+  }
+
+  if (!admin) {
+    return (
+      <div className="flex min-h-[400px] items-center justify-center text-slate-400">
+        Loading...
+      </div>
+    );
+  }
+
+  return (
+    <div className="relative flex flex-col min-w-0 max-w-full overflow-x-hidden animate-in fade-in slide-in-from-bottom-4 duration-700">
+      {/* Admin page only — no client session bridge */}
+      <div
+        id="flowdoverz-admin-marker"
+        data-admin-unlocked={admin ? "1" : "0"}
+        hidden
+        aria-hidden="true"
+      />
+
+      {/* Ambient Glow */}
+      <div className="absolute top-0 left-1/4 w-96 h-96 bg-cyan-500/5 rounded-full blur-[120px] pointer-events-none -z-10" />
+
+      {/* Premium Dashboard-Style Banner */}
+      <AdminPageHeader
+        title="Cookie Manager"
+        description={
+          <>
+            Paste cookies here. Clients sign in on{" "}
+            <code className="text-cyan-400 font-mono">/login</code> and their extension syncs
+            these automatically.
+          </>
+        }
+        actions={
+          <button
+            type="button"
+            onClick={handleLock}
+            className="w-full sm:w-auto rounded-xl bg-[#0F172A]/80 backdrop-blur-xl border border-white/10 px-5 sm:px-6 py-3 sm:py-3.5 text-sm font-bold text-slate-300 hover:bg-white/5 transition-all shadow-xl"
+          >
+            Lock Admin
+          </button>
+        }
+      />
+
+      <main className="max-w-7xl w-full mx-auto flex-1 flex flex-col min-h-0 min-w-0">
+        {/* One-click daily action */}
+        <div className="grid gap-4 grid-cols-1 sm:grid-cols-2">
+          <button
+            type="button"
+            disabled={saving}
+            onClick={() => pasteFromClipboard(true)}
+            className="rounded-2xl bg-gradient-to-r from-cyan-400 to-emerald-400 px-6 py-6 text-left shadow-[0_0_15px_rgba(34,211,238,0.2)] hover:shadow-[0_0_25px_rgba(34,211,238,0.4)] hover:-translate-y-0.5 transition-all disabled:opacity-60 disabled:hover:translate-y-0"
+          >
+            <p className="text-xl font-black text-slate-950">Paste & Replace</p>
+            <p className="mt-2 text-sm font-medium text-slate-800">
+              Clipboard → {slot} in one click
+            </p>
+          </button>
+          <button
+            type="button"
+            disabled={saving}
+            onClick={() => fileRef.current?.click()}
+            className="rounded-2xl border border-cyan-500/30 bg-cyan-500/10 px-6 py-6 text-left hover:bg-cyan-500/15 transition-all disabled:opacity-60 hover:-translate-y-0.5 disabled:hover:translate-y-0"
+          >
+            <p className="text-xl font-black text-cyan-50">Upload JSON File</p>
+            <p className="mt-2 text-sm text-cyan-200/70">
+              Drop a Cookie Editor export
+            </p>
+          </button>
+          <input
+            ref={fileRef}
+            type="file"
+            accept=".json,application/json,text/plain"
+            className="hidden"
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) readFile(file);
+              e.target.value = "";
+            }}
+          />
+        </div>
+
+        <div className="mt-4 sm:mt-8 rounded-xl sm:rounded-2xl border border-white/5 bg-white/[0.02] p-4 sm:p-8 backdrop-blur-xl relative overflow-y-auto overflow-x-hidden flex-1 flex flex-col min-h-0">
+          <div className="absolute top-0 right-0 w-48 h-48 bg-cyan-500/5 rounded-full blur-3xl pointer-events-none" />
+          <div className="mb-6 flex flex-wrap items-end gap-4 relative z-30">
+            <div>
+              <label
+                htmlFor="slot"
+                className="mb-2 block text-xs font-bold uppercase tracking-wide text-slate-400"
+              >
+                Session slot
+              </label>
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => setDropdownOpen(!dropdownOpen)}
+                  className={`rounded-xl border bg-[#080810] px-4 py-2.5 pr-10 text-sm font-medium outline-none transition-all min-w-[200px] flex items-center justify-between text-left ${
+                    dropdownOpen ? "border-cyan-400 ring-1 ring-cyan-400 text-cyan-50" : "border-white/10 text-slate-200 hover:border-white/20"
+                  }`}
+                >
+                  <span className="truncate">
+                    {slot}
+                    {slots.find((s) => s.key === slot)?.has_cookies
+                      ? ` · ${slots.find((s) => s.key === slot)?.cookie_count || "saved"}`
+                      : ""}
+                  </span>
+                  <ChevronDown className={`absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 transition-transform pointer-events-none ${dropdownOpen ? "rotate-180 text-cyan-400" : "text-slate-400"}`} />
+                </button>
+
+                {dropdownOpen && (
+                  <>
+                    <div
+                      className="fixed inset-0 z-40"
+                      onClick={() => setDropdownOpen(false)}
+                    />
+                    <div className="absolute top-full left-0 mt-2 w-full min-w-[200px] rounded-xl border border-white/10 bg-[#0F172A] shadow-2xl overflow-hidden z-50 animate-in fade-in slide-in-from-top-2 duration-200">
+                      <div className="py-1">
+                        {SLOTS.map((key) => {
+                          const hasCookies = slots.find((s) => s.key === key)?.has_cookies;
+                          const count = slots.find((s) => s.key === key)?.cookie_count || "saved";
+                          return (
+                            <button
+                              key={key}
+                              type="button"
+                              onClick={() => {
+                                setSlot(key);
+                                setDropdownOpen(false);
+                              }}
+                              className={`w-full text-left px-4 py-2.5 text-sm transition-colors flex justify-between items-center ${
+                                slot === key
+                                  ? "bg-cyan-500/10 text-cyan-400 font-bold"
+                                  : "text-slate-300 hover:bg-white/5"
+                              }`}
+                            >
+                              <span>{key}</span>
+                              {hasCookies && (
+                                <span className="text-xs text-slate-500 font-medium bg-white/5 px-2 py-0.5 rounded-full">{count} cookies</span>
+                              )}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
+            <p className="pb-2 text-sm text-slate-500">
+              {meta.count > 0
+                ? `${meta.count} live in ${slot}${meta.updated ? ` · updated ${new Date(meta.updated).toLocaleString()}` : ""}`
+                : `No cookies in ${slot} yet`}
+            </p>
+          </div>
+
+          {meta.names.length > 0 && (
+            <div className="mb-4 flex flex-wrap gap-1.5">
+              {meta.names.slice(0, 12).map((name) => (
+                <span
+                  key={name}
+                  className="rounded-md border border-white/10 bg-white/[0.03] px-2 py-0.5 font-mono text-[10px] text-slate-400"
+                >
+                  {name}
+                </span>
+              ))}
+              {meta.names.length > 12 && (
+                <span className="px-2 py-0.5 text-[10px] text-slate-500">
+                  +{meta.names.length - 12} more
+                </span>
+              )}
+            </div>
+          )}
+
+          {status && (
+            <p
+              className={`mb-4 rounded-lg border px-4 py-3 text-sm ${
+                status.type === "ok"
+                  ? "border-teal-500/30 bg-teal-500/10 text-teal-100"
+                  : "border-rose-500/30 bg-rose-500/10 text-rose-200"
+              }`}
+            >
+              {status.text}
+            </p>
+          )}
+
+          <div
+            onDragOver={(e) => {
+              e.preventDefault();
+              setDragging(true);
+            }}
+            onDragLeave={() => setDragging(false)}
+            onDrop={(e) => {
+              e.preventDefault();
+              setDragging(false);
+              const file = e.dataTransfer.files?.[0];
+              if (file) readFile(file);
+            }}
+            className={`rounded-xl border border-dashed p-1 transition-colors flex-1 flex flex-col min-h-0 ${
+              dragging
+                ? "border-cyan-400 bg-cyan-500/10"
+                : "border-transparent"
+            }`}
+          >
+            <div className="relative z-10 flex-1 flex flex-col min-h-0">
+              <div className="mb-4 flex items-center justify-between">
+                <label className="text-sm font-bold text-slate-300">
+                  Raw JSON
+                </label>
+                {jsonText && jsonText !== "[]" && (
+                  <button
+                    type="button"
+                    onClick={() => setJsonText("[]")}
+                    className="text-xs text-rose-400 hover:text-rose-300 transition-colors"
+                  >
+                    Clear all
+                  </button>
+                )}
+              </div>
+              <textarea
+                id="cookies"
+                value={jsonText}
+                onChange={(e) => setJsonText(e.target.value)}
+                onKeyDown={(e) => {
+                  if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
+                    e.preventDefault();
+                    saveCookies(jsonText);
+                  }
+                }}
+                spellCheck={false}
+                placeholder="Paste cookie array here, or drag & drop a .json file..."
+                className="flex-1 w-full min-h-[150px] sm:min-h-0 resize-none rounded-2xl border border-white/5 bg-[#080810]/50 p-4 font-mono text-[11px] leading-relaxed text-slate-400 outline-none focus:border-cyan-500/50 focus:ring-1 focus:ring-cyan-500/50 scrollbar-thin scrollbar-thumb-white/10"
+              />
+            </div>
+          </div>
+
+          <div className="mt-6 sm:mt-8 grid grid-cols-2 sm:flex sm:flex-wrap gap-2 justify-end relative z-10">
+            <button
+              type="button"
+              disabled={saving}
+              onClick={() => saveCookies(jsonText)}
+              className="col-span-2 sm:col-span-1 w-full sm:w-auto rounded-xl bg-gradient-to-r from-cyan-400 to-emerald-400 px-6 py-2.5 text-sm font-bold text-slate-950 transition-all hover:shadow-[0_0_15px_rgba(34,211,238,0.4)] disabled:opacity-50"
+            >
+              {saving ? "Saving..." : "Save (Ctrl+Enter)"}
+            </button>
+            <button
+              type="button"
+              onClick={() => pasteFromClipboard(false)}
+              className="w-full sm:w-auto rounded-xl border border-white/10 px-4 py-2.5 text-sm font-bold text-slate-300 hover:bg-white/5 transition-colors"
+            >
+              Paste only
+            </button>
+            <button
+              type="button"
+              onClick={loadCurrentIntoEditor}
+              className="w-full sm:w-auto rounded-xl border border-white/10 px-4 py-2.5 text-sm text-slate-300 hover:bg-white/5"
+            >
+              Load current
+            </button>
+            <button
+              type="button"
+              onClick={handleClear}
+              className="w-full sm:w-auto rounded-xl border border-white/10 px-4 py-2.5 text-sm text-rose-300/80 hover:bg-white/5"
+            >
+              Clear slot
+            </button>
+          </div>
+
+        </div>
+
+      </main>
+    </div>
+  );
+}
