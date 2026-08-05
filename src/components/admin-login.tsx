@@ -21,7 +21,13 @@ export function AdminLogin() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ password }),
       });
-      const data = await res.json();
+      let data: { success?: boolean; admin?: boolean; sync_key?: string; error?: string } = {};
+      try {
+        data = await res.json();
+      } catch {
+        setError("Server error. Check Vercel env vars and redeploy.");
+        return;
+      }
       if (data.success && data.admin) {
         if (data.sync_key) {
           sessionStorage.setItem("flowdoverz_admin_sync_key", data.sync_key);

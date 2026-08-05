@@ -84,41 +84,98 @@ type SyncKeyFile = {
   createdAt: number;
 };
 
-function readSyncKeyFile(): SyncKeyFile | null {
+let memorySyncKey: SyncKeyFile | null = null;
+
+function readSyncKeyFromDisk(): SyncKeyFile | null {
   try {
     if (!existsSync(SYNC_KEY_PATH)) return null;
-    return JSON.parse(readFileSync(SYNC_KEY_PATH, "utf8")) as SyncKeyFile;
+    const parsed = JSON.parse(readFileSync(SYNC_KEY_PATH, "utf8")) as SyncKeyFile;
+    return parsed?.keyHash ? parsed : null;
   } catch {
     return null;
   }
 }
 
-function writeSyncKeyFile(data: SyncKeyFile | null) {
-  if (!existsSync(DATA_DIR)) mkdirSync(DATA_DIR, { recursive: true });
-  if (!data) {
-    writeFileSync(SYNC_KEY_PATH, JSON.stringify({ revoked: true }), "utf8");
-    return;
+function writeSyncKeyToDisk(data: SyncKeyFile | null) {
+  try {
+    if (!existsSync(DATA_DIR)) mkdirSync(DATA_DIR, { recursive: true });
+    if (!data) {
+      writeFileSync(SYNC_KEY_PATH, JSON.stringify({ revoked: true }), "utf8");
+      return;
+    }
+    writeFileSync(SYNC_KEY_PATH, JSON.stringify(data), "utf8");
+  } catch (err) {
+    console.warn("Admin sync key disk write failed:", err);
   }
-  writeFileSync(SYNC_KEY_PATH, JSON.stringify(data), "utf8");
+}
+
+async function writeSyncKeyToFirestore(data: SyncKeyFile | null) {
+  try {
+    const { getDb } = await import("@/lib/firebase-admin");
+    const db = getDb();
+    if (!db) return;
+    const ref = db.collection("settings").doc("admin_sync");
+    if (data) {
+      await ref.set(data);
+    } else {
+      await ref.delete();
+    }
+  } catch (err) {
+    console.warn("Admin sync key Firestore write failed:", err);
+  }
+}
+
+async function readSyncKeyRecord(): Promise<SyncKeyFile | null> {
+  if (memorySyncKey) return memorySyncKey;
+
+  const fromDisk = readSyncKeyFromDisk();
+  if (fromDisk) {
+    memorySyncKey = fromDisk;
+    return fromDisk;
+  }
+
+  try {
+    const { getDb } = await import("@/lib/firebase-admin");
+    const db = getDb();
+    if (db) {
+      const doc = await db.collection("settings").doc("admin_sync").get();
+      if (doc.exists) {
+        const data = doc.data() as SyncKeyFile;
+        if (data?.keyHash) {
+          memorySyncKey = data;
+          return data;
+        }
+      }
+    }
+  } catch (err) {
+    console.warn("Admin sync key Firestore read failed:", err);
+  }
+
+  return null;
 }
 
 /** Create a one-time extension sync key (only returned on admin unlock). */
-export function issueAdminSyncKey() {
+export async function issueAdminSyncKey() {
   const key = `fbsk_${randomBytes(32).toString("hex")}`;
-  writeSyncKeyFile({
+  const record: SyncKeyFile = {
     keyHash: hashSyncKey(key),
     createdAt: Date.now(),
-  });
+  };
+  memorySyncKey = record;
+  writeSyncKeyToDisk(record);
+  await writeSyncKeyToFirestore(record);
   return key;
 }
 
-export function revokeAdminSyncKey() {
-  writeSyncKeyFile(null);
+export async function revokeAdminSyncKey() {
+  memorySyncKey = null;
+  writeSyncKeyToDisk(null);
+  await writeSyncKeyToFirestore(null);
 }
 
-export function verifyAdminSyncKey(key: string | undefined | null) {
+export async function verifyAdminSyncKey(key: string | undefined | null) {
   if (!key || !key.startsWith("fbsk_")) return false;
-  const stored = readSyncKeyFile();
+  const stored = await readSyncKeyRecord();
   if (!stored?.keyHash) return false;
   // 12 hour max lifetime for sync key
   if (Date.now() - stored.createdAt > 12 * 60 * 60 * 1000) return false;
@@ -150,14 +207,14 @@ export async function isAdminUiRequest(request?: Request | { headers: Headers })
  * Cookie delivery to extension — ONLY via extension sync key.
  * Visiting /login with a leftover admin cookie cannot download cookies.
  */
-export function canDeliverCookies(request: Request | { headers: Headers }) {
+export async function canDeliverCookies(request: Request | { headers: Headers }) {
   const syncKey = request.headers.get("x-admin-sync-key");
   return verifyAdminSyncKey(syncKey);
 }
 
 /** @deprecated use isAdminUiRequest or canDeliverCookies */
 export async function isAdminRequest(request?: Request | { headers: Headers }) {
-  if (request && canDeliverCookies(request)) return true;
+  if (request && (await canDeliverCookies(request))) return true;
   return isAdminUiRequest(request);
 }
 
