@@ -16,6 +16,42 @@ function errorResponse(error: unknown, fallback: string, status = 500) {
   return NextResponse.json({ success: false, error: message || fallback }, { status });
 }
 
+async function requireFirebaseDb() {
+  const { getDb, isFirebaseConfigured, getFirebaseInitError } = await import("@/lib/firebase-admin");
+
+  if (!isFirebaseConfigured()) {
+    return {
+      db: null,
+      response: NextResponse.json(
+        {
+          success: false,
+          error:
+            "Firebase is not configured. Add FIREBASE_SERVICE_ACCOUNT_JSON or FIREBASE_PROJECT_ID + FIREBASE_CLIENT_EMAIL + FIREBASE_PRIVATE_KEY on Vercel.",
+        },
+        { status: 503 },
+      ),
+    };
+  }
+
+  const db = getDb();
+  if (!db) {
+    return {
+      db: null,
+      response: NextResponse.json(
+        {
+          success: false,
+          error:
+            getFirebaseInitError() ||
+            "Firebase failed to initialize. Paste the full service account JSON into FIREBASE_SERVICE_ACCOUNT_JSON on Vercel.",
+        },
+        { status: 503 },
+      ),
+    };
+  }
+
+  return { db, response: null };
+}
+
 function serializePayment(
   normalizeFirestoreDoc: (data: Record<string, unknown> | undefined) => Record<string, unknown>,
   id: string,
@@ -38,38 +74,19 @@ function serializePayment(
 export async function GET(request: NextRequest) {
   try {
     const { isAdminUiRequest } = await import("@/lib/admin");
-    const { getDb, isFirebaseConfigured } = await import("@/lib/firebase-admin");
     const { normalizeFirestoreDoc } = await import("@/lib/firestore-utils");
 
     if (!(await isAdminUiRequest(request))) {
       return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
     }
 
-    if (!isFirebaseConfigured()) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: "Firebase is not configured. Add FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL, and FIREBASE_PRIVATE_KEY on Vercel.",
-        },
-        { status: 503 },
-      );
-    }
-
-    const db = getDb();
-    if (!db) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: "Firebase failed to initialize. Check FIREBASE_PRIVATE_KEY formatting on Vercel (use \\n between lines).",
-        },
-        { status: 503 },
-      );
-    }
+    const { db, response } = await requireFirebaseDb();
+    if (response) return response;
 
     const paymentId = request.nextUrl.searchParams.get("id");
 
     if (paymentId) {
-      const doc = await db.collection("manual_payments").doc(paymentId).get();
+      const doc = await db!.collection("manual_payments").doc(paymentId).get();
       if (!doc.exists) {
         return NextResponse.json({ success: false, error: "Payment not found" }, { status: 404 });
       }
@@ -85,7 +102,7 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    const snapshot = await db.collection("manual_payments").get();
+    const snapshot = await db!.collection("manual_payments").get();
     const payments = snapshot.docs
       .map((doc) =>
         serializePayment(
@@ -109,27 +126,14 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const { isAdminUiRequest } = await import("@/lib/admin");
-    const { getDb, isFirebaseConfigured } = await import("@/lib/firebase-admin");
     const { sendAccountActivatedEmail, sendPaymentRejectedEmail } = await import("@/lib/email");
 
     if (!(await isAdminUiRequest(request))) {
       return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
     }
 
-    if (!isFirebaseConfigured()) {
-      return NextResponse.json(
-        { success: false, error: "Firebase is not configured on the server." },
-        { status: 503 },
-      );
-    }
-
-    const db = getDb();
-    if (!db) {
-      return NextResponse.json(
-        { success: false, error: "Firebase failed to initialize on the server." },
-        { status: 503 },
-      );
-    }
+    const { db, response } = await requireFirebaseDb();
+    if (response) return response;
 
     const body = await request.json();
     const { paymentId, action } = body;
@@ -138,7 +142,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: "Invalid parameters" }, { status: 400 });
     }
 
-    const paymentRef = db.collection("manual_payments").doc(paymentId);
+    const paymentRef = db!.collection("manual_payments").doc(paymentId);
     const paymentDoc = await paymentRef.get();
 
     if (!paymentDoc.exists) {
@@ -165,7 +169,7 @@ export async function POST(request: NextRequest) {
       const now = new Date();
       const expiresAt = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000).toISOString();
 
-      await db.collection("users").doc(userEmail).update({
+      await db!.collection("users").doc(userEmail).update({
         subscriptionPlan: planId,
         subscriptionExpiresAt: expiresAt,
         expirationEmailSent: false,
@@ -201,7 +205,7 @@ export async function POST(request: NextRequest) {
       processedAt: new Date().toISOString(),
     });
 
-    await db.collection("users").doc(paymentData.userEmail).update({
+    await db!.collection("users").doc(paymentData.userEmail).update({
       subscriptionPlan: "trial",
     });
 

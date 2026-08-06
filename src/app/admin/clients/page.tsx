@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { AlertCircle } from "lucide-react";
 import { AdminDataTable, type AdminTableColumn } from "@/components/admin-data-table";
 import { AdminFilterPills } from "@/components/admin-filter-pills";
 import { AdminPageHeader } from "@/components/admin-page-header";
@@ -39,6 +40,7 @@ function EmptyClients() {
 export default function ClientsPage() {
   const [clients, setClients] = useState<Client[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
   const [editing, setEditing] = useState<Client | null>(null);
   const [filter, setFilter] = useState<Filter>("all");
 
@@ -48,13 +50,25 @@ export default function ClientsPage() {
 
   const fetchClients = async () => {
     try {
-      const res = await fetch("/api/admin/clients");
-      const data = await res.json();
-      if (data.success) {
-        setClients(data.clients);
+      const res = await fetch("/api/admin/clients", { credentials: "same-origin" });
+      const raw = await res.text();
+      let data: { success?: boolean; clients?: Client[]; error?: string } = {};
+
+      try {
+        data = raw ? JSON.parse(raw) : {};
+      } catch {
+        setError(raw.trim().slice(0, 180) || `Failed to fetch clients (HTTP ${res.status}).`);
+        return;
       }
-    } catch (e) {
-      console.error(e);
+
+      if (data.success && data.clients) {
+        setClients(data.clients);
+        setError("");
+      } else {
+        setError(data.error || `Failed to fetch clients (HTTP ${res.status}).`);
+      }
+    } catch {
+      setError("Failed to fetch clients. Check Firebase env vars on Vercel.");
     } finally {
       setLoading(false);
     }
@@ -218,6 +232,13 @@ export default function ClientsPage() {
           <AdminFilterPills options={FILTERS} value={filter} onChange={setFilter} />
         }
       />
+
+      {error && (
+        <div className="mb-6 p-4 bg-red-500/10 border border-red-500/20 text-red-400 rounded-xl flex items-center gap-3">
+          <AlertCircle size={20} className="shrink-0" />
+          <span className="text-sm">{error}</span>
+        </div>
+      )}
 
       <AdminDataTable
         title={getTableTitle()}
