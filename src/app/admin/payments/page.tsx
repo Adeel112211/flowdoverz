@@ -145,8 +145,12 @@ export default function PaymentsPage() {
       try {
         data = raw ? JSON.parse(raw) : {};
       } catch {
+        const looksLikeHtml =
+          raw.includes("__next_error__") || raw.trimStart().startsWith("<!DOCTYPE");
         setError(
-          raw.trim().slice(0, 180) || `Failed to fetch payments (HTTP ${res.status}).`,
+          looksLikeHtml
+            ? "Server error on Vercel. Check Firebase env vars in Project Settings, then redeploy."
+            : raw.trim().slice(0, 180) || `Failed to fetch payments (HTTP ${res.status}).`,
         );
         return;
       }

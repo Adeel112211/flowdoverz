@@ -1,25 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { isAdminUiRequest } from "@/lib/admin";
-import { getDb } from "@/lib/firebase-admin";
-import { normalizeFirestoreDoc } from "@/lib/firestore-utils";
-import { sendAccountActivatedEmail, sendPaymentRejectedEmail } from "@/lib/email";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-
-function serializePayment(id: string, raw: Record<string, unknown>, includeScreenshot = false) {
-  const data = normalizeFirestoreDoc(raw);
-  const screenshot = data.screenshot;
-  const rest = { ...data };
-  delete rest.screenshot;
-
-  return {
-    id,
-    ...rest,
-    hasScreenshot: Boolean(screenshot),
-    ...(includeScreenshot && screenshot ? { screenshot: String(screenshot) } : {}),
-  };
-}
+export const maxDuration = 60;
 
 function errorResponse(error: unknown, fallback: string, status = 500) {
   const message =
@@ -33,17 +16,52 @@ function errorResponse(error: unknown, fallback: string, status = 500) {
   return NextResponse.json({ success: false, error: message || fallback }, { status });
 }
 
-// GET all payments (or one payment when ?id= is provided)
+function serializePayment(
+  normalizeFirestoreDoc: (data: Record<string, unknown> | undefined) => Record<string, unknown>,
+  id: string,
+  raw: Record<string, unknown>,
+  includeScreenshot = false,
+) {
+  const data = normalizeFirestoreDoc(raw);
+  const screenshot = data.screenshot;
+  const rest = { ...data };
+  delete rest.screenshot;
+
+  return {
+    id,
+    ...rest,
+    hasScreenshot: Boolean(screenshot),
+    ...(includeScreenshot && screenshot ? { screenshot: String(screenshot) } : {}),
+  };
+}
+
 export async function GET(request: NextRequest) {
   try {
+    const { isAdminUiRequest } = await import("@/lib/admin");
+    const { getDb, isFirebaseConfigured } = await import("@/lib/firebase-admin");
+    const { normalizeFirestoreDoc } = await import("@/lib/firestore-utils");
+
     if (!(await isAdminUiRequest(request))) {
       return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+    }
+
+    if (!isFirebaseConfigured()) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: "Firebase is not configured. Add FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL, and FIREBASE_PRIVATE_KEY on Vercel.",
+        },
+        { status: 503 },
+      );
     }
 
     const db = getDb();
     if (!db) {
       return NextResponse.json(
-        { success: false, error: "Database not available. Check Firebase env vars on Vercel." },
+        {
+          success: false,
+          error: "Firebase failed to initialize. Check FIREBASE_PRIVATE_KEY formatting on Vercel (use \\n between lines).",
+        },
         { status: 503 },
       );
     }
@@ -58,13 +76,24 @@ export async function GET(request: NextRequest) {
 
       return NextResponse.json({
         success: true,
-        payment: serializePayment(doc.id, doc.data() as Record<string, unknown>, true),
+        payment: serializePayment(
+          normalizeFirestoreDoc,
+          doc.id,
+          (doc.data() || {}) as Record<string, unknown>,
+          true,
+        ),
       });
     }
 
     const snapshot = await db.collection("manual_payments").get();
     const payments = snapshot.docs
-      .map((doc) => serializePayment(doc.id, (doc.data() || {}) as Record<string, unknown>))
+      .map((doc) =>
+        serializePayment(
+          normalizeFirestoreDoc,
+          doc.id,
+          (doc.data() || {}) as Record<string, unknown>,
+        ),
+      )
       .sort((a, b) => {
         const aTime = Date.parse(String((a as { createdAt?: string }).createdAt || 0));
         const bTime = Date.parse(String((b as { createdAt?: string }).createdAt || 0));
@@ -77,17 +106,27 @@ export async function GET(request: NextRequest) {
   }
 }
 
-// POST to approve or reject a payment
 export async function POST(request: NextRequest) {
   try {
+    const { isAdminUiRequest } = await import("@/lib/admin");
+    const { getDb, isFirebaseConfigured } = await import("@/lib/firebase-admin");
+    const { sendAccountActivatedEmail, sendPaymentRejectedEmail } = await import("@/lib/email");
+
     if (!(await isAdminUiRequest(request))) {
       return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+    }
+
+    if (!isFirebaseConfigured()) {
+      return NextResponse.json(
+        { success: false, error: "Firebase is not configured on the server." },
+        { status: 503 },
+      );
     }
 
     const db = getDb();
     if (!db) {
       return NextResponse.json(
-        { success: false, error: "Database not available. Check Firebase env vars on Vercel." },
+        { success: false, error: "Firebase failed to initialize on the server." },
         { status: 503 },
       );
     }
@@ -126,8 +165,7 @@ export async function POST(request: NextRequest) {
       const now = new Date();
       const expiresAt = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000).toISOString();
 
-      const userRef = db.collection("users").doc(userEmail);
-      await userRef.update({
+      await db.collection("users").doc(userEmail).update({
         subscriptionPlan: planId,
         subscriptionExpiresAt: expiresAt,
         expirationEmailSent: false,
@@ -163,9 +201,7 @@ export async function POST(request: NextRequest) {
       processedAt: new Date().toISOString(),
     });
 
-    const userEmail = paymentData.userEmail;
-    const userRef = db.collection("users").doc(userEmail);
-    await userRef.update({
+    await db.collection("users").doc(paymentData.userEmail).update({
       subscriptionPlan: "trial",
     });
 
