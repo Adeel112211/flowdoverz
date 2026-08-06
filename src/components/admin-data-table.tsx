@@ -18,6 +18,7 @@ type AdminDataTableProps<T> = {
   rowKey: (row: T) => string;
   emptyState: ReactNode;
   renderMobileActions?: (row: T) => ReactNode;
+  headerActions?: ReactNode;
 };
 
 export function AdminDataTable<T>({
@@ -28,40 +29,48 @@ export function AdminDataTable<T>({
   rowKey,
   emptyState,
   renderMobileActions,
+  headerActions,
 }: AdminDataTableProps<T>) {
   const mobileColumns = columns.filter((col) => !col.hideOnMobile);
 
   return (
-    <div className="flex-1 flex flex-col min-h-0 min-w-0 max-w-full pb-0 w-full">
-      <h2 className="mb-4 text-lg sm:text-xl md:text-2xl font-black text-white flex-none break-words">
-        {title} ({count})
-      </h2>
+    <div className="flex flex-1 flex-col min-h-0 min-w-0 max-w-full pb-0 w-full">
+      <div className="mb-3 flex flex-none flex-col gap-3 sm:mb-4 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+        <h2 className="m-0 break-words text-base font-black text-white sm:text-xl md:text-2xl">
+          {title} ({count})
+        </h2>
+        {headerActions && (
+          <div className="w-full flex-none sm:w-auto">{headerActions}</div>
+        )}
+      </div>
 
       {data.length === 0 ? (
-        <div className="flex-1 border-t border-white/10 bg-[#0F172A]/40 backdrop-blur-xl px-0 py-16 sm:px-4">
+        <div className="flex-1 border-t border-white/10 bg-[#0F172A]/40 px-3 py-12 backdrop-blur-xl sm:px-4 sm:py-16">
           {emptyState}
         </div>
       ) : (
         <>
           {/* Card list — used below xl so tables never force page horizontal scroll */}
-          <div className="xl:hidden flex flex-col gap-3 pb-4 w-full max-w-full min-w-0">
+          <div className="flex w-full max-w-full min-w-0 flex-col gap-3 pb-4 xl:hidden">
             {data.map((row) => (
               <article
                 key={rowKey(row)}
-                className="rounded-xl border border-white/10 bg-[#0F172A]/80 p-4 shadow-lg backdrop-blur-xl w-full max-w-full min-w-0 overflow-hidden"
+                className="w-full max-w-full min-w-0 overflow-hidden rounded-xl border border-white/10 bg-[#0F172A]/80 p-3 shadow-lg backdrop-blur-xl sm:p-4"
               >
-                <dl className="space-y-3">
+                <dl className="space-y-2.5 sm:space-y-3">
                   {mobileColumns.map((col) => (
                     <div key={col.key} className="min-w-0">
                       <dt className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
                         {col.mobileLabel || col.header}
                       </dt>
-                      <dd className="mt-1 text-sm text-slate-200 break-words">{col.render(row)}</dd>
+                      <dd className="mt-1 overflow-x-auto text-sm text-slate-200 [-ms-overflow-style:none] [scrollbar-width:none] max-md:[&_span]:max-w-none max-md:[&_span]:whitespace-normal max-md:[&_span]:break-words [&::-webkit-scrollbar]:hidden">
+                        {col.render(row)}
+                      </dd>
                     </div>
                   ))}
                 </dl>
                 {renderMobileActions && (
-                  <div className="mt-4 flex flex-wrap gap-2 border-t border-white/10 pt-4">
+                  <div className="mt-3 flex flex-wrap gap-2 border-t border-white/10 pt-3 sm:mt-4 sm:pt-4 md:flex-nowrap md:overflow-x-auto">
                     {renderMobileActions(row)}
                   </div>
                 )}

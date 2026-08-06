@@ -2,6 +2,7 @@ import { ReactNode } from "react";
 import { isAdminUiRequest } from "@/lib/admin";
 import { AdminLogin } from "@/components/admin-login";
 import { AdminSidebar } from "@/components/admin-sidebar";
+import { AdminShell } from "@/components/admin-shell";
 
 export const dynamic = "force-dynamic";
 
@@ -34,9 +35,9 @@ export default async function AdminLayout({ children }: { children: ReactNode })
       </div>
 
       <AdminSidebar />
-      <main className="relative z-10 flex min-h-0 min-w-0 flex-1 flex-col overflow-x-hidden md:h-dvh md:overflow-hidden">
-        <div className="flex-1 min-h-0 min-w-0 overflow-x-hidden overflow-y-auto p-4 sm:p-6 md:p-8 md:pb-0 md:h-full md:flex md:flex-col">
-          {children}
+      <main className="relative z-10 flex min-h-[calc(100dvh-73px)] min-w-0 flex-1 flex-col overflow-x-hidden md:h-dvh md:min-h-0 md:overflow-hidden">
+        <div className="flex min-h-0 flex-1 flex-col overflow-x-hidden max-md:overflow-y-auto md:overflow-hidden p-3 sm:p-6 md:h-full md:p-8 md:pb-0">
+          <AdminShell>{children}</AdminShell>
         </div>
       </main>
     </div>

@@ -3,12 +3,15 @@
 import { FormEvent, useEffect, useRef, useState } from "react";
 import { ChevronDown } from "lucide-react";
 import { AdminPageHeader } from "@/components/admin-page-header";
+import { AdminPageLayout } from "@/components/admin-page-layout";
+import { AdminLoadingState } from "@/components/admin-loading-state";
 
 const SLOTS = ["C1", "C2", "C3", "C4", "C5"] as const;
 
 type SlotInfo = {
   key: string;
   name: string;
+  label?: string | null;
   has_cookies: boolean;
   updated_at: string | null;
   cookie_count?: number;
@@ -36,6 +39,10 @@ export function CookiesPage() {
     updated: string | null;
     names: string[];
   }>({ count: 0, updated: null, names: [] });
+  const [slotLabel, setSlotLabel] = useState("");
+  const [copyTarget, setCopyTarget] = useState("C2");
+  const [preview, setPreview] = useState<{ count: number; names: string[] } | null>(null);
+  const [pendingSave, setPendingSave] = useState<string | null>(null);
 
   async function checkAdmin() {
     setChecking(true);
@@ -73,6 +80,12 @@ export function CookiesPage() {
       updated: data.updated_at || null,
       names: data.cookie_names || [],
     });
+    if (data.label) setSlotLabel(String(data.label));
+    else {
+      const current = (data.available_slots || []).find((s: SlotInfo) => s.key === active);
+      if (current?.label) setSlotLabel(current.label);
+      else setSlotLabel("");
+    }
   }
 
   useEffect(() => {
@@ -83,11 +96,28 @@ export function CookiesPage() {
     if (admin) refreshMeta(slot);
   }, [slot, admin]);
 
-  async function saveCookies(raw: string, targetSlot = slot) {
+  async function saveCookies(raw: string, targetSlot = slot, skipPreview = false) {
     const text = raw.trim();
     if (!text) {
       setStatus({ type: "err", text: "Nothing to save — paste or upload cookies first." });
       return false;
+    }
+
+    if (!skipPreview) {
+      try {
+        const parsed = JSON.parse(text);
+        const list = Array.isArray(parsed) ? parsed : parsed?.cookies;
+        if (Array.isArray(list)) {
+          setPreview({
+            count: list.length,
+            names: list.slice(0, 8).map((c: { name?: string }) => c.name || "?"),
+          });
+          setPendingSave(text);
+          return false;
+        }
+      } catch {
+        // fall through to save attempt
+      }
     }
 
     setSaving(true);
@@ -97,7 +127,7 @@ export function CookiesPage() {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ slot: targetSlot, cookies: text }),
+        body: JSON.stringify({ slot: targetSlot, cookies: text, label: slotLabel || undefined }),
       });
       const data = await res.json();
       if (res.status === 401) {
@@ -248,24 +278,38 @@ export function CookiesPage() {
   }
 
   if (checking) {
-    return (
-      <div className="flex min-h-screen items-center justify-center text-slate-400">
-        Checking admin access…
-      </div>
-    );
+    return <AdminLoadingState label="Checking admin access..." />;
   }
 
   if (!admin) {
-    return (
-      <div className="flex min-h-[400px] items-center justify-center text-slate-400">
-        Loading...
-      </div>
-    );
+    return <AdminLoadingState />;
   }
 
   return (
-    <div className="relative flex flex-col min-w-0 max-w-full overflow-x-hidden animate-in fade-in slide-in-from-bottom-4 duration-700">
-      {/* Admin page only — no client session bridge */}
+    <AdminPageLayout
+      scrollContent={false}
+      header={
+        <AdminPageHeader
+          title="Cookie Manager"
+          description={
+            <>
+              Paste cookies here. Clients sign in on{" "}
+              <code className="font-mono text-cyan-400">/login</code> and their extension syncs
+              these automatically.
+            </>
+          }
+          actions={
+            <button
+              type="button"
+              onClick={handleLock}
+              className="w-full rounded-xl border border-white/10 bg-[#0F172A]/80 px-5 py-3 text-sm font-bold text-slate-300 shadow-xl backdrop-blur-xl transition-all hover:bg-white/5 sm:w-auto sm:px-6 sm:py-3.5"
+            >
+              Lock Admin
+            </button>
+          }
+        />
+      }
+    >
       <div
         id="flowdoverz-admin-marker"
         data-admin-unlocked={admin ? "1" : "0"}
@@ -273,33 +317,9 @@ export function CookiesPage() {
         aria-hidden="true"
       />
 
-      {/* Ambient Glow */}
-      <div className="absolute top-0 left-1/4 w-96 h-96 bg-cyan-500/5 rounded-full blur-[120px] pointer-events-none -z-10" />
-
-      {/* Premium Dashboard-Style Banner */}
-      <AdminPageHeader
-        title="Cookie Manager"
-        description={
-          <>
-            Paste cookies here. Clients sign in on{" "}
-            <code className="text-cyan-400 font-mono">/login</code> and their extension syncs
-            these automatically.
-          </>
-        }
-        actions={
-          <button
-            type="button"
-            onClick={handleLock}
-            className="w-full sm:w-auto rounded-xl bg-[#0F172A]/80 backdrop-blur-xl border border-white/10 px-5 sm:px-6 py-3 sm:py-3.5 text-sm font-bold text-slate-300 hover:bg-white/5 transition-all shadow-xl"
-          >
-            Lock Admin
-          </button>
-        }
-      />
-
-      <main className="max-w-7xl w-full mx-auto flex-1 flex flex-col min-h-0 min-w-0">
+      <main className="mx-auto flex min-h-0 w-full max-w-7xl flex-1 flex-col overflow-x-hidden min-w-0 max-md:overflow-visible md:overflow-y-auto">
         {/* One-click daily action */}
-        <div className="grid gap-4 grid-cols-1 sm:grid-cols-2">
+        <div className="shrink-0 grid gap-4 grid-cols-1 sm:grid-cols-2">
           <button
             type="button"
             disabled={saving}
@@ -335,9 +355,34 @@ export function CookiesPage() {
           />
         </div>
 
-        <div className="mt-4 sm:mt-8 rounded-xl sm:rounded-2xl border border-white/5 bg-white/[0.02] p-4 sm:p-8 backdrop-blur-xl relative overflow-y-auto overflow-x-hidden flex-1 flex flex-col min-h-0">
+        {slots.length > 0 && (
+          <div className="mt-4 shrink-0 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+            {SLOTS.map((key) => {
+              const info = slots.find((s) => s.key === key);
+              const active = slot === key;
+              return (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => setSlot(key)}
+                  className={`rounded-xl border p-3 text-left transition-all ${
+                    active
+                      ? "border-cyan-400 bg-cyan-500/10"
+                      : "border-white/10 bg-white/[0.02] hover:border-white/20"
+                  }`}
+                >
+                  <p className="font-bold text-sm text-slate-200">{key}</p>
+                  <p className="text-xs text-slate-500 truncate mt-1">{info?.label || info?.name || "Empty"}</p>
+                  <p className="text-xs text-cyan-400/80 mt-2">{info?.cookie_count ?? 0} cookies</p>
+                </button>
+              );
+            })}
+          </div>
+        )}
+
+        <div className="mt-4 sm:mt-8 rounded-xl sm:rounded-2xl border border-white/5 bg-white/[0.02] p-4 sm:p-8 backdrop-blur-xl relative overflow-x-hidden flex-1 flex flex-col min-h-0 overflow-y-auto lg:overflow-hidden">
           <div className="absolute top-0 right-0 w-48 h-48 bg-cyan-500/5 rounded-full blur-3xl pointer-events-none" />
-          <div className="mb-6 flex flex-wrap items-end gap-4 relative z-30">
+          <div className="mb-6 shrink-0 flex flex-wrap items-end gap-4 relative z-30">
             <div>
               <label
                 htmlFor="slot"
@@ -405,10 +450,41 @@ export function CookiesPage() {
                 ? `${meta.count} live in ${slot}${meta.updated ? ` · updated ${new Date(meta.updated).toLocaleString()}` : ""}`
                 : `No cookies in ${slot} yet`}
             </p>
+            <div className="w-full sm:w-auto">
+              <label className="mb-1 block text-xs font-bold uppercase text-slate-500">Slot label</label>
+              <input
+                type="text"
+                value={slotLabel}
+                onChange={(e) => setSlotLabel(e.target.value)}
+                placeholder="e.g. Main account"
+                className="w-full sm:w-48 rounded-xl border border-white/10 bg-[#080810] px-3 py-2 text-sm text-slate-200 outline-none focus:border-cyan-500/50"
+              />
+            </div>
+            <div className="w-full sm:w-auto flex gap-2 items-end">
+              <div>
+                <label className="mb-1 block text-xs font-bold uppercase text-slate-500">Copy to</label>
+                <select
+                  value={copyTarget}
+                  onChange={(e) => setCopyTarget(e.target.value)}
+                  className="rounded-xl border border-white/10 bg-[#080810] px-3 py-2 text-sm text-slate-200"
+                >
+                  {SLOTS.filter((s) => s !== slot).map((s) => (
+                    <option key={s} value={s}>{s}</option>
+                  ))}
+                </select>
+              </div>
+              <button
+                type="button"
+                onClick={() => copySlotTo(copyTarget)}
+                className="rounded-xl border border-white/10 px-4 py-2 text-sm font-bold text-slate-300 hover:bg-white/5"
+              >
+                Copy slot
+              </button>
+            </div>
           </div>
 
           {meta.names.length > 0 && (
-            <div className="mb-4 flex flex-wrap gap-1.5">
+            <div className="mb-4 shrink-0 flex flex-wrap gap-1.5">
               {meta.names.slice(0, 12).map((name) => (
                 <span
                   key={name}
@@ -427,7 +503,7 @@ export function CookiesPage() {
 
           {status && (
             <p
-              className={`mb-4 rounded-lg border px-4 py-3 text-sm ${
+              className={`mb-4 shrink-0 rounded-lg border px-4 py-3 text-sm ${
                 status.type === "ok"
                   ? "border-teal-500/30 bg-teal-500/10 text-teal-100"
                   : "border-rose-500/30 bg-rose-500/10 text-rose-200"
@@ -456,7 +532,7 @@ export function CookiesPage() {
             }`}
           >
             <div className="relative z-10 flex-1 flex flex-col min-h-0">
-              <div className="mb-4 flex items-center justify-between">
+              <div className="mb-4 shrink-0 flex items-center justify-between">
                 <label className="text-sm font-bold text-slate-300">
                   Raw JSON
                 </label>
@@ -482,12 +558,12 @@ export function CookiesPage() {
                 }}
                 spellCheck={false}
                 placeholder="Paste cookie array here, or drag & drop a .json file..."
-                className="flex-1 w-full min-h-[150px] sm:min-h-0 resize-none rounded-2xl border border-white/5 bg-[#080810]/50 p-4 font-mono text-[11px] leading-relaxed text-slate-400 outline-none focus:border-cyan-500/50 focus:ring-1 focus:ring-cyan-500/50 scrollbar-thin scrollbar-thumb-white/10"
+                className="flex-1 w-full min-h-[150px] sm:min-h-0 sm:h-0 resize-none rounded-2xl border border-white/5 bg-[#080810]/50 p-4 font-mono text-[11px] leading-relaxed text-slate-400 outline-none focus:border-cyan-500/50 focus:ring-1 focus:ring-cyan-500/50"
               />
             </div>
           </div>
 
-          <div className="mt-6 sm:mt-8 grid grid-cols-2 sm:flex sm:flex-wrap gap-2 justify-end relative z-10">
+          <div className="mt-6 sm:mt-8 shrink-0 grid grid-cols-2 sm:flex sm:flex-wrap gap-2 justify-end relative z-10">
             <button
               type="button"
               disabled={saving}
@@ -522,6 +598,49 @@ export function CookiesPage() {
         </div>
 
       </main>
-    </div>
+
+      {preview && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
+          <div className="w-full max-w-md rounded-2xl border border-white/10 bg-[#0F172A] p-6 shadow-2xl">
+            <h3 className="text-lg font-bold text-white mb-2">Confirm save to {slot}</h3>
+            <p className="text-sm text-slate-400 mb-4">
+              {preview.count} cookies will replace the current slot contents.
+            </p>
+            <div className="flex flex-wrap gap-1.5 mb-6">
+              {preview.names.map((name) => (
+                <span key={name} className="rounded-md border border-white/10 px-2 py-0.5 font-mono text-[10px] text-slate-400">
+                  {name}
+                </span>
+              ))}
+              {preview.count > preview.names.length && (
+                <span className="text-xs text-slate-500">+{preview.count - preview.names.length} more</span>
+              )}
+            </div>
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={() => { setPreview(null); setPendingSave(null); }}
+                className="flex-1 rounded-xl border border-white/10 py-2.5 text-sm font-bold text-slate-300"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={saving}
+                onClick={async () => {
+                  const raw = pendingSave;
+                  setPreview(null);
+                  setPendingSave(null);
+                  if (raw) await saveCookies(raw, slot, true);
+                }}
+                className="flex-1 rounded-xl bg-gradient-to-r from-cyan-400 to-emerald-400 py-2.5 text-sm font-bold text-slate-950 disabled:opacity-50"
+              >
+                Confirm Save
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </AdminPageLayout>
   );
 }

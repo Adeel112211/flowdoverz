@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { emailFromSid } from "@/lib/cookie-store";
 import { getDb } from "@/lib/firebase-admin";
+import { getPlanActivationBlock } from "@/lib/user-store";
 
 const SID_COOKIE = "flowdoverz_sid";
 
@@ -41,6 +42,15 @@ export async function POST(request: NextRequest) {
     const expiresAt = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000).toISOString();
 
     const normalizedEmail = email.trim().toLowerCase();
+
+    const activationBlock = await getPlanActivationBlock(normalizedEmail);
+    if (activationBlock) {
+      return NextResponse.json(
+        { success: false, code: activationBlock.code, error: activationBlock.error },
+        { status: 400 },
+      );
+    }
+
     const usersRef = db.collection("users");
     
     await usersRef.doc(normalizedEmail).update({

@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { isAdminRequest } from "@/lib/admin";
+import { getSystemSettings, planPricePkr } from "@/lib/admin-settings";
 import { getDb } from "@/lib/firebase-admin";
+
+const PAID_PLANS = new Set(["solo", "studio", "team", "nano", "ultra"]);
 
 export async function GET(request: NextRequest) {
   const isAdmin = await isAdminRequest();
@@ -13,6 +16,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ success: false, error: "Database not available" }, { status: 500 });
   }
 
+  const settings = await getSystemSettings();
   const searchParams = request.nextUrl.searchParams;
   const range = searchParams.get("range") || "all_time";
 
@@ -38,58 +42,60 @@ export async function GET(request: NextRequest) {
     case "this_year":
       startDate = new Date(now.getFullYear(), 0, 1);
       break;
-    case "all_time":
-      startDate = null;
-      endDate = null;
-      break;
     default:
-      // Check for YYYY-MM format
       if (/^\d{4}-\d{2}$/.test(range)) {
         const [y, m] = range.split("-").map(Number);
         startDate = new Date(y, m - 1, 1);
-        // End date is the last day of that month
         endDate = new Date(y, m, 0, 23, 59, 59, 999);
-      } else {
-        startDate = null;
-        endDate = null;
       }
       break;
   }
 
   const isWithinRange = (dateStr: string | undefined | null) => {
-    if (!startDate && !endDate) return true; // all_time includes everything
-    if (!dateStr) return true; // Include items without dates just in case, or maybe false? Let's assume if it has no date, we only include it in all_time. Wait, actually if no date is present, and we selected a specific range, we should return false.
+    if (!startDate && !endDate) return true;
+    if (!dateStr) return !startDate && !endDate;
     const d = new Date(dateStr);
-    if (isNaN(d.getTime())) return true;
+    if (isNaN(d.getTime())) return false;
     if (startDate && d < startDate) return false;
     if (endDate && d > endDate) return false;
     return true;
   };
 
+  const weekFromNow = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+
   try {
-    // 1. Fetch Users Data
     const usersSnapshot = await db.collection("users").get();
     let totalUsers = 0;
     let activeSubscriptions = 0;
+    let signupsToday = 0;
+    let expiringThisWeek = 0;
+    let soloRevenue = 0;
+    let teamRevenue = 0;
+
+    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
 
     usersSnapshot.forEach((doc) => {
       const data = doc.data();
-      const createdAt = data.createdAt || data.created_at;
+      const createdAt = data.createdAt;
+      const plan = data.subscriptionPlan || "none";
+
       if (!startDate && !endDate) {
-        // all time
         totalUsers++;
-        if (data.subscriptionPlan === "studio" || data.subscriptionPlan === "team") {
-          activeSubscriptions++;
-        }
       } else if (createdAt && isWithinRange(createdAt)) {
         totalUsers++;
-        if (data.subscriptionPlan === "studio" || data.subscriptionPlan === "team") {
-          activeSubscriptions++;
-        }
+      }
+
+      if (createdAt && new Date(createdAt) >= startOfToday) {
+        signupsToday++;
+      }
+
+      const subExp = data.subscriptionExpiresAt ? new Date(data.subscriptionExpiresAt) : null;
+      if (PAID_PLANS.has(plan) && subExp && subExp > now) {
+        activeSubscriptions++;
+        if (subExp <= weekFromNow) expiringThisWeek++;
       }
     });
 
-    // 2. Fetch Payments Data for Revenue and Stats
     const paymentsSnapshot = await db.collection("manual_payments").get();
     let totalRevenue = 0;
     let approvedCount = 0;
@@ -97,44 +103,51 @@ export async function GET(request: NextRequest) {
     let pendingCount = 0;
     let refundedCount = 0;
 
-    // Monthly Data Aggregation
-    const monthlyDataMap = new Map<string, { month: string; revenue: number; signups: number }>();
+    const monthlyRevenue = new Map<string, { month: string; revenue: number }>();
+    const monthlySignups = new Map<string, { month: string; signups: number }>();
 
-    // Helper to get Year-Month string e.g. "2026-08"
     const getMonthKey = (dateString: string) => {
       const d = new Date(dateString);
       return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
     };
 
-    // Helper to get formatted month name e.g. "Aug 2026"
     const getMonthName = (dateString: string) => {
       const d = new Date(dateString);
       return d.toLocaleDateString("en-US", { month: "short", year: "numeric" });
     };
 
+    usersSnapshot.forEach((doc) => {
+      const createdAt = doc.data().createdAt;
+      if (!createdAt) return;
+      if ((startDate || endDate) && !isWithinRange(createdAt)) return;
+      const monthKey = getMonthKey(createdAt);
+      if (!monthlySignups.has(monthKey)) {
+        monthlySignups.set(monthKey, { month: getMonthName(createdAt), signups: 0 });
+      }
+      monthlySignups.get(monthKey)!.signups += 1;
+    });
+
     paymentsSnapshot.forEach((doc) => {
       const data = doc.data();
-      const planId = data.planId;
+      const planId = data.planId as string | undefined;
       const status = data.status;
-      const dateStr = data.processedAt || data.createdAt; 
-      
-      // If we have a specific range filter, and the payment has no date, exclude it
+      const dateStr = data.processedAt || data.createdAt;
+
       if ((startDate || endDate) && !isWithinRange(dateStr)) return;
 
       if (status === "approved") {
         approvedCount++;
-        // Calculate Revenue
-        const planRevenue = planId === "studio" ? 29 : planId === "team" ? 79 : 0;
+        const planRevenue = planPricePkr(planId, settings);
         totalRevenue += planRevenue;
+        if (planId === "team" || planId === "ultra") teamRevenue += planRevenue;
+        else soloRevenue += planRevenue;
 
-        // Add to monthly revenue (Only if we are in 'all_time' or if we want to show a chart, wait the chart shows monthly trends. If we filter by 'today', chart only has 1 column. That's fine)
         if (dateStr) {
           const monthKey = getMonthKey(dateStr);
-          if (!monthlyDataMap.has(monthKey)) {
-            monthlyDataMap.set(monthKey, { month: getMonthName(dateStr), revenue: 0, signups: 0 });
+          if (!monthlyRevenue.has(monthKey)) {
+            monthlyRevenue.set(monthKey, { month: getMonthName(dateStr), revenue: 0 });
           }
-          monthlyDataMap.get(monthKey)!.revenue += planRevenue;
-          monthlyDataMap.get(monthKey)!.signups += 1;
+          monthlyRevenue.get(monthKey)!.revenue += planRevenue;
         }
       } else if (status === "rejected") {
         rejectedCount++;
@@ -145,10 +158,14 @@ export async function GET(request: NextRequest) {
       }
     });
 
-    // Sort monthly data chronologically
-    const chartData = Array.from(monthlyDataMap.entries())
-      .sort((a, b) => a[0].localeCompare(b[0]))
-      .map((entry) => entry[1]);
+    const allMonths = new Set([...monthlyRevenue.keys(), ...monthlySignups.keys()]);
+    const chartData = Array.from(allMonths)
+      .sort()
+      .map((key) => ({
+        month: monthlyRevenue.get(key)?.month || monthlySignups.get(key)!.month,
+        revenue: monthlyRevenue.get(key)?.revenue || 0,
+        signups: monthlySignups.get(key)?.signups || 0,
+      }));
 
     return NextResponse.json({
       success: true,
@@ -158,20 +175,21 @@ export async function GET(request: NextRequest) {
         totalRevenue,
         pendingApprovals: pendingCount,
         refundedPayments: refundedCount,
+        signupsToday,
+        expiringThisWeek,
+        soloRevenue,
+        teamRevenue,
         stats: {
           approved: approvedCount,
           rejected: rejectedCount,
           pending: pendingCount,
-          refunded: refundedCount
+          refunded: refundedCount,
         },
-        chartData
-      }
+        chartData,
+      },
     });
-  } catch (error: any) {
-    console.error("Error fetching dashboard data:", error);
-    return NextResponse.json(
-      { success: false, error: error.message || "Failed to fetch dashboard data" },
-      { status: 500 }
-    );
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : "Failed to fetch dashboard data";
+    return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
 }

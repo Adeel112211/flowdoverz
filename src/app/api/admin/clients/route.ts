@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { isAdminUiRequest } from "@/lib/admin";
+import { logAdminActivity } from "@/lib/admin-activity";
 import { getDb, getAdminAuth, getFirebaseInitError, isFirebaseConfigured } from "@/lib/firebase-admin";
 import { sendAccountActivatedEmail } from "@/lib/email";
-import { createUserByAdmin } from "@/lib/user-store";
+import { createUserByAdmin, updateUserPasswordByAdmin } from "@/lib/user-store";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -44,7 +45,7 @@ function databaseErrorResponse() {
   return null;
 }
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   if (!(await isAdminUiRequest())) {
     return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
   }
@@ -53,8 +54,17 @@ export async function GET() {
   if (dbError) return dbError;
 
   const db = getDb()!;
+  const email = request.nextUrl.searchParams.get("email")?.trim().toLowerCase();
 
   try {
+    if (email) {
+      const doc = await db.collection("users").doc(email).get();
+      if (!doc.exists) {
+        return NextResponse.json({ success: false, error: "Client not found" }, { status: 404 });
+      }
+      return NextResponse.json({ success: true, client: { email: doc.id, ...doc.data() } });
+    }
+
     const snapshot = await db.collection("users").get();
     const clients = snapshot.docs.map((doc) => ({
       email: doc.id,
@@ -79,13 +89,23 @@ export async function PUT(request: NextRequest) {
 
   try {
     const body = await request.json();
-    const { email, subscriptionPlan, trialExpiresAt, subscriptionExpiresAt } = body;
+    const {
+      email,
+      name,
+      subscriptionPlan,
+      trialExpiresAt,
+      subscriptionExpiresAt,
+      suspended,
+      adminNotes,
+      assignedSlot,
+    } = body;
 
     if (!email) {
       return NextResponse.json({ success: false, error: "Email is required" }, { status: 400 });
     }
 
     const updateData: Record<string, unknown> = {};
+    if (name !== undefined) updateData.name = String(name).trim();
     if (subscriptionPlan !== undefined) {
       updateData.subscriptionPlan = subscriptionPlan;
       if (PAID_PLANS.includes(subscriptionPlan)) {
@@ -94,6 +114,9 @@ export async function PUT(request: NextRequest) {
     }
     if (trialExpiresAt !== undefined) updateData.trialExpiresAt = trialExpiresAt;
     if (subscriptionExpiresAt !== undefined) updateData.subscriptionExpiresAt = subscriptionExpiresAt;
+    if (suspended !== undefined) updateData.suspended = Boolean(suspended);
+    if (adminNotes !== undefined) updateData.adminNotes = String(adminNotes);
+    if (assignedSlot !== undefined) updateData.assignedSlot = String(assignedSlot).toUpperCase();
 
     await db.collection("users").doc(email).update(updateData);
 
@@ -101,6 +124,12 @@ export async function PUT(request: NextRequest) {
       const planName = planDisplayName(subscriptionPlan);
       await sendAccountActivatedEmail(email, planName).catch(console.error);
     }
+
+    await logAdminActivity({
+      action: suspended === true ? "client_suspended" : suspended === false ? "client_unsuspended" : "client_updated",
+      targetEmail: email,
+      detail: `Updated client ${email}`,
+    });
 
     return NextResponse.json({ success: true, message: "Client updated successfully" });
   } catch (error: unknown) {
@@ -144,9 +173,44 @@ export async function POST(request: NextRequest) {
       await sendAccountActivatedEmail(String(email), planName, now, expiry).catch(console.error);
     }
 
+    await logAdminActivity({
+      action: "client_created",
+      targetEmail: String(email),
+      detail: `Created client with plan ${plan}`,
+    });
+
     return NextResponse.json({ success: true, message: "Client created successfully" });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : "Failed to create client";
+    return NextResponse.json({ success: false, error: message }, { status: 500 });
+  }
+}
+
+export async function PATCH(request: NextRequest) {
+  if (!(await isAdminUiRequest())) {
+    return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+  }
+
+  const dbError = databaseErrorResponse();
+  if (dbError) return dbError;
+
+  try {
+    const body = await request.json();
+    const { email, password } = body;
+
+    const result = await updateUserPasswordByAdmin(String(email || ""), String(password || ""));
+    if (!result.ok) {
+      return NextResponse.json({ success: false, error: result.error }, { status: 400 });
+    }
+
+    await logAdminActivity({
+      action: "password_changed",
+      targetEmail: String(email),
+    });
+
+    return NextResponse.json({ success: true, message: "Password updated successfully" });
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : "Failed to update password";
     return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
 }
@@ -169,6 +233,8 @@ export async function DELETE(request: NextRequest) {
     }
 
     await db.collection("users").doc(email).delete();
+
+    await logAdminActivity({ action: "client_deleted", targetEmail: email });
 
     const adminAuth = await getAdminAuth();
     if (adminAuth) {

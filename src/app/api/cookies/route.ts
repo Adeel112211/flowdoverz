@@ -7,6 +7,7 @@ import {
   saveSlotCookies,
 } from "@/lib/cookie-store";
 import { isAdminUiRequest, WORKSPACE_OWNER } from "@/lib/admin";
+import { logAdminActivity } from "@/lib/admin-activity";
 
 const VALID_SLOTS = new Set(["C1", "C2", "C3", "C4", "C5"]);
 
@@ -42,13 +43,18 @@ export async function GET(request: NextRequest) {
     updated_at: record?.updatedAt ?? null,
     cookie_names: record?.cookies.map((c) => c.name) ?? [],
     cookies: wantFull ? record?.cookies ?? [] : undefined,
-    available_slots: ["C1", "C2", "C3", "C4", "C5"].map((key) => ({
-      key,
-      name: `Session ${key.slice(1)}`,
-      has_cookies: Boolean(slots.find((s) => s.key === key)?.record),
-      updated_at: slots.find((s) => s.key === key)?.record.updatedAt ?? null,
-      cookie_count: slots.find((s) => s.key === key)?.record.cookies.length ?? 0,
-    })),
+    available_slots: ["C1", "C2", "C3", "C4", "C5"].map((key) => {
+      const saved = slots.find((s) => s.key === key)?.record;
+      return {
+        key,
+        name: saved?.label || `Session ${key.slice(1)}`,
+        label: saved?.label || null,
+        has_cookies: Boolean(saved),
+        updated_at: saved?.updatedAt ?? null,
+        cookie_count: saved?.cookies.length ?? 0,
+      };
+    }),
+    label: record?.label ?? null,
   });
 }
 
@@ -76,6 +82,12 @@ export async function POST(request: NextRequest) {
     const cookiesList = parseCookieJson(raw);
     const record = await saveSlotCookies(WORKSPACE_OWNER, slot, cookiesList, body.label);
 
+    await logAdminActivity({
+      action: "cookies_saved",
+      detail: `Saved ${record.cookies.length} cookies to ${slot}`,
+      meta: { slot, count: record.cookies.length },
+    });
+
     return NextResponse.json({
       success: true,
       slot,
@@ -101,6 +113,8 @@ export async function DELETE(request: NextRequest) {
 
   const slot = normalizeSlot(request.nextUrl.searchParams.get("slot"));
   await clearSlotCookies(WORKSPACE_OWNER, slot);
+
+  await logAdminActivity({ action: "cookies_cleared", detail: `Cleared slot ${slot}`, meta: { slot } });
 
   return NextResponse.json({
     success: true,

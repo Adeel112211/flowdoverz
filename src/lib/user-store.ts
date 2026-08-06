@@ -145,6 +145,38 @@ export async function createUserByAdmin(input: {
   return { ok: true };
 }
 
+export async function updateUserPasswordByAdmin(
+  email: string,
+  password: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const db = getDb();
+  if (!db) {
+    return { ok: false, error: "Database not configured." };
+  }
+
+  const normalized = normalizeEmail(email);
+  if (!normalized || !normalized.includes("@")) {
+    return { ok: false, error: "Enter a valid email address." };
+  }
+  if (password.length < 8) {
+    return { ok: false, error: "Password must be at least 8 characters." };
+  }
+
+  const userRef = db.collection("users").doc(normalized);
+  const userDoc = await userRef.get();
+  if (!userDoc.exists) {
+    return { ok: false, error: "Client not found." };
+  }
+
+  const salt = randomBytes(16).toString("hex");
+  await userRef.update({
+    salt,
+    passwordHash: hashPassword(password, salt),
+  });
+
+  return { ok: true };
+}
+
 export async function authenticateUser(
   email: string,
   password: string,
@@ -210,4 +242,53 @@ export async function getUserStatus(email: string): Promise<{
     subscriptionPlan: user.subscriptionPlan || "none",
     subscriptionExpiresAt: user.subscriptionExpiresAt || null,
   };
+}
+
+export type PlanActivationBlock = {
+  code: "ACTIVE_PLAN" | "PENDING_PAYMENT";
+  error: string;
+};
+
+export async function getPlanActivationBlock(email: string): Promise<PlanActivationBlock | null> {
+  const db = getDb();
+  if (!db) return null;
+
+  const normalized = normalizeEmail(email);
+  const status = await getUserStatus(normalized);
+  if (!status) {
+    return { code: "ACTIVE_PLAN", error: "Account not found." };
+  }
+
+  if (status.subscriptionActive) {
+    const expiryLabel = status.subscriptionExpiresAt
+      ? new Date(status.subscriptionExpiresAt).toLocaleDateString(undefined, {
+          year: "numeric",
+          month: "short",
+          day: "numeric",
+        })
+      : null;
+    return {
+      code: "ACTIVE_PLAN",
+      error: expiryLabel
+        ? `You already have an active plan until ${expiryLabel}. You can purchase again after it expires.`
+        : "You already have an active plan. You can purchase again after it expires.",
+    };
+  }
+
+  const pendingSnap = await db
+    .collection("manual_payments")
+    .where("userEmail", "==", normalized)
+    .where("status", "==", "pending")
+    .limit(1)
+    .get();
+
+  if (!pendingSnap.empty) {
+    return {
+      code: "PENDING_PAYMENT",
+      error:
+        "You already have a payment pending verification. Please wait for approval before submitting another.",
+    };
+  }
+
+  return null;
 }

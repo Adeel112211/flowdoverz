@@ -84,6 +84,7 @@ export async function GET(request: NextRequest) {
     if (response) return response;
 
     const paymentId = request.nextUrl.searchParams.get("id");
+    const userEmail = request.nextUrl.searchParams.get("email")?.trim().toLowerCase();
 
     if (paymentId) {
       const doc = await db!.collection("manual_payments").doc(paymentId).get();
@@ -102,15 +103,31 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    const snapshot = await db!.collection("manual_payments").get();
+    const paymentsQuery = userEmail
+      ? db!.collection("manual_payments").where("userEmail", "==", userEmail)
+      : db!.collection("manual_payments");
+
+    const usersSnapshot = await db!.collection("users").get();
+    const userNames = new Map<string, string>();
+    usersSnapshot.docs.forEach(doc => {
+      const data = doc.data();
+      if (data.name) userNames.set(doc.id, data.name);
+    });
+
+    const snapshot = await paymentsQuery.get();
     const payments = snapshot.docs
-      .map((doc) =>
-        serializePayment(
+      .map((doc) => {
+        const raw = (doc.data() || {}) as Record<string, unknown>;
+        const p = serializePayment(
           normalizeFirestoreDoc,
           doc.id,
-          (doc.data() || {}) as Record<string, unknown>,
-        ),
-      )
+          raw,
+        );
+        return {
+          ...p,
+          userName: typeof raw.userEmail === 'string' ? userNames.get(raw.userEmail) || null : null
+        };
+      })
       .sort((a, b) => {
         const aTime = Date.parse(String((a as { createdAt?: string }).createdAt || 0));
         const bTime = Date.parse(String((b as { createdAt?: string }).createdAt || 0));
@@ -126,7 +143,9 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const { isAdminUiRequest } = await import("@/lib/admin");
-    const { sendAccountActivatedEmail, sendPaymentRejectedEmail } = await import("@/lib/email");
+    const { sendAccountActivatedEmail, sendPaymentReceiptEmail, sendPaymentRefundReceiptEmail, sendPaymentRejectedEmail } = await import("@/lib/email");
+    const { generateReceiptNumber, generateRefundReceiptNumber, planAmountPkr, planDisplayName } = await import("@/lib/receipt-utils");
+    const { getPricingConfig } = await import("@/lib/pricing-store");
 
     if (!(await isAdminUiRequest(request))) {
       return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
@@ -166,8 +185,23 @@ export async function POST(request: NextRequest) {
       const userEmail = paymentData.userEmail;
       const planId = paymentData.planId;
 
+      const { getPlanActivationBlock } = await import("@/lib/user-store");
+      const activationBlock = await getPlanActivationBlock(String(userEmail));
+      if (activationBlock) {
+        return NextResponse.json({ success: false, error: activationBlock.error }, { status: 400 });
+      }
+
       const now = new Date();
       const expiresAt = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000).toISOString();
+      const receiptNumber = generateReceiptNumber();
+      const pricing = await getPricingConfig();
+      const amountPkr = planAmountPkr(String(planId), pricing.plans);
+      const planName = planDisplayName(String(planId));
+
+      const userDoc = await db!.collection("users").doc(userEmail).get();
+      const userData = userDoc.data() || {};
+      const userName = String(userData.name || userEmail.split("@")[0] || "Customer");
+      const accountNumber = String(paymentData.transactionId || "N/A");
 
       await db!.collection("users").doc(userEmail).update({
         subscriptionPlan: planId,
@@ -177,11 +211,27 @@ export async function POST(request: NextRequest) {
 
       await paymentRef.update({
         status: "approved",
-        processedAt: new Date().toISOString(),
+        processedAt: now.toISOString(),
+        receiptNumber,
+        amountPkr,
+        expiryAt: expiresAt,
       });
 
-      const planName = planId === "solo" ? "Solo" : planId === "team" ? "Team" : "Premium";
       await sendAccountActivatedEmail(userEmail, planName, now.toISOString(), expiresAt).catch(console.error);
+      await sendPaymentReceiptEmail({
+        email: userEmail,
+        userName,
+        accountNumber,
+        receiptNumber,
+        planName,
+        amountPkr,
+        transactionId: String(paymentData.transactionId || "N/A"),
+        paymentDate: now.toISOString(),
+        expiryDate: expiresAt,
+      }).catch(console.error);
+
+      const { logAdminActivity } = await import("@/lib/admin-activity");
+      await logAdminActivity({ action: "payment_approved", targetEmail: userEmail, detail: `Approved ${planId} payment` });
 
       return NextResponse.json({ success: true, message: "Payment approved and subscription activated." });
     }
@@ -197,19 +247,55 @@ export async function POST(request: NextRequest) {
       const planName = planId === "solo" ? "Solo" : planId === "team" ? "Team" : "Premium";
       await sendPaymentRejectedEmail(userEmail, planName).catch(console.error);
 
+      const { logAdminActivity } = await import("@/lib/admin-activity");
+      await logAdminActivity({ action: "payment_rejected", targetEmail: userEmail });
+
       return NextResponse.json({ success: true, message: "Payment rejected." });
     }
 
+    const userEmail = paymentData.userEmail;
+    const planId = String(paymentData.planId || "");
+    const now = new Date();
+    const refundReceiptNumber = generateRefundReceiptNumber();
+    const pricing = await getPricingConfig();
+    const amountPkr = Number(paymentData.amountPkr) || planAmountPkr(planId, pricing.plans);
+    const planName = planDisplayName(planId);
+    const receiptNumber = String(paymentData.receiptNumber || "N/A");
+    const paymentDate = String(paymentData.processedAt || paymentData.createdAt || now.toISOString());
+
+    const userDoc = await db!.collection("users").doc(userEmail).get();
+    const userData = userDoc.data() || {};
+    const userName = String(userData.name || userEmail.split("@")[0] || "Customer");
+    const accountNumber = String(paymentData.transactionId || "N/A");
+
     await paymentRef.update({
       status: "refunded",
-      processedAt: new Date().toISOString(),
+      refundedAt: now.toISOString(),
+      refundReceiptNumber,
     });
 
-    await db!.collection("users").doc(paymentData.userEmail).update({
-      subscriptionPlan: "trial",
+    await db!.collection("users").doc(userEmail).update({
+      subscriptionPlan: "none",
+      subscriptionExpiresAt: null,
     });
 
-    return NextResponse.json({ success: true, message: "Payment refunded and subscription revoked." });
+    await sendPaymentRefundReceiptEmail({
+      email: userEmail,
+      userName,
+      accountNumber,
+      receiptNumber,
+      refundReceiptNumber,
+      planName,
+      amountPkr,
+      transactionId: accountNumber,
+      paymentDate,
+      refundDate: now.toISOString(),
+    }).catch(console.error);
+
+    const { logAdminActivity } = await import("@/lib/admin-activity");
+    await logAdminActivity({ action: "payment_refunded", targetEmail: userEmail });
+
+    return NextResponse.json({ success: true, message: "Payment refunded, subscription revoked, and refund receipt sent." });
   } catch (error) {
     return errorResponse(error, "Failed to process payment");
   }

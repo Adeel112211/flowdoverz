@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { AuthBridge } from "@/components/auth-bridge";
 import { BrandLogo } from "@/components/brand-logo";
 import { getSession, signOut, type Session } from "@/lib/auth";
-import { DownloadCloud, ExternalLink, Timer, Rocket, CheckCircle2, AlertCircle, User, LogOut, MonitorSmartphone } from "lucide-react";
+import { DownloadCloud, ExternalLink, Timer, Rocket, CheckCircle2, AlertCircle, User, LogOut, MonitorSmartphone, Receipt, X, Sparkles } from "lucide-react";
 
 type UserStatus = {
   active: boolean;
@@ -17,12 +17,35 @@ type UserStatus = {
   subscriptionExpiresAt: string | null;
 };
 
+type ClientReceipt = {
+  id: string;
+  receiptNumber: string;
+  planName: string;
+  amountLabel: string;
+  transactionId: string;
+  paymentDateLabel: string;
+  expiryDateLabel?: string;
+  refundDateLabel?: string;
+  originalReceiptNumber?: string;
+  userName: string;
+  accountNumber: string;
+  scanUrl?: string;
+  status?: "paid" | "refunded";
+};
+
 export function DashboardPage() {
   const router = useRouter();
   const [session, setSession] = useState<Session | null>(null);
   const [status, setStatus] = useState<UserStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+  const [extensionDownloadUrl, setExtensionDownloadUrl] = useState<string | null>(null);
+  const [extensionVersion, setExtensionVersion] = useState<string | null>(null);
+  const [installSteps, setInstallSteps] = useState<string[]>([]);
+  const [mobileInstallSteps, setMobileInstallSteps] = useState<string[]>([]);
+  const [installView, setInstallView] = useState<"desktop" | "mobile">("desktop");
+  const [receipts, setReceipts] = useState<ClientReceipt[]>([]);
+  const [showExpiredModal, setShowExpiredModal] = useState(false);
 
   useEffect(() => {
     const current = getSession();
@@ -44,7 +67,34 @@ export function DashboardPage() {
       })
       .catch(console.error)
       .finally(() => setLoading(false));
+
+    fetch("/api/extension")
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.success) {
+          setExtensionDownloadUrl(data.extension.downloadUrl);
+          setExtensionVersion(data.extension.activeVersion);
+          setInstallSteps(data.extension.installSteps || []);
+          setMobileInstallSteps(data.extension.mobileInstallSteps || []);
+        }
+      })
+      .catch(console.error);
+
+    fetch("/api/user/receipts")
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.success && Array.isArray(data.receipts)) {
+          setReceipts(data.receipts);
+        }
+      })
+      .catch(console.error);
   }, [router]);
+
+  useEffect(() => {
+    if (!loading && status && !status.active) {
+      setShowExpiredModal(true);
+    }
+  }, [loading, status]);
 
   function handleSignOut() {
     signOut();
@@ -153,12 +203,18 @@ export function DashboardPage() {
         {isExpired && (
           <div className="mb-6 sm:mb-8 rounded-2xl border border-rose-500/30 bg-rose-500/10 p-4 sm:p-6 flex flex-col sm:flex-row items-start gap-4 backdrop-blur-xl">
             <AlertCircle className="text-rose-400 shrink-0 mt-0.5" />
-            <div>
+            <div className="flex-1">
               <h3 className="font-bold text-rose-200 text-lg mb-1">Your access has expired</h3>
               <p className="text-rose-200/80 text-sm">
-                Your trial or subscription has ended. You will not be able to connect to Google Flow. Please contact support on WhatsApp to renew your plan.
+                Your trial or subscription has ended. You will not be able to connect to Google Flow until you activate a plan.
               </p>
             </div>
+            <Link
+              href="/pricing"
+              className="shrink-0 rounded-xl bg-gradient-to-r from-cyan-400 to-emerald-400 px-5 py-2.5 text-sm font-black text-slate-950 shadow-[0_0_20px_rgba(34,211,238,0.25)] hover:-translate-y-0.5 transition-all"
+            >
+              View plans
+            </Link>
           </div>
         )}
 
@@ -186,10 +242,11 @@ export function DashboardPage() {
 
               <div className="flex flex-col sm:flex-row flex-wrap gap-3 relative z-10">
                 <a
-                  href="#"
-                  className="flex items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-cyan-400 to-emerald-400 px-6 sm:px-8 py-3.5 sm:py-4 text-sm sm:text-base font-black tracking-wide text-slate-950 transition-all shadow-[0_0_20px_rgba(34,211,238,0.3)] hover:-translate-y-0.5 hover:shadow-[0_0_30px_rgba(34,211,238,0.5)] w-full sm:w-auto"
+                  href={extensionDownloadUrl || "#"}
+                  download
+                  className={`flex items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-cyan-400 to-emerald-400 px-6 sm:px-8 py-3.5 sm:py-4 text-sm sm:text-base font-black tracking-wide text-slate-950 transition-all shadow-[0_0_20px_rgba(34,211,238,0.3)] hover:-translate-y-0.5 hover:shadow-[0_0_30px_rgba(34,211,238,0.5)] w-full sm:w-auto ${!extensionDownloadUrl ? "pointer-events-none opacity-50" : ""}`}
                 >
-                  <DownloadCloud size={20} /> Download Extension
+                  <DownloadCloud size={20} /> Download Extension{extensionVersion ? ` v${extensionVersion}` : ""}
                 </a>
                 <a
                   href="https://labs.google/fx/tools/flow"
@@ -240,6 +297,41 @@ export function DashboardPage() {
               </div>
             </div>
 
+            {/* Payment Receipts */}
+            <div className="min-w-0 rounded-2xl sm:rounded-3xl border border-white/5 bg-white/[0.02] p-5 sm:p-6 backdrop-blur-xl">
+              <div className="flex items-center justify-between gap-4 mb-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl flex items-center justify-center border bg-cyan-500/10 border-cyan-500/20 text-cyan-400">
+                    <Receipt size={20} />
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-bold text-white">Receipts</h3>
+                    <p className="text-xs text-slate-500">
+                      {receipts.length > 0
+                        ? `${receipts.length} receipt${receipts.length === 1 ? "" : "s"} available`
+                        : "Payment & refund receipts"}
+                    </p>
+                  </div>
+                </div>
+                <Link
+                  href="/dashboard/receipts"
+                  className="shrink-0 rounded-xl border border-cyan-500/30 bg-cyan-500/10 px-4 py-2 text-xs font-bold text-cyan-300 hover:bg-cyan-500/20 transition-colors"
+                >
+                  View all
+                </Link>
+              </div>
+
+              {receipts.length === 0 ? (
+                <p className="text-sm text-slate-500 py-2">
+                  No receipts yet. They appear after your payment is approved.
+                </p>
+              ) : (
+                <p className="text-sm text-slate-400">
+                  Open the receipts page to view account details, payment & refund receipts, and download them as PNG images.
+                </p>
+              )}
+            </div>
+
           </div>
 
           {/* Right Column (Status & Instructions) */}
@@ -261,37 +353,62 @@ export function DashboardPage() {
             <div className="rounded-2xl sm:rounded-3xl border border-white/5 bg-white/[0.02] p-5 sm:p-6 backdrop-blur-xl relative overflow-hidden min-w-0 lg:flex-1 flex flex-col justify-center">
               <div className="absolute top-[-10%] left-[-10%] w-[50%] h-[50%] rounded-full bg-cyan-500/5 blur-[80px] pointer-events-none" />
               <div className="relative z-10">
-                <h3 className="text-lg font-bold mb-4 text-white">How to Connect</h3>
-                
+                <div className="flex items-center justify-between gap-3 mb-4">
+                  <h3 className="text-lg font-bold text-white">How to Connect</h3>
+                  <div className="flex rounded-lg border border-white/10 bg-[#080810]/80 p-0.5">
+                    <button
+                      type="button"
+                      onClick={() => setInstallView("desktop")}
+                      className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-[11px] font-bold transition-colors ${
+                        installView === "desktop"
+                          ? "bg-cyan-500/20 text-cyan-400"
+                          : "text-slate-500 hover:text-slate-300"
+                      }`}
+                    >
+                      <MonitorSmartphone className="h-3 w-3" /> Desktop
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setInstallView("mobile")}
+                      className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-[11px] font-bold transition-colors ${
+                        installView === "mobile"
+                          ? "bg-cyan-500/20 text-cyan-400"
+                          : "text-slate-500 hover:text-slate-300"
+                      }`}
+                    >
+                      Mobile
+                    </button>
+                  </div>
+                </div>
+
                 <div className="relative pl-6 border-l-2 border-white/10 space-y-4">
-                  
-                  {/* Step 1 */}
-                  <div className="relative">
-                    <div className="absolute -left-[35px] top-1 w-6 h-6 rounded-full bg-[#080810] border-2 border-cyan-500 flex items-center justify-center shadow-[0_0_10px_rgba(34,211,238,0.5)]">
-                      <span className="text-[10px] font-black text-cyan-400">1</span>
+                  {(() => {
+                    const steps =
+                      installView === "mobile"
+                        ? mobileInstallSteps.length
+                          ? mobileInstallSteps
+                          : [
+                              "Open this dashboard on your phone or tablet.",
+                              "Tap Download to save the extension ZIP.",
+                              "Transfer to desktop or use a mobile browser with extension support.",
+                              "Install, tap Connect Now, and open Google Flow.",
+                            ]
+                        : installSteps.length
+                          ? installSteps
+                          : [
+                              "Download the latest extension ZIP from the button on the left.",
+                              "Unzip the folder, open chrome://extensions, enable Developer mode, and load unpacked.",
+                              "Click the extension icon, press Connect Now, and open Google Flow!",
+                            ];
+                    return steps.map((step, index) => (
+                  <div key={index} className="relative">
+                    <div className={`absolute -left-[35px] top-1 w-6 h-6 rounded-full bg-[#080810] border-2 ${index === 0 ? "border-cyan-500 shadow-[0_0_10px_rgba(34,211,238,0.5)]" : "border-white/20"} flex items-center justify-center`}>
+                      <span className={`text-[10px] font-black ${index === 0 ? "text-cyan-400" : "text-slate-400"}`}>{index + 1}</span>
                     </div>
-                    <p className="font-bold text-white text-base mb-1">Download</p>
-                    <p className="text-sm text-slate-400 leading-relaxed">Grab the latest version of our bridge extension from the link on the left.</p>
+                    <p className="text-sm text-slate-400 leading-relaxed">{step}</p>
                   </div>
-
-                  {/* Step 2 */}
-                  <div className="relative">
-                    <div className="absolute -left-[35px] top-1 w-6 h-6 rounded-full bg-[#080810] border-2 border-white/20 flex items-center justify-center">
-                      <span className="text-[10px] font-black text-slate-400">2</span>
-                    </div>
-                    <p className="font-bold text-white text-base mb-1">Load into Chrome</p>
-                    <p className="text-sm text-slate-400 leading-relaxed">Go to <code className="text-cyan-300 bg-cyan-500/10 px-1.5 py-0.5 rounded text-xs border border-cyan-500/20">chrome://extensions</code>, enable Developer mode, and select the folder.</p>
-                  </div>
-
-                  {/* Step 3 */}
-                  <div className="relative">
-                    <div className="absolute -left-[35px] top-1 w-6 h-6 rounded-full bg-[#080810] border-2 border-white/20 flex items-center justify-center">
-                      <span className="text-[10px] font-black text-slate-400">3</span>
-                    </div>
-                    <p className="font-bold text-white text-base mb-1">Connect & Create</p>
-                    <p className="text-sm text-slate-400 leading-relaxed">Click the extension icon, press "Connect Now", and open Google Flow!</p>
-                  </div>
-
+                    ));
+                  })()}
                 </div>
               </div>
             </div>
@@ -299,6 +416,68 @@ export function DashboardPage() {
           </div>
         </div>
       </main>
+
+      {showExpiredModal && isExpired && (
+        <div className="fixed inset-0 z-[80] flex items-end justify-center p-4 sm:items-center">
+          <button
+            type="button"
+            aria-label="Close expired plan dialog"
+            className="absolute inset-0 bg-[#030308]/80 backdrop-blur-sm"
+            onClick={() => setShowExpiredModal(false)}
+          />
+          <div
+            className="relative w-full max-w-md overflow-hidden rounded-3xl border border-white/10 bg-[#0c0c16] shadow-2xl"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="expired-plan-title"
+          >
+            <div className="absolute top-0 right-0 w-48 h-48 bg-rose-500/10 rounded-full blur-[80px] -mr-16 -mt-16 pointer-events-none" />
+            <div className="absolute bottom-0 left-0 w-48 h-48 bg-cyan-500/10 rounded-full blur-[80px] -ml-16 -mb-16 pointer-events-none" />
+
+            <div className="relative p-6 sm:p-8">
+              <button
+                type="button"
+                onClick={() => setShowExpiredModal(false)}
+                className="absolute right-4 top-4 rounded-lg border border-white/10 p-2 text-slate-400 hover:text-white transition-colors"
+                aria-label="Close"
+              >
+                <X className="h-4 w-4" />
+              </button>
+
+              <div className="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-2xl border border-rose-500/20 bg-rose-500/10 text-rose-400 shadow-[0_0_30px_rgba(244,63,94,0.15)]">
+                <AlertCircle size={32} />
+              </div>
+
+              <h2 id="expired-plan-title" className="text-center text-2xl font-black text-white mb-2">
+                {status?.subscriptionExpiresAt && !status.subscriptionActive
+                  ? "Your plan has expired"
+                  : "Your trial has ended"}
+              </h2>
+              <p className="text-center text-sm text-slate-400 mb-6 leading-relaxed">
+                Activate a plan to restore access and keep using FlowBridge with Google Flow.
+              </p>
+
+              <div className="flex flex-col gap-3">
+                <Link
+                  href="/pricing"
+                  onClick={() => setShowExpiredModal(false)}
+                  className="flex items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-cyan-400 to-emerald-400 px-6 py-3.5 text-sm font-black text-slate-950 shadow-[0_0_20px_rgba(34,211,238,0.3)] hover:-translate-y-0.5 hover:shadow-[0_0_30px_rgba(34,211,238,0.5)] transition-all"
+                >
+                  <Sparkles size={18} />
+                  View plans & activate
+                </Link>
+                <button
+                  type="button"
+                  onClick={() => setShowExpiredModal(false)}
+                  className="rounded-2xl border border-white/10 bg-white/5 px-6 py-3 text-sm font-bold text-slate-400 hover:bg-white/10 hover:text-white transition-colors"
+                >
+                  Maybe later
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

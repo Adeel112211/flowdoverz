@@ -1,15 +1,17 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
   Users,
   CreditCard,
   Activity,
-  DollarSign,
+  Banknote,
   CheckCircle2,
   XCircle,
   Clock,
   RotateCcw,
+  UserPlus,
+  AlertTriangle,
   type LucideIcon,
 } from "lucide-react";
 import {
@@ -18,10 +20,28 @@ import {
   CartesianGrid,
   Tooltip,
   ResponsiveContainer,
-  BarChart,
+  ComposedChart,
   Bar,
+  Line,
 } from "recharts";
 import { AdminPageHeader } from "@/components/admin-page-header";
+import { AdminPageLayout } from "@/components/admin-page-layout";
+import { AdminLoadingState } from "@/components/admin-loading-state";
+
+function formatPkr(amount: number) {
+  return `${amount.toLocaleString("en-PK")} PKR`;
+}
+
+function formatPkrDisplay(amount: number) {
+  return (
+    <span className="inline-flex items-baseline gap-1.5 whitespace-nowrap">
+      <span className="text-2xl sm:text-3xl lg:text-4xl font-black tabular-nums">
+        {amount.toLocaleString("en-PK")}
+      </span>
+      <span className="text-sm sm:text-base font-bold tracking-wide text-cyan-400">PKR</span>
+    </span>
+  );
+}
 
 type DashboardMetrics = {
   totalUsers: number;
@@ -29,6 +49,10 @@ type DashboardMetrics = {
   totalRevenue: number;
   pendingApprovals: number;
   refundedPayments: number;
+  signupsToday?: number;
+  expiringThisWeek?: number;
+  soloRevenue?: number;
+  teamRevenue?: number;
   stats: {
     approved: number;
     rejected: number;
@@ -246,20 +270,18 @@ function StatRow({
 }) {
   return (
     <div
-      className={`flex max-sm:flex-col max-sm:items-start sm:items-center justify-between gap-4 p-4 sm:p-5 rounded-xl bg-gradient-to-r from-white/5 to-transparent border border-white/5 border-l-4 ${borderColor} shadow-sm transition-all hover:-translate-y-1 hover:bg-white/10`}
+      className={`flex items-center justify-between gap-3 p-3 sm:p-3.5 rounded-xl bg-gradient-to-r from-white/5 to-transparent border border-white/5 border-l-4 ${borderColor} shadow-sm`}
     >
-      <div className="flex items-center gap-3 sm:gap-4 min-w-0">
-        <div className={`p-2.5 sm:p-3 ${iconBg} rounded-xl shadow-inner ring-1 ring-white/10 shrink-0`}>
-          <Icon className={`w-5 h-5 sm:w-6 sm:h-6 ${iconColor} drop-shadow-md`} />
+      <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
+        <div className={`p-2 ${iconBg} rounded-lg shadow-inner ring-1 ring-white/10 shrink-0`}>
+          <Icon className={`w-4 h-4 sm:w-5 sm:h-5 ${iconColor}`} />
         </div>
         <div className="min-w-0">
-          <p className="text-xs sm:text-sm font-bold text-slate-200 uppercase tracking-wider">
-            {title}
-          </p>
-          <p className="text-xs font-medium text-slate-500 mt-1">{subtitle}</p>
+          <p className="text-xs font-bold text-slate-200 uppercase tracking-wider">{title}</p>
+          <p className="text-[11px] font-medium text-slate-500 mt-0.5 truncate">{subtitle}</p>
         </div>
       </div>
-      <div className="text-3xl sm:text-4xl font-black text-white shrink-0">{value}</div>
+      <div className="text-2xl sm:text-3xl font-black text-white shrink-0 tabular-nums">{value}</div>
     </div>
   );
 }
@@ -290,74 +312,45 @@ export default function AdminDashboard() {
   }, [timeRange]);
 
   if (loading || !metrics) {
-    return (
-      <div className="flex flex-col items-center justify-center min-h-[50vh] gap-4">
-        <div className="h-16 w-16 animate-spin rounded-full border-4 border-cyan-500/20 border-t-cyan-400 shadow-[0_0_15px_rgba(34,211,238,0.5)]" />
-        <span className="text-sm font-bold tracking-widest text-cyan-400 uppercase animate-pulse">Loading...</span>
-      </div>
-    );
+    return <AdminLoadingState />;
   }
 
   return (
-    <div className="relative flex flex-col min-w-0 max-w-full overflow-x-hidden animate-in fade-in slide-in-from-bottom-4 duration-700">
-      <div className="absolute top-0 left-1/4 w-96 h-96 bg-cyan-500/5 rounded-full blur-[120px] pointer-events-none -z-10" />
-
-      <AdminPageHeader
-        title="Admin Dashboard"
-        description="Welcome back. Here is what is happening with FlowDoverz today."
-        actions={<DateRangeDropdown value={timeRange} onChange={setTimeRange} />}
-      />
-
-      <div className="flex flex-col gap-6 lg:gap-8 min-w-0 max-w-full w-full">
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 sm:gap-6 lg:gap-8">
-          <MetricCard
-            title="Total Users"
-            value={metrics.totalUsers}
-            icon={Users}
-            color="text-emerald-400"
-            bg="bg-emerald-400/10"
-          />
-          <MetricCard
-            title="Active Subscriptions"
-            value={metrics.activeSubscriptions}
-            icon={Activity}
-            color="text-cyan-400"
-            bg="bg-cyan-400/10"
-          />
-          <MetricCard
-            title="Total Revenue"
-            value={`$${metrics.totalRevenue.toLocaleString()}`}
-            icon={DollarSign}
-            color="text-purple-400"
-            bg="bg-purple-400/10"
-          />
-          <MetricCard
-            title="Pending Approvals"
-            value={metrics.pendingApprovals}
-            icon={Clock}
-            color="text-amber-400"
-            bg="bg-amber-400/10"
-          />
-          <MetricCard
-            title="Refunded Payments"
-            value={metrics.refundedPayments}
-            icon={RotateCcw}
-            color="text-slate-400"
-            bg="bg-slate-400/10"
-          />
+    <AdminPageLayout
+      header={
+        <AdminPageHeader
+          title="Admin Dashboard"
+          description="Welcome back. Here is what is happening with FlowDoverz today."
+          actions={<DateRangeDropdown value={timeRange} onChange={setTimeRange} />}
+        />
+      }
+    >
+      <div className="flex w-full min-w-0 max-w-full flex-col gap-4 lg:gap-5">
+        <div className="flex flex-col gap-3 sm:gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
+            <MetricCard title="Total Users" value={metrics.totalUsers} icon={Users} color="text-emerald-400" bg="bg-emerald-400/10" />
+            <MetricCard title="Active Plan" value={metrics.activeSubscriptions} icon={Activity} color="text-cyan-400" bg="bg-cyan-400/10" />
+            <MetricCard title="Total Revenue" value={formatPkrDisplay(metrics.totalRevenue)} icon={Banknote} color="text-purple-400" bg="bg-purple-400/10" />
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
+            <MetricCard title="Pending" value={metrics.pendingApprovals} icon={Clock} color="text-amber-400" bg="bg-amber-400/10" />
+            <MetricCard title="Signups Today" value={metrics.signupsToday ?? 0} icon={UserPlus} color="text-teal-400" bg="bg-teal-400/10" />
+            <MetricCard title="Expiring Week" value={metrics.expiringThisWeek ?? 0} icon={AlertTriangle} color="text-rose-400" bg="bg-rose-400/10" />
+            <MetricCard title="Refunded" value={metrics.refundedPayments} icon={RotateCcw} color="text-slate-400" bg="bg-slate-400/10" />
+          </div>
         </div>
 
-        <div className="grid grid-cols-1 xl:grid-cols-3 gap-6 lg:gap-8">
-          <div className="xl:col-span-2 flex flex-col">
-            <div className="flex flex-col rounded-xl border border-white/10 bg-[#0F172A]/80 backdrop-blur-xl p-4 sm:p-6 lg:p-8 shadow-2xl">
-              <h2 className="text-lg sm:text-xl font-bold text-white mb-4 sm:mb-6 flex items-center gap-2">
+        <div className="grid grid-cols-1 xl:grid-cols-3 gap-4 lg:gap-5 items-start">
+          <div className="xl:col-span-2">
+            <div className="rounded-xl border border-white/10 bg-[#0F172A]/80 backdrop-blur-xl p-4 sm:p-5 shadow-2xl overflow-hidden">
+              <h2 className="text-base sm:text-lg font-bold text-white mb-3 flex items-center gap-2">
                 <Activity className="w-5 h-5 text-cyan-400" />
-                Revenue Overview
+                Revenue & Signups
               </h2>
-              <div className="w-full min-h-[280px] sm:min-h-[320px] lg:min-h-[360px]">
+              <div className="w-full h-[200px] sm:h-[220px]">
                 {metrics.chartData.length > 0 ? (
                   <ResponsiveContainer width="100%" height="100%">
-                    <BarChart
+                    <ComposedChart
                       data={metrics.chartData}
                       margin={{ top: 10, right: 10, left: -10, bottom: 0 }}
                     >
@@ -378,8 +371,8 @@ export default function AdminDashboard() {
                         tick={{ fill: "#64748b", fontSize: 12 }}
                         tickLine={false}
                         axisLine={false}
-                        tickFormatter={(val) => `$${val}`}
-                        width={48}
+                        tickFormatter={(val) => formatPkr(Number(val))}
+                        width={72}
                       />
                       <Tooltip
                         contentStyle={{
@@ -389,6 +382,7 @@ export default function AdminDashboard() {
                         }}
                         itemStyle={{ color: "#22d3ee" }}
                         cursor={{ fill: "rgba(255,255,255,0.02)" }}
+                        formatter={(value) => [formatPkr(Number(value)), "Revenue"]}
                       />
                       <Bar
                         dataKey="revenue"
@@ -396,16 +390,32 @@ export default function AdminDashboard() {
                         radius={[4, 4, 0, 0]}
                         maxBarSize={60}
                       />
+                      <Line
+                        type="monotone"
+                        dataKey="signups"
+                        stroke="#a78bfa"
+                        strokeWidth={2}
+                        dot={{ fill: "#a78bfa", r: 3 }}
+                        yAxisId="right"
+                      />
+                      <YAxis
+                        yAxisId="right"
+                        orientation="right"
+                        stroke="#64748b"
+                        tick={{ fill: "#64748b", fontSize: 12 }}
+                        tickLine={false}
+                        axisLine={false}
+                      />
                       <defs>
                         <linearGradient id="colorRevenue" x1="0" y1="0" x2="0" y2="1">
                           <stop offset="5%" stopColor="#22d3ee" stopOpacity={0.8} />
                           <stop offset="95%" stopColor="#10b981" stopOpacity={0.8} />
                         </linearGradient>
                       </defs>
-                    </BarChart>
+                    </ComposedChart>
                   </ResponsiveContainer>
                 ) : (
-                  <div className="flex h-full min-h-[280px] items-center justify-center text-slate-500 text-sm">
+                  <div className="flex h-full items-center justify-center text-slate-500 text-sm">
                     No revenue data available yet.
                   </div>
                 )}
@@ -413,14 +423,14 @@ export default function AdminDashboard() {
             </div>
           </div>
 
-          <div className="flex flex-col">
-            <div className="rounded-xl border border-white/10 bg-[#0F172A]/80 backdrop-blur-xl p-4 sm:p-6 lg:p-8 shadow-2xl flex flex-col min-h-[420px] sm:min-h-[480px]">
-              <h2 className="text-lg sm:text-xl font-bold text-white mb-4 sm:mb-6 flex items-center gap-2">
+          <div>
+            <div className="rounded-xl border border-white/10 bg-[#0F172A]/80 backdrop-blur-xl p-4 sm:p-5 shadow-2xl overflow-hidden">
+              <h2 className="text-base sm:text-lg font-bold text-white mb-3 flex items-center gap-2">
                 <CreditCard className="w-5 h-5 text-emerald-400" />
                 Payment Approvals
               </h2>
 
-              <div className="space-y-3 sm:space-y-4">
+              <div className="space-y-2.5">
                 <StatRow
                   icon={CheckCircle2}
                   iconBg="bg-emerald-500/10 ring-emerald-500/20"
@@ -453,7 +463,7 @@ export default function AdminDashboard() {
           </div>
         </div>
       </div>
-    </div>
+    </AdminPageLayout>
   );
 }
 
@@ -465,7 +475,7 @@ function MetricCard({
   bg,
 }: {
   title: string;
-  value: string | number;
+  value: string | number | ReactNode;
   icon: LucideIcon;
   color: string;
   bg: string;
@@ -483,10 +493,14 @@ function MetricCard({
         </div>
       </div>
 
-      <div className="relative z-10 mt-4 sm:mt-6">
-        <p className="text-3xl sm:text-4xl lg:text-5xl font-black text-white tracking-tight drop-shadow-md break-words">
-          {value}
-        </p>
+      <div className="relative z-10 mt-4 sm:mt-6 min-w-0">
+        {typeof value === "string" || typeof value === "number" ? (
+          <p className="text-3xl sm:text-4xl lg:text-5xl font-black text-white tracking-tight drop-shadow-md tabular-nums">
+            {value}
+          </p>
+        ) : (
+          <div className="text-white drop-shadow-md">{value}</div>
+        )}
       </div>
     </div>
   );

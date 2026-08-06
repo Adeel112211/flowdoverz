@@ -1,30 +1,63 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { AlertCircle, Plus } from "lucide-react";
+import Link from "next/link";
+import {
+  AlertCircle,
+  CheckCircle2,
+  Clock,
+  CreditCard,
+  Eye,
+  EyeOff,
+  ImageIcon,
+  KeyRound,
+  Pencil,
+  Plus,
+  Search,
+  Trash2,
+  Download,
+  X,
+  XCircle,
+  type LucideIcon,
+} from "lucide-react";
 import { AdminDataTable, type AdminTableColumn } from "@/components/admin-data-table";
 import { AdminFilterPills } from "@/components/admin-filter-pills";
 import { AdminPageHeader } from "@/components/admin-page-header";
+import { AdminPlanSelect, normalizePlanValue } from "@/components/admin-plan-select";
+import { AdminDateTimeInput } from "@/components/admin-datetime-input";
+import { AdminLoadingState } from "@/components/admin-loading-state";
+import { AdminGlassModal, AdminGlassPanel } from "@/components/admin-glass-modal";
+import { useAdminToast } from "@/components/admin-toast";
+import { AdminPageLayout } from "@/components/admin-page-layout";
 
 type Client = {
   email: string;
+  name?: string;
   subscriptionPlan?: string;
   trialExpiresAt?: string;
   subscriptionExpiresAt?: string;
+  createdAt?: string;
+  suspended?: boolean;
+  adminNotes?: string;
+  assignedSlot?: string;
+  lastSyncAt?: string;
 };
 
-const FILTERS = ["all", "pending", "paid", "trial"] as const;
+type ClientPayment = {
+  id: string;
+  userEmail: string;
+  planId: string;
+  transactionId: string;
+  status: "pending" | "approved" | "rejected" | "refunded";
+  createdAt: string;
+  processedAt?: string;
+  hasScreenshot?: boolean;
+};
+
+const FILTERS = ["all", "pending", "paid", "trial", "suspended"] as const;
 type Filter = (typeof FILTERS)[number];
 
-const PLAN_OPTIONS = [
-  { value: "trial", label: "Trial" },
-  { value: "pending", label: "Pending" },
-  { value: "solo", label: "Solo" },
-  { value: "studio", label: "Studio" },
-  { value: "team", label: "Team" },
-] as const;
-
-const PAID_PLANS = ["solo", "studio", "team"];
+const PAID_PLANS = ["solo", "team"];
 
 type NewClientForm = {
   email: string;
@@ -61,6 +94,61 @@ function emptyNewClient(): NewClientForm {
   };
 }
 
+function ActionIconButton({
+  label,
+  icon: Icon,
+  onClick,
+  bgClass,
+  colorClass,
+}: {
+  label: string;
+  icon: LucideIcon;
+  onClick: () => void;
+  bgClass: string;
+  colorClass: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={label}
+      title={label}
+      className={`rounded-lg p-2 shrink-0 transition-colors ${bgClass} ${colorClass} hover:brightness-125`}
+    >
+      <Icon size={16} strokeWidth={2.25} />
+    </button>
+  );
+}
+
+function PaymentStatusBadge({ status }: { status: ClientPayment["status"] }) {
+  if (status === "pending") {
+    return (
+      <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-400/10 px-2.5 py-1 text-xs font-semibold text-amber-400">
+        <Clock size={12} /> Pending
+      </span>
+    );
+  }
+  if (status === "approved") {
+    return (
+      <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-400/10 px-2.5 py-1 text-xs font-semibold text-emerald-400">
+        <CheckCircle2 size={12} /> Approved
+      </span>
+    );
+  }
+  if (status === "refunded") {
+    return (
+      <span className="inline-flex items-center gap-1.5 rounded-full bg-slate-400/10 px-2.5 py-1 text-xs font-semibold text-slate-400">
+        <AlertCircle size={12} /> Refunded
+      </span>
+    );
+  }
+  return (
+    <span className="inline-flex items-center gap-1.5 rounded-full bg-rose-400/10 px-2.5 py-1 text-xs font-semibold text-rose-400">
+      <XCircle size={12} /> Rejected
+    </span>
+  );
+}
+
 function EmptyClients() {
   return (
     <div className="flex flex-col items-center justify-center gap-2 text-center">
@@ -83,13 +171,29 @@ function EmptyClients() {
 }
 
 export default function ClientsPage() {
+  const { toast } = useAdminToast();
   const [clients, setClients] = useState<Client[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [editing, setEditing] = useState<Client | null>(null);
   const [creating, setCreating] = useState(false);
   const [newClient, setNewClient] = useState<NewClientForm>(emptyNewClient);
+  const [passwordClient, setPasswordClient] = useState<Client | null>(null);
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [paymentClient, setPaymentClient] = useState<Client | null>(null);
+  const [clientPayments, setClientPayments] = useState<ClientPayment[]>([]);
+  const [paymentsLoading, setPaymentsLoading] = useState(false);
+  const [paymentsError, setPaymentsError] = useState("");
+  const [paymentScreenshot, setPaymentScreenshot] = useState<string | null>(null);
+  const [deleteClient, setDeleteClient] = useState<Client | null>(null);
+  const [deletingClient, setDeletingClient] = useState(false);
   const [filter, setFilter] = useState<Filter>("all");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [bulkLoading, setBulkLoading] = useState(false);
 
   useEffect(() => {
     fetchClients();
@@ -132,15 +236,46 @@ export default function ClientsPage() {
       });
       const data = await res.json();
       if (data.success) {
-        alert("Client updated successfully");
+        toast("Client updated");
         setEditing(null);
         fetchClients();
       } else {
-        alert("Update failed: " + data.error);
+        toast(data.error || "Update failed", "error");
       }
     } catch {
-      alert("Error updating client");
+      toast("Error updating client", "error");
     }
+  };
+
+  const runBulk = async (action: string) => {
+    if (!selected.size) return;
+    setBulkLoading(true);
+    try {
+      const res = await fetch("/api/admin/clients/bulk", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action, emails: Array.from(selected) }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        toast(data.message || "Bulk action completed");
+        setSelected(new Set());
+        fetchClients();
+      } else {
+        toast(data.error || "Bulk action failed", "error");
+      }
+    } finally {
+      setBulkLoading(false);
+    }
+  };
+
+  const toggleSelect = (email: string) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(email)) next.delete(email);
+      else next.add(email);
+      return next;
+    });
   };
 
   const handleCreate = async (e: React.FormEvent) => {
@@ -184,41 +319,137 @@ export default function ClientsPage() {
     });
   };
 
-  const handleDelete = async (email: string) => {
-    if (
-      !confirm(
-        `Are you sure you want to completely delete the account for ${email}? This cannot be undone.`,
-      )
-    ) {
+  const handlePasswordChange = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!passwordClient) return;
+
+    if (newPassword.length < 8) {
+      alert("Password must be at least 8 characters.");
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      alert("Passwords do not match.");
       return;
     }
 
     try {
-      const res = await fetch(`/api/admin/clients?email=${encodeURIComponent(email)}`, {
-        method: "DELETE",
+      const res = await fetch("/api/admin/clients", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: passwordClient.email,
+          password: newPassword,
+        }),
       });
       const data = await res.json();
       if (data.success) {
-        alert("Client deleted successfully");
+        alert("Password updated successfully");
+        setPasswordClient(null);
+        setNewPassword("");
+        setConfirmPassword("");
+        setShowNewPassword(false);
+        setShowConfirmPassword(false);
+      } else {
+        alert("Password update failed: " + data.error);
+      }
+    } catch {
+      alert("Error updating password");
+    }
+  };
+
+  const openPasswordModal = (client: Client) => {
+    setPasswordClient(client);
+    setNewPassword("");
+    setConfirmPassword("");
+    setShowNewPassword(false);
+    setShowConfirmPassword(false);
+  };
+
+  const openPaymentModal = async (client: Client) => {
+    setPaymentClient(client);
+    setClientPayments([]);
+    setPaymentsError("");
+    setPaymentScreenshot(null);
+    setPaymentsLoading(true);
+
+    try {
+      const res = await fetch(
+        `/api/admin/payments?email=${encodeURIComponent(client.email)}`,
+        { credentials: "same-origin" },
+      );
+      const raw = await res.text();
+      let data: { success?: boolean; payments?: ClientPayment[]; error?: string } = {};
+
+      try {
+        data = raw ? JSON.parse(raw) : {};
+      } catch {
+        setPaymentsError(raw.trim().slice(0, 180) || "Failed to load payments.");
+        return;
+      }
+
+      if (data.success && data.payments) {
+        setClientPayments(data.payments);
+      } else {
+        setPaymentsError(data.error || "Failed to load payments.");
+      }
+    } catch {
+      setPaymentsError("Failed to load payments.");
+    } finally {
+      setPaymentsLoading(false);
+    }
+  };
+
+  const loadPaymentScreenshot = async (payment: ClientPayment) => {
+    if (!payment.hasScreenshot) return;
+
+    try {
+      const res = await fetch(`/api/admin/payments?id=${encodeURIComponent(payment.id)}`, {
+        credentials: "same-origin",
+      });
+      const data = await res.json();
+      if (data.success && data.payment?.screenshot) {
+        setPaymentScreenshot(String(data.payment.screenshot));
+      } else {
+        alert(data.error || "Could not load payment screenshot.");
+      }
+    } catch {
+      alert("Could not load payment screenshot.");
+    }
+  };
+
+  const confirmDeleteClient = async () => {
+    if (!deleteClient) return;
+
+    setDeletingClient(true);
+    try {
+      const res = await fetch(
+        `/api/admin/clients?email=${encodeURIComponent(deleteClient.email)}`,
+        { method: "DELETE" },
+      );
+      const data = await res.json();
+      if (data.success) {
+        setDeleteClient(null);
         fetchClients();
       } else {
         alert("Delete failed: " + data.error);
       }
     } catch {
       alert("Error deleting client");
+    } finally {
+      setDeletingClient(false);
     }
   };
 
   if (loading) {
-    return (
-      <div className="flex flex-col items-center justify-center min-h-[50vh] gap-4">
-        <div className="h-16 w-16 animate-spin rounded-full border-4 border-cyan-500/20 border-t-cyan-400 shadow-[0_0_15px_rgba(34,211,238,0.5)]" />
-        <span className="text-sm font-bold tracking-widest text-cyan-400 uppercase animate-pulse">Loading...</span>
-      </div>
-    );
+    return <AdminLoadingState />;
   }
 
   const filteredClients = clients.filter((c) => {
+    if (searchQuery) {
+      const q = searchQuery.toLowerCase();
+      if (!c.email.toLowerCase().includes(q)) return false;
+    }
+
     if (filter === "all") return true;
     if (filter === "pending") return c.subscriptionPlan === "pending";
     if (filter === "paid") {
@@ -227,6 +458,7 @@ export default function ClientsPage() {
     if (filter === "trial") {
       return !c.subscriptionPlan || c.subscriptionPlan === "none" || c.subscriptionPlan === "trial";
     }
+    if (filter === "suspended") return Boolean(c.suspended);
     return true;
   });
 
@@ -235,35 +467,109 @@ export default function ClientsPage() {
     if (filter === "pending") return "Pending Approvals";
     if (filter === "paid") return "Paid Accounts";
     if (filter === "trial") return "Trial Accounts";
+    if (filter === "suspended") return "Suspended Clients";
     return "Clients";
   };
 
+  const exportCsv = () => {
+    const rows = filteredClients.map((c) =>
+      [c.email, c.name || "", c.subscriptionPlan || "", c.trialExpiresAt || "", c.subscriptionExpiresAt || ""].join(","),
+    );
+    const csv = ["email,name,plan,trial_expires,plan_expires", ...rows].join("\n");
+    const blob = new Blob([csv], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "clients.csv";
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   const renderActions = (client: Client) => (
-    <>
-      <button
-        type="button"
-        onClick={() => setEditing(client)}
-        className="flex-1 sm:flex-none rounded-lg bg-cyan-500/10 px-3 py-2 text-xs font-bold text-cyan-400 transition-colors hover:bg-cyan-500/20"
-      >
-        Edit
-      </button>
-      <button
-        type="button"
-        onClick={() => handleDelete(client.email)}
-        className="flex-1 sm:flex-none rounded-lg bg-rose-500/10 px-3 py-2 text-xs font-bold text-rose-400 transition-colors hover:bg-rose-500/20"
-      >
-        Delete
-      </button>
-    </>
+    <div className="inline-flex flex-nowrap items-center justify-end gap-1.5 shrink-0">
+      <ActionIconButton
+        label="Edit client"
+        icon={Pencil}
+        onClick={() =>
+          setEditing({
+            ...client,
+            subscriptionPlan: normalizePlanValue(client.subscriptionPlan),
+          })
+        }
+        bgClass="bg-cyan-500/10 hover:bg-cyan-500/20"
+        colorClass="text-cyan-400"
+      />
+      <ActionIconButton
+        label="Change password"
+        icon={KeyRound}
+        onClick={() => openPasswordModal(client)}
+        bgClass="bg-violet-500/10 hover:bg-violet-500/20"
+        colorClass="text-violet-400"
+      />
+      <ActionIconButton
+        label="View payments"
+        icon={CreditCard}
+        onClick={() => openPaymentModal(client)}
+        bgClass="bg-emerald-500/10 hover:bg-emerald-500/20"
+        colorClass="text-emerald-400"
+      />
+      <ActionIconButton
+        label="Delete client"
+        icon={Trash2}
+        onClick={() => setDeleteClient(client)}
+        bgClass="bg-rose-500/10 hover:bg-rose-500/20"
+        colorClass="text-rose-400"
+      />
+    </div>
   );
 
   const columns: AdminTableColumn<Client>[] = [
+    {
+      key: "select",
+      header: "",
+      render: (client) => (
+        <input
+          type="checkbox"
+          checked={selected.has(client.email)}
+          onChange={() => toggleSelect(client.email)}
+          aria-label={`Select ${client.email}`}
+        />
+      ),
+    },
+    {
+      key: "name",
+      header: "Name",
+      render: (client) => (
+        <Link
+          href={`/admin/clients/${encodeURIComponent(client.email)}`}
+          className="font-medium text-cyan-400 hover:underline block truncate max-w-[150px] md:max-w-[200px]"
+          title={client.name}
+        >
+          {client.name || "N/A"}
+        </Link>
+      ),
+    },
     {
       key: "email",
       header: "Email",
       className: "w-full",
       render: (client) => (
-        <span className="font-medium text-slate-200 block truncate max-w-[200px] md:max-w-[300px]" title={client.email}>{client.email}</span>
+        <Link
+          href={`/admin/clients/${encodeURIComponent(client.email)}`}
+          className="text-slate-400 hover:text-cyan-400 block truncate max-w-[200px] md:max-w-[300px]"
+          title={client.email}
+        >
+          {client.email}
+        </Link>
+      ),
+    },
+    {
+      key: "activated",
+      header: "Activate",
+      render: (client) => (
+        <span className="whitespace-nowrap text-emerald-400 font-medium">
+          {client.createdAt ? new Date(client.createdAt).toLocaleDateString() : "N/A"}
+        </span>
       ),
     },
     {
@@ -271,9 +577,7 @@ export default function ClientsPage() {
       header: "Plan",
       className: "uppercase font-bold text-xs tracking-wider",
       render: (client) => {
-        let plan = client.subscriptionPlan || "trial";
-        if (plan === "nano") plan = "solo";
-        if (plan === "ultra") plan = "team";
+        const plan = normalizePlanValue(client.subscriptionPlan);
         return plan;
       },
     },
@@ -281,16 +585,16 @@ export default function ClientsPage() {
       key: "trial",
       header: "Trial Expiry",
       render: (client) => (
-        <span className="whitespace-nowrap text-slate-400">
+        <span className="whitespace-nowrap text-rose-400 font-medium">
           {client.trialExpiresAt ? new Date(client.trialExpiresAt).toLocaleDateString() : "N/A"}
         </span>
       ),
     },
     {
       key: "sub",
-      header: "Sub Expiry",
+      header: "Plan Expiry",
       render: (client) => (
-        <span className="whitespace-nowrap text-slate-400">
+        <span className="whitespace-nowrap text-rose-400 font-medium">
           {client.subscriptionExpiresAt
             ? new Date(client.subscriptionExpiresAt).toLocaleDateString()
             : "N/A"}
@@ -301,43 +605,55 @@ export default function ClientsPage() {
       key: "actions",
       header: "Actions",
       headerClassName: "text-right",
-      className: "text-right",
+      className: "text-right whitespace-nowrap w-[1%]",
       hideOnMobile: true,
-      render: (client) => (
-        <div className="flex justify-end gap-2 md:gap-3">{renderActions(client)}</div>
-      ),
+      render: (client) => renderActions(client),
     },
   ];
 
   return (
-    <div className="relative flex-1 flex flex-col min-w-0 max-w-full overflow-x-hidden animate-in fade-in slide-in-from-bottom-4 duration-700">
-      <div className="absolute top-0 left-1/4 w-96 h-96 bg-cyan-500/5 rounded-full blur-[120px] pointer-events-none -z-10" />
-
-      <AdminPageHeader
-        title="Client Manager"
-        description="Manage all of your active, pending, and trial client accounts."
-        actions={
-          <div className="flex flex-col sm:flex-row gap-3 w-full sm:w-auto">
-            <button
-              type="button"
-              onClick={() => {
-                setNewClient(emptyNewClient());
-                setCreating(true);
-              }}
-              className="inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-cyan-400 to-emerald-400 px-4 py-2.5 text-sm font-bold text-slate-950 transition-all shadow-[0_0_15px_rgba(34,211,238,0.3)] hover:shadow-[0_0_20px_rgba(34,211,238,0.5)]"
-            >
-              <Plus size={16} />
-              Add Client
-            </button>
-            <AdminFilterPills options={FILTERS} value={filter} onChange={setFilter} />
-          </div>
-        }
-      />
+    <AdminPageLayout
+      scrollContent={false}
+      header={
+        <AdminPageHeader
+          title="Client Manager"
+          description="Manage all of your active, pending, and trial client accounts."
+          actions={
+            <div className="flex w-full flex-col gap-3 sm:w-auto sm:flex-row">
+              <button
+                type="button"
+                onClick={() => {
+                  setNewClient(emptyNewClient());
+                  setCreating(true);
+                }}
+                className="inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-cyan-400 to-emerald-400 px-4 py-2.5 text-sm font-bold text-slate-950 transition-all shadow-[0_0_15px_rgba(34,211,238,0.3)] hover:shadow-[0_0_20px_rgba(34,211,238,0.5)]"
+              >
+                <Plus size={16} />
+                Add Client
+              </button>
+              <AdminFilterPills options={FILTERS} value={filter} onChange={setFilter} />
+            </div>
+          }
+        />
+      }
+    >
 
       {error && (
         <div className="mb-6 p-4 bg-red-500/10 border border-red-500/20 text-red-400 rounded-xl flex items-center gap-3">
           <AlertCircle size={20} className="shrink-0" />
           <span className="text-sm">{error}</span>
+        </div>
+      )}
+
+      {selected.size > 0 && (
+        <div className="mb-4 flex flex-wrap items-center gap-2 rounded-xl border border-cyan-500/20 bg-cyan-500/5 px-4 py-3">
+          <span className="text-sm font-semibold text-cyan-200">{selected.size} selected</span>
+          <button type="button" disabled={bulkLoading} onClick={() => runBulk("extend_sub_30")} className="rounded-lg border border-white/10 px-3 py-1.5 text-xs font-bold text-slate-300 hover:bg-white/5">+30 days</button>
+          <button type="button" disabled={bulkLoading} onClick={() => runBulk("extend_trial_7")} className="rounded-lg border border-white/10 px-3 py-1.5 text-xs font-bold text-slate-300 hover:bg-white/5">+7 trial</button>
+          <button type="button" disabled={bulkLoading} onClick={() => runBulk("suspend")} className="rounded-lg border border-rose-500/20 px-3 py-1.5 text-xs font-bold text-rose-300 hover:bg-rose-500/10">Suspend</button>
+          <button type="button" onClick={exportCsv} className="ml-auto inline-flex items-center gap-1 rounded-lg border border-white/10 px-3 py-1.5 text-xs font-bold text-slate-300 hover:bg-white/5">
+            <Download className="w-3.5 h-3.5" /> Export CSV
+          </button>
         </div>
       )}
 
@@ -349,12 +665,60 @@ export default function ClientsPage() {
         rowKey={(client) => client.email}
         emptyState={<EmptyClients />}
         renderMobileActions={renderActions}
+        headerActions={
+          <div className="relative w-full sm:w-64">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+            <input
+              type="text"
+              placeholder="Search clients..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full bg-slate-900/50 border border-white/10 rounded-xl pl-9 pr-4 py-2 text-sm text-slate-200 placeholder:text-slate-500 focus:outline-none focus:border-cyan-500/50 focus:ring-1 focus:ring-cyan-500/50 transition-all"
+            />
+          </div>
+        }
       />
 
+      {deleteClient && (
+        <AdminGlassModal open={Boolean(deleteClient)} maxWidth="md">
+          <AdminGlassPanel accent="rose">
+            <div className="flex flex-col items-center text-center">
+              <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-rose-500/10 ring-1 ring-rose-500/25 backdrop-blur-sm">
+                <Trash2 className="h-7 w-7 text-rose-400" />
+              </div>
+              <h2 className="text-xl sm:text-2xl font-black text-white">Delete Client?</h2>
+              <p className="mt-3 text-sm text-slate-400 leading-relaxed">
+                Are you sure you want to completely delete the account for
+              </p>
+              <p className="mt-2 text-sm font-semibold text-white break-all">{deleteClient.email}</p>
+              <p className="mt-3 text-sm text-rose-300/90">This action cannot be undone.</p>
+
+              <div className="mt-8 flex w-full flex-col-reverse sm:flex-row gap-3">
+                <button
+                  type="button"
+                  disabled={deletingClient}
+                  onClick={() => setDeleteClient(null)}
+                  className="flex-1 rounded-xl border border-white/15 bg-white/[0.06] px-4 py-3 text-sm font-bold text-slate-300 backdrop-blur-sm transition-all hover:bg-white/10 disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  disabled={deletingClient}
+                  onClick={confirmDeleteClient}
+                  className="flex-1 rounded-xl bg-gradient-to-r from-rose-500 to-red-500 px-4 py-3 text-sm font-bold text-white transition-all shadow-[0_0_20px_rgba(244,63,94,0.35)] hover:shadow-[0_0_28px_rgba(244,63,94,0.5)] disabled:opacity-60"
+                >
+                  {deletingClient ? "Deleting..." : "Delete Client"}
+                </button>
+              </div>
+            </div>
+          </AdminGlassPanel>
+        </AdminGlassModal>
+      )}
+
       {creating && (
-        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-[#080810]/80 backdrop-blur-md p-4">
-          <div className="w-full max-w-md max-h-[90dvh] overflow-y-auto rounded-3xl border border-white/5 bg-white/[0.02] p-6 sm:p-8 shadow-2xl backdrop-blur-xl relative overflow-x-hidden">
-            <div className="absolute top-0 right-0 w-32 h-32 bg-emerald-500/10 rounded-full blur-3xl -mr-10 -mt-10 pointer-events-none" />
+        <AdminGlassModal open={creating} align="end" scrollable onClose={() => setCreating(false)} closeOnBackdrop>
+          <AdminGlassPanel accent="emerald">
             <h2 className="mb-6 text-xl sm:text-2xl font-black text-white relative z-10">
               Add New Client
             </h2>
@@ -395,55 +759,26 @@ export default function ClientsPage() {
               </div>
               <div>
                 <label className="mb-2 block text-sm font-bold text-slate-400">Plan</label>
-                <select
+                <AdminPlanSelect
                   value={newClient.subscriptionPlan}
-                  onChange={(e) => handlePlanChange(e.target.value, "create")}
-                  className="w-full rounded-xl border border-white/10 bg-[#080810] px-4 py-3 text-white outline-none focus:border-cyan-400 focus:ring-1 focus:ring-cyan-400 transition-all appearance-none"
-                >
-                  {PLAN_OPTIONS.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
+                  onChange={(plan) => handlePlanChange(plan, "create")}
+                />
               </div>
               <div>
                 <label className="mb-2 block text-sm font-bold text-slate-400">Trial Expiry</label>
-                <input
-                  type="datetime-local"
-                  value={
-                    newClient.trialExpiresAt
-                      ? new Date(newClient.trialExpiresAt).toISOString().slice(0, 16)
-                      : ""
-                  }
-                  onChange={(e) => {
-                    const d = new Date(e.target.value);
-                    setNewClient({
-                      ...newClient,
-                      trialExpiresAt: isNaN(d.getTime()) ? "" : d.toISOString(),
-                    });
-                  }}
-                  className="w-full rounded-xl border border-white/10 bg-[#080810] px-4 py-3 text-white outline-none focus:border-cyan-400 focus:ring-1 focus:ring-cyan-400 transition-all"
+                <AdminDateTimeInput
+                  value={newClient.trialExpiresAt}
+                  onChange={(trialExpiresAt) => setNewClient({ ...newClient, trialExpiresAt })}
                 />
               </div>
               <div>
                 <label className="mb-2 block text-sm font-bold text-slate-400">Subscription Expiry</label>
-                <input
-                  type="datetime-local"
-                  value={
-                    newClient.subscriptionExpiresAt
-                      ? new Date(newClient.subscriptionExpiresAt).toISOString().slice(0, 16)
-                      : ""
+                <AdminDateTimeInput
+                  value={newClient.subscriptionExpiresAt}
+                  onChange={(subscriptionExpiresAt) =>
+                    setNewClient({ ...newClient, subscriptionExpiresAt })
                   }
-                  onChange={(e) => {
-                    const d = new Date(e.target.value);
-                    setNewClient({
-                      ...newClient,
-                      subscriptionExpiresAt: isNaN(d.getTime()) ? "" : d.toISOString(),
-                    });
-                  }}
                   disabled={!PAID_PLANS.includes(newClient.subscriptionPlan)}
-                  className="w-full rounded-xl border border-white/10 bg-[#080810] px-4 py-3 text-white outline-none focus:border-cyan-400 focus:ring-1 focus:ring-cyan-400 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                 />
               </div>
 
@@ -466,18 +801,247 @@ export default function ClientsPage() {
                 </button>
               </div>
             </form>
-          </div>
-        </div>
+          </AdminGlassPanel>
+        </AdminGlassModal>
+      )}
+
+      {passwordClient && (
+        <AdminGlassModal
+          open={Boolean(passwordClient)}
+          align="end"
+          scrollable
+          onClose={() => setPasswordClient(null)}
+          closeOnBackdrop
+        >
+          <AdminGlassPanel accent="violet">
+            <h2 className="mb-2 text-xl sm:text-2xl font-black text-white relative z-10">
+              Change Password
+            </h2>
+            <p className="mb-6 text-sm text-slate-400 relative z-10 break-all">
+              Set a new login password for {passwordClient.email}
+            </p>
+            <form onSubmit={handlePasswordChange} className="space-y-4 relative z-10">
+              <div>
+                <label className="mb-2 block text-sm font-bold text-slate-400">New Password</label>
+                <div className="relative">
+                  <input
+                    type={showNewPassword ? "text" : "password"}
+                    required
+                    minLength={8}
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    className="w-full rounded-xl border border-white/10 bg-[#080810] px-4 py-3 pr-11 text-white outline-none focus:border-cyan-400 focus:ring-1 focus:ring-cyan-400 transition-all"
+                    placeholder="Minimum 8 characters"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowNewPassword((value) => !value)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 rounded p-1 text-slate-500 hover:text-slate-300"
+                    aria-label={showNewPassword ? "Hide password" : "Show password"}
+                  >
+                    {showNewPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
+                </div>
+              </div>
+              <div>
+                <label className="mb-2 block text-sm font-bold text-slate-400">Confirm Password</label>
+                <div className="relative">
+                  <input
+                    type={showConfirmPassword ? "text" : "password"}
+                    required
+                    minLength={8}
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    className="w-full rounded-xl border border-white/10 bg-[#080810] px-4 py-3 pr-11 text-white outline-none focus:border-cyan-400 focus:ring-1 focus:ring-cyan-400 transition-all"
+                    placeholder="Re-enter password"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowConfirmPassword((value) => !value)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 rounded p-1 text-slate-500 hover:text-slate-300"
+                    aria-label={showConfirmPassword ? "Hide password" : "Show password"}
+                  >
+                    {showConfirmPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
+                </div>
+              </div>
+
+              <div className="mt-8 flex flex-col-reverse sm:flex-row gap-3 sm:gap-4">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPasswordClient(null);
+                    setNewPassword("");
+                    setConfirmPassword("");
+                  }}
+                  className="flex-1 rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-bold text-slate-300 transition-all hover:bg-white/10"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="flex-1 rounded-xl bg-gradient-to-r from-violet-400 to-cyan-400 px-4 py-3 text-sm font-bold text-slate-950 transition-all shadow-[0_0_15px_rgba(139,92,246,0.3)] hover:shadow-[0_0_20px_rgba(139,92,246,0.5)]"
+                >
+                  Update Password
+                </button>
+              </div>
+            </form>
+          </AdminGlassPanel>
+        </AdminGlassModal>
+      )}
+
+      {paymentClient && (
+        <AdminGlassModal
+          open={Boolean(paymentClient)}
+          maxWidth="2xl"
+          align="end"
+          scrollable
+          onClose={() => {
+            setPaymentClient(null);
+            setClientPayments([]);
+            setPaymentsError("");
+            setPaymentScreenshot(null);
+          }}
+          closeOnBackdrop
+        >
+          <AdminGlassPanel accent="emerald">
+            <div className="mb-6 flex items-start justify-between gap-4">
+              <div className="min-w-0">
+                <h2 className="text-xl sm:text-2xl font-black text-white">Payment Details</h2>
+                <p className="mt-1 text-sm text-slate-400 break-all">{paymentClient.email}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setPaymentClient(null);
+                  setClientPayments([]);
+                  setPaymentsError("");
+                  setPaymentScreenshot(null);
+                }}
+                className="rounded-lg p-2 text-slate-400 transition-colors hover:bg-white/5 hover:text-white"
+                aria-label="Close payment details"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="relative z-10 space-y-4">
+              {paymentsLoading && (
+                <div className="flex items-center justify-center py-10">
+                  <div className="h-10 w-10 animate-spin rounded-full border-4 border-emerald-500/20 border-t-emerald-400" />
+                </div>
+              )}
+
+              {!paymentsLoading && paymentsError && (
+                <div className="rounded-xl border border-red-500/20 bg-red-500/10 p-4 text-sm text-red-400">
+                  {paymentsError}
+                </div>
+              )}
+
+              {!paymentsLoading && !paymentsError && clientPayments.length === 0 && (
+                <div className="rounded-xl border border-white/10 bg-white/[0.02] p-8 text-center">
+                  <CreditCard className="mx-auto mb-3 h-8 w-8 text-slate-500" />
+                  <p className="font-semibold text-slate-300">No payments found</p>
+                  <p className="mt-1 text-sm text-slate-500">This client has not submitted any manual payments yet.</p>
+                </div>
+              )}
+
+              {!paymentsLoading &&
+                clientPayments.map((payment) => (
+                  <div
+                    key={payment.id}
+                    className="rounded-2xl border border-white/10 bg-[#080810]/80 p-4 sm:p-5 space-y-3"
+                  >
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <PaymentStatusBadge status={payment.status} />
+                      <span className="text-xs font-bold uppercase tracking-wider text-cyan-400">
+                        {normalizePlanValue(payment.planId)}
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+                      <div>
+                        <p className="text-xs font-bold uppercase tracking-wide text-slate-500">Transaction ID</p>
+                        <p className="mt-1 font-mono text-slate-200 break-all">{payment.transactionId || "N/A"}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs font-bold uppercase tracking-wide text-slate-500">Submitted</p>
+                        <p className="mt-1 text-slate-200">
+                          {payment.createdAt ? new Date(payment.createdAt).toLocaleString() : "N/A"}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-xs font-bold uppercase tracking-wide text-slate-500">Processed</p>
+                        <p className="mt-1 text-slate-200">
+                          {payment.processedAt ? new Date(payment.processedAt).toLocaleString() : "Not processed"}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-xs font-bold uppercase tracking-wide text-slate-500">Amount</p>
+                        <p className="mt-1 font-semibold text-emerald-400">
+                          {payment.planId === "team" ? "1,999 PKR" : payment.planId === "solo" ? "999 PKR" : "—"}
+                        </p>
+                      </div>
+                    </div>
+
+                    {payment.hasScreenshot && (
+                      <button
+                        type="button"
+                        onClick={() => loadPaymentScreenshot(payment)}
+                        className="inline-flex items-center gap-2 rounded-lg bg-emerald-500/10 px-3 py-2 text-xs font-bold text-emerald-400 transition-colors hover:bg-emerald-500/20"
+                      >
+                        <ImageIcon size={14} />
+                        View Screenshot
+                      </button>
+                    )}
+                  </div>
+                ))}
+            </div>
+          </AdminGlassPanel>
+        </AdminGlassModal>
+      )}
+
+      {paymentScreenshot && (
+        <AdminGlassModal
+          open={Boolean(paymentScreenshot)}
+          maxWidth="lg"
+          zIndexClass="z-[80]"
+          onClose={() => setPaymentScreenshot(null)}
+          closeOnBackdrop
+        >
+          <AdminGlassPanel accent="slate" className="p-3 sm:p-4">
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setPaymentScreenshot(null)}
+                className="absolute -top-2 -right-2 z-10 rounded-full border border-white/10 bg-black/60 p-2 text-white backdrop-blur-md hover:bg-black/80"
+                aria-label="Close screenshot"
+              >
+                <X size={18} />
+              </button>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={paymentScreenshot}
+                alt="Payment screenshot"
+                className="max-h-[85dvh] w-full rounded-2xl border border-white/10 object-contain bg-black/40"
+              />
+            </div>
+          </AdminGlassPanel>
+        </AdminGlassModal>
       )}
 
       {editing && (
-        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-[#080810]/80 backdrop-blur-md p-4">
-          <div className="w-full max-w-md max-h-[90dvh] overflow-y-auto rounded-3xl border border-white/5 bg-white/[0.02] p-6 sm:p-8 shadow-2xl backdrop-blur-xl relative overflow-x-hidden">
-            <div className="absolute top-0 right-0 w-32 h-32 bg-cyan-500/10 rounded-full blur-3xl -mr-10 -mt-10 pointer-events-none" />
-            <h2 className="mb-6 text-xl sm:text-2xl font-black text-white relative z-10">
+        <AdminGlassModal
+          open={Boolean(editing)}
+          align="end"
+          onClose={() => setEditing(null)}
+          closeOnBackdrop
+        >
+          <AdminGlassPanel accent="cyan">
+            <h2 className="mb-6 text-xl sm:text-2xl font-black text-white">
               Edit Client
             </h2>
-            <form onSubmit={handleUpdate} className="space-y-4 relative z-10">
+            <form onSubmit={handleUpdate} className="space-y-4">
               <div>
                 <label className="mb-2 block text-sm font-bold text-slate-400">Email</label>
                 <input
@@ -488,61 +1052,70 @@ export default function ClientsPage() {
                 />
               </div>
               <div>
+                <label className="mb-2 block text-sm font-bold text-slate-400">Name</label>
+                <input
+                  type="text"
+                  value={editing.name || ""}
+                  onChange={(e) => setEditing({ ...editing, name: e.target.value })}
+                  className="w-full rounded-xl border border-white/10 bg-[#080810] px-4 py-3 text-slate-200 outline-none focus:border-cyan-500/50"
+                />
+              </div>
+              <div>
                 <label className="mb-2 block text-sm font-bold text-slate-400">Plan</label>
-                <select
+                <AdminPlanSelect
                   value={editing.subscriptionPlan || "trial"}
-                  onChange={(e) => handlePlanChange(e.target.value, "edit")}
-                  className="w-full rounded-xl border border-white/10 bg-[#080810] px-4 py-3 text-white outline-none focus:border-cyan-400 focus:ring-1 focus:ring-cyan-400 transition-all appearance-none"
-                >
-                  {PLAN_OPTIONS.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
+                  onChange={(plan) => handlePlanChange(plan, "edit")}
+                />
               </div>
               <div>
                 <label className="mb-2 block text-sm font-bold text-slate-400">
                   Trial Expiry
                 </label>
-                <input
-                  type="datetime-local"
-                  value={
-                    editing.trialExpiresAt
-                      ? new Date(editing.trialExpiresAt).toISOString().slice(0, 16)
-                      : ""
-                  }
-                  onChange={(e) => {
-                    const d = new Date(e.target.value);
-                    setEditing({
-                      ...editing,
-                      trialExpiresAt: isNaN(d.getTime()) ? "" : d.toISOString(),
-                    });
-                  }}
-                  className="w-full rounded-xl border border-white/10 bg-[#080810] px-4 py-3 text-white outline-none focus:border-cyan-400 focus:ring-1 focus:ring-cyan-400 transition-all"
+                <AdminDateTimeInput
+                  value={editing.trialExpiresAt || ""}
+                  onChange={(trialExpiresAt) => setEditing({ ...editing, trialExpiresAt })}
                 />
               </div>
               <div>
                 <label className="mb-2 block text-sm font-bold text-slate-400">
                   Subscription Expiry
                 </label>
-                <input
-                  type="datetime-local"
-                  value={
-                    editing.subscriptionExpiresAt
-                      ? new Date(editing.subscriptionExpiresAt).toISOString().slice(0, 16)
-                      : ""
+                <AdminDateTimeInput
+                  value={editing.subscriptionExpiresAt || ""}
+                  onChange={(subscriptionExpiresAt) =>
+                    setEditing({ ...editing, subscriptionExpiresAt })
                   }
-                  onChange={(e) => {
-                    const d = new Date(e.target.value);
-                    setEditing({
-                      ...editing,
-                      subscriptionExpiresAt: isNaN(d.getTime()) ? "" : d.toISOString(),
-                    });
-                  }}
-                  className="w-full rounded-xl border border-white/10 bg-[#080810] px-4 py-3 text-white outline-none focus:border-cyan-400 focus:ring-1 focus:ring-cyan-400 transition-all"
                 />
               </div>
+              <div>
+                <label className="mb-2 block text-sm font-bold text-slate-400">Assigned Slot</label>
+                <select
+                  value={editing.assignedSlot || "C1"}
+                  onChange={(e) => setEditing({ ...editing, assignedSlot: e.target.value })}
+                  className="w-full rounded-xl border border-white/10 bg-[#080810] px-4 py-3 text-slate-200"
+                >
+                  {["C1", "C2", "C3", "C4", "C5"].map((s) => (
+                    <option key={s} value={s}>{s}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="mb-2 block text-sm font-bold text-slate-400">Admin Notes</label>
+                <textarea
+                  value={editing.adminNotes || ""}
+                  onChange={(e) => setEditing({ ...editing, adminNotes: e.target.value })}
+                  rows={3}
+                  className="w-full rounded-xl border border-white/10 bg-[#080810] px-4 py-3 text-slate-200 resize-none outline-none"
+                />
+              </div>
+              <label className="flex items-center gap-2 text-sm text-slate-300">
+                <input
+                  type="checkbox"
+                  checked={Boolean(editing.suspended)}
+                  onChange={(e) => setEditing({ ...editing, suspended: e.target.checked })}
+                />
+                Suspended
+              </label>
 
               <div className="mt-8 flex flex-col-reverse sm:flex-row gap-3 sm:gap-4">
                 <button
@@ -560,9 +1133,9 @@ export default function ClientsPage() {
                 </button>
               </div>
             </form>
-          </div>
-        </div>
+          </AdminGlassPanel>
+        </AdminGlassModal>
       )}
-    </div>
+    </AdminPageLayout>
   );
 }

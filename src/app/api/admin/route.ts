@@ -9,6 +9,7 @@ import {
   verifyAdminPassword,
   ADMIN_COOKIE,
 } from "@/lib/admin";
+import { logAdminActivity } from "@/lib/admin-activity";
 
 export async function GET() {
   const ok = await isAdminUiRequest();
@@ -52,6 +53,7 @@ export async function POST(request: NextRequest) {
       sync_key: syncKey,
     });
     response.cookies.set(adminCookieOptions(token));
+    await logAdminActivity({ action: "admin_login" });
     return response;
   } catch (error) {
     console.error("Admin unlock error:", error);
@@ -65,6 +67,7 @@ export async function POST(request: NextRequest) {
 export async function DELETE() {
   try {
     await revokeAdminSyncKey();
+    await logAdminActivity({ action: "admin_logout" });
     const response = NextResponse.json({ success: true });
     response.cookies.set({
       name: ADMIN_COOKIE,

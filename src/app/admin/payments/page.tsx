@@ -8,16 +8,27 @@ import {
   AlertCircle,
   ImageIcon,
   X,
+  Search,
+  RotateCcw,
+  type LucideIcon,
 } from "lucide-react";
 import { AdminDataTable, type AdminTableColumn } from "@/components/admin-data-table";
 import { AdminFilterPills } from "@/components/admin-filter-pills";
 import { AdminPageHeader } from "@/components/admin-page-header";
+import { AdminPageLayout } from "@/components/admin-page-layout";
+import { AdminLoadingState } from "@/components/admin-loading-state";
+import { AdminGlassModal, AdminGlassPanel } from "@/components/admin-glass-modal";
+import { PlanBadge } from "@/components/plan-badge";
+import { senderPaymentLabel } from "@/lib/sender-payment-options";
 
 type Payment = {
   id: string;
   userEmail: string;
+  userName?: string | null;
   planId: string;
   transactionId: string;
+  senderPaymentSource?: string;
+  senderPaymentSourceLabel?: string;
   status: "pending" | "approved" | "rejected" | "refunded";
   createdAt: string;
   processedAt?: string;
@@ -27,6 +38,52 @@ type Payment = {
 
 const FILTERS = ["all", "pending", "approved", "rejected", "refunded"] as const;
 type Filter = (typeof FILTERS)[number];
+type PaymentAction = "approve" | "reject" | "refund";
+
+const PAYMENT_ACTION_CONFIG: Record<
+  PaymentAction,
+  {
+    title: string;
+    description: string;
+    confirmLabel: string;
+    processingLabel: string;
+    icon: LucideIcon;
+    iconWrapClass: string;
+    iconClass: string;
+    buttonClass: string;
+  }
+> = {
+  approve: {
+    title: "Approve Payment?",
+    description: "This will activate the client's subscription plan.",
+    confirmLabel: "Approve Payment",
+    processingLabel: "Approving...",
+    icon: CheckCircle2,
+    iconWrapClass: "bg-emerald-500/10 ring-emerald-500/20",
+    iconClass: "text-emerald-400",
+    buttonClass: "from-emerald-500 to-green-500",
+  },
+  reject: {
+    title: "Reject Payment?",
+    description: "The client will be notified that their payment was rejected.",
+    confirmLabel: "Reject Payment",
+    processingLabel: "Rejecting...",
+    icon: XCircle,
+    iconWrapClass: "bg-rose-500/10 ring-rose-500/20",
+    iconClass: "text-rose-400",
+    buttonClass: "from-rose-500 to-red-500",
+  },
+  refund: {
+    title: "Refund Payment?",
+    description: "This will revoke the client's subscription access.",
+    confirmLabel: "Refund Payment",
+    processingLabel: "Refunding...",
+    icon: RotateCcw,
+    iconWrapClass: "bg-slate-500/10 ring-slate-500/20",
+    iconClass: "text-slate-300",
+    buttonClass: "from-slate-500 to-slate-600",
+  },
+};
 
 function PaymentStatus({ status }: { status: Payment["status"] }) {
   if (status === "pending") {
@@ -53,43 +110,6 @@ function PaymentStatus({ status }: { status: Payment["status"] }) {
   return (
     <span className="inline-flex items-center gap-1.5 text-red-400 bg-red-400/10 px-2.5 py-1 rounded-full text-xs font-semibold">
       <XCircle size={12} /> Rejected
-    </span>
-  );
-}
-
-function PlanBadge({ planId }: { planId: string }) {
-  const normalized = (planId || "").toLowerCase();
-  
-  let label = planId;
-  let bgClass = "bg-white/5";
-  let borderClass = "border-white/10";
-  let textClass = "text-slate-300";
-
-  // Trial / Free
-  if (normalized.includes("trial") || normalized === "free") {
-    label = "Trial";
-    bgClass = "bg-slate-500/10";
-    borderClass = "border-slate-500/20";
-    textClass = "text-slate-300";
-  } 
-  // Solo / Nano / Studio
-  else if (normalized.includes("solo") || normalized === "nano" || normalized === "studio") {
-    label = "Solo";
-    bgClass = "bg-cyan-500/10";
-    borderClass = "border-cyan-500/20";
-    textClass = "text-cyan-400";
-  } 
-  // Team
-  else if (normalized.includes("ultra") || normalized === "team") {
-    label = "Team";
-    bgClass = "bg-violet-500/10";
-    borderClass = "border-violet-500/20";
-    textClass = "text-violet-400";
-  }
-
-  return (
-    <span className={`inline-flex px-2.5 py-1 rounded-md border text-xs font-bold uppercase tracking-wider ${bgClass} ${borderClass} ${textClass}`}>
-      {label}
     </span>
   );
 }
@@ -121,8 +141,24 @@ export default function PaymentsPage() {
   const [error, setError] = useState("");
   const [selectedScreenshot, setSelectedScreenshot] = useState<string | null>(null);
   const [filter, setFilter] = useState<Filter>("all");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [pendingAction, setPendingAction] = useState<{
+    payment: Payment;
+    action: PaymentAction;
+  } | null>(null);
+  const [processingAction, setProcessingAction] = useState(false);
+  const [actionError, setActionError] = useState("");
 
   const filteredPayments = payments.filter((p) => {
+    if (searchQuery) {
+      const q = searchQuery.toLowerCase();
+      const matchesEmail = p.userEmail?.toLowerCase().includes(q);
+      const matchesTransaction = p.transactionId?.toLowerCase().includes(q);
+      const senderLabel = (p.senderPaymentSourceLabel || senderPaymentLabel(p.senderPaymentSource)).toLowerCase();
+      const matchesSender = senderLabel.includes(q);
+      if (!matchesEmail && !matchesTransaction && !matchesSender) return false;
+    }
+
     if (filter === "all") return true;
     return p.status === filter;
   });
@@ -201,25 +237,38 @@ export default function PaymentsPage() {
     fetchPayments();
   }, []);
 
-  const handleAction = async (paymentId: string, action: "approve" | "reject" | "refund") => {
-    if (!confirm(`Are you sure you want to ${action} this payment?`)) return;
+  const openActionConfirm = (payment: Payment, action: PaymentAction) => {
+    setActionError("");
+    setPendingAction({ payment, action });
+  };
+
+  const confirmPaymentAction = async () => {
+    if (!pendingAction) return;
+
+    setProcessingAction(true);
+    setActionError("");
 
     try {
       const res = await fetch("/api/admin/payments", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ paymentId, action }),
+        body: JSON.stringify({
+          paymentId: pendingAction.payment.id,
+          action: pendingAction.action,
+        }),
       });
       const data = await res.json();
 
       if (data.success) {
-        alert(`Payment ${action}d successfully`);
+        setPendingAction(null);
         fetchPayments();
       } else {
-        alert(data.error || "Something went wrong");
+        setActionError(data.error || "Something went wrong");
       }
     } catch {
-      alert("Failed to process payment");
+      setActionError("Failed to process payment");
+    } finally {
+      setProcessingAction(false);
     }
   };
 
@@ -231,14 +280,14 @@ export default function PaymentsPage() {
         <>
           <button
             type="button"
-            onClick={() => handleAction(payment.id, "approve")}
+            onClick={() => openActionConfirm(payment, "approve")}
             className="flex-1 sm:flex-none px-3 py-2 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/20 rounded-lg text-xs font-bold transition-colors"
           >
             Approve
           </button>
           <button
             type="button"
-            onClick={() => handleAction(payment.id, "reject")}
+            onClick={() => openActionConfirm(payment, "reject")}
             className="flex-1 sm:flex-none px-3 py-2 bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20 rounded-lg text-xs font-bold transition-colors"
           >
             Reject
@@ -250,12 +299,15 @@ export default function PaymentsPage() {
     if (payment.status === "approved") {
       return (
         <div className="flex items-center gap-3">
-          <span className="text-slate-500 text-xs hidden md:inline">
-            Processed on {new Date(payment.processedAt!).toLocaleDateString()}
+          <span className="hidden md:inline-block text-right text-xs leading-tight text-slate-500">
+            <span className="block whitespace-nowrap">Processed on</span>
+            <span className="block whitespace-nowrap">
+              {new Date(payment.processedAt!).toLocaleDateString()}
+            </span>
           </span>
           <button
             type="button"
-            onClick={() => handleAction(payment.id, "refund")}
+            onClick={() => openActionConfirm(payment, "refund")}
             className="px-3 py-1.5 bg-slate-500/10 hover:bg-slate-500/20 text-slate-400 border border-slate-500/20 rounded-lg text-xs font-bold transition-colors"
           >
             Refund
@@ -265,16 +317,36 @@ export default function PaymentsPage() {
     }
 
     return (
-      <span className="text-slate-500 text-xs">
-        Processed on {new Date(payment.processedAt!).toLocaleDateString()}
+      <span className="inline-block text-right text-xs leading-tight text-slate-500">
+        <span className="block whitespace-nowrap">Processed on</span>
+        <span className="block whitespace-nowrap">
+          {new Date(payment.processedAt!).toLocaleDateString()}
+        </span>
       </span>
     );
   };
 
   const columns: AdminTableColumn<Payment>[] = [
     {
+      key: "name",
+      header: "Name",
+      render: (payment) => (
+        <span className="font-medium text-slate-200 block truncate max-w-[150px] md:max-w-[200px]" title={payment.userName || ""}>
+          {payment.userName || "N/A"}
+        </span>
+      ),
+    },
+    {
+      key: "user",
+      header: "Email",
+      className: "w-full",
+      render: (payment) => (
+        <span className="text-slate-400 block truncate max-w-[200px] md:max-w-[300px]" title={payment.userEmail}>{payment.userEmail}</span>
+      ),
+    },
+    {
       key: "date",
-      header: "Date",
+      header: "Activate",
       render: (payment) => (
         <span className="text-slate-400 whitespace-nowrap">
           {new Date(payment.createdAt).toLocaleDateString()}
@@ -282,17 +354,19 @@ export default function PaymentsPage() {
       ),
     },
     {
-      key: "user",
-      header: "User",
-      className: "w-full",
-      render: (payment) => (
-        <span className="text-white font-medium block truncate max-w-[200px] md:max-w-[300px]" title={payment.userEmail}>{payment.userEmail}</span>
-      ),
-    },
-    {
       key: "plan",
       header: "Plan",
       render: (payment) => <PlanBadge planId={payment.planId} />,
+    },
+    {
+      key: "sender",
+      header: "Sent From",
+      mobileLabel: "Sent from",
+      render: (payment) => (
+        <span className="text-slate-300 whitespace-nowrap">
+          {payment.senderPaymentSourceLabel || senderPaymentLabel(payment.senderPaymentSource)}
+        </span>
+      ),
     },
     {
       key: "account",
@@ -341,25 +415,24 @@ export default function PaymentsPage() {
   ];
 
   if (loading) {
-    return (
-      <div className="flex flex-col items-center justify-center min-h-[50vh] gap-4">
-        <div className="h-16 w-16 animate-spin rounded-full border-4 border-cyan-500/20 border-t-cyan-400 shadow-[0_0_15px_rgba(34,211,238,0.5)]" />
-        <span className="text-sm font-bold tracking-widest text-cyan-400 uppercase animate-pulse">Loading...</span>
-      </div>
-    );
+    return <AdminLoadingState />;
   }
 
   return (
-    <div className="relative flex-1 flex flex-col min-h-0 min-w-0 max-w-full overflow-x-hidden animate-in fade-in slide-in-from-bottom-4 duration-700">
-      <div className="absolute top-0 left-1/4 w-96 h-96 bg-cyan-500/5 rounded-full blur-[120px] pointer-events-none -z-10" />
-
-      <AdminPageHeader
-        title="Manual Payments"
-        description="Approve or reject payments made via JazzCash, EasyPaisa, or Bank Transfer."
-        actions={
-          <AdminFilterPills options={FILTERS} value={filter} onChange={setFilter} />
-        }
-      />
+    <AdminPageLayout
+      scrollContent={false}
+      header={
+        <AdminPageHeader
+          title="Manual Payments"
+          description="Approve or reject payments made via JazzCash, EasyPaisa, or NayaPay."
+          actions={
+            <div className="flex w-full flex-col items-center gap-3 sm:w-auto sm:flex-row">
+              <AdminFilterPills options={FILTERS} value={filter} onChange={setFilter} />
+            </div>
+          }
+        />
+      }
+    >
 
       {error && (
         <div className="mb-6 p-4 bg-red-500/10 border border-red-500/20 text-red-400 rounded-xl flex items-center gap-3">
@@ -376,7 +449,87 @@ export default function PaymentsPage() {
         rowKey={(payment) => payment.id}
         emptyState={<EmptyPayments />}
         renderMobileActions={renderActions}
+        headerActions={
+          <div className="relative w-full sm:w-64">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+            <input
+              type="text"
+              placeholder="Search payments..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full bg-slate-900/50 border border-white/10 rounded-xl pl-9 pr-4 py-2 text-sm text-slate-200 placeholder:text-slate-500 focus:outline-none focus:border-cyan-500/50 focus:ring-1 focus:ring-cyan-500/50 transition-all"
+            />
+          </div>
+        }
       />
+
+      {pendingAction && (() => {
+        const config = PAYMENT_ACTION_CONFIG[pendingAction.action];
+        const ActionIcon = config.icon;
+        const accent =
+          pendingAction.action === "approve"
+            ? "emerald"
+            : pendingAction.action === "reject"
+              ? "rose"
+              : "slate";
+
+        return (
+          <AdminGlassModal open={Boolean(pendingAction)} maxWidth="md">
+            <AdminGlassPanel accent={accent}>
+              <div className="flex flex-col items-center text-center">
+                <div
+                  className={`mb-4 flex h-14 w-14 items-center justify-center rounded-full ring-1 backdrop-blur-sm ${config.iconWrapClass}`}
+                >
+                  <ActionIcon className={`h-7 w-7 ${config.iconClass}`} />
+                </div>
+                <h2 className="text-xl sm:text-2xl font-black text-white">{config.title}</h2>
+                <p className="mt-3 text-sm text-slate-400 leading-relaxed">{config.description}</p>
+                <p className="mt-2 text-sm font-semibold text-white break-all">
+                  {pendingAction.payment.userEmail}
+                </p>
+                <p className="mt-1 text-xs font-mono text-slate-500 break-all">
+                  {pendingAction.payment.transactionId}
+                </p>
+                <p className="mt-1 text-xs text-slate-500">
+                  Sent from:{" "}
+                  <span className="font-semibold text-slate-300">
+                    {pendingAction.payment.senderPaymentSourceLabel ||
+                      senderPaymentLabel(pendingAction.payment.senderPaymentSource)}
+                  </span>
+                </p>
+
+                {actionError && (
+                  <div className="mt-4 w-full rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-400 backdrop-blur-sm">
+                    {actionError}
+                  </div>
+                )}
+
+                <div className="mt-8 flex w-full flex-col-reverse sm:flex-row gap-3">
+                  <button
+                    type="button"
+                    disabled={processingAction}
+                    onClick={() => {
+                      setPendingAction(null);
+                      setActionError("");
+                    }}
+                    className="flex-1 rounded-xl border border-white/15 bg-white/[0.06] px-4 py-3 text-sm font-bold text-slate-300 backdrop-blur-sm transition-all hover:bg-white/10 disabled:opacity-50"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    disabled={processingAction}
+                    onClick={confirmPaymentAction}
+                    className={`flex-1 rounded-xl bg-gradient-to-r ${config.buttonClass} px-4 py-3 text-sm font-bold text-white transition-all disabled:opacity-60 shadow-[0_0_20px_rgba(255,255,255,0.08)]`}
+                  >
+                    {processingAction ? config.processingLabel : config.confirmLabel}
+                  </button>
+                </div>
+              </div>
+            </AdminGlassPanel>
+          </AdminGlassModal>
+        );
+      })()}
 
       {selectedScreenshot && (
         <div
@@ -404,6 +557,6 @@ export default function PaymentsPage() {
           </div>
         </div>
       )}
-    </div>
+    </AdminPageLayout>
   );
 }

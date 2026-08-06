@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getUserStatus } from "@/lib/user-store";
+import { getUserStatus, getPlanActivationBlock } from "@/lib/user-store";
 
 function emailFromSid(sid: string): string | null {
   try {
@@ -32,5 +32,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ success: false, error: "User not found" }, { status: 404 });
   }
 
-  return NextResponse.json({ success: true, status });
+  const activationBlock = await getPlanActivationBlock(email);
+
+  return NextResponse.json({ success: true, status, activationBlock });
 }

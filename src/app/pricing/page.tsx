@@ -1,92 +1,44 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
-import { CheckoutButton } from "@/components/checkout-button";
+import { useEffect, useState } from "react";
 import { Check, Zap, Shield, Users, Sparkles, ArrowRight, Menu, X, Star } from "lucide-react";
+import { DEFAULT_PRICING_CONFIG, formatPkr, type PricingConfig, type PricingPlan } from "@/lib/pricing-config";
+import { getSession } from "@/lib/auth";
 
-const PLANS = [
-  {
-    name: "Trial",
-    tagline: "Try before you buy",
-    price: { monthly: "Free", annual: "Free" },
-    period: "1-day trial",
-    description: "Experience the full power of Google Flow with no commitment. Perfect for testing before you subscribe.",
-    planId: "trial",
-    featured: false,
+function planVisuals(planId: PricingPlan["id"]) {
+  if (planId === "solo") {
+    return {
+      accentFrom: "from-cyan-400",
+      accentTo: "to-emerald-400",
+      borderColor: "border-cyan-500/40",
+      checkBg: "bg-cyan-500 border-cyan-400",
+      checkColor: "text-white",
+      btnClass: "",
+      glowGradient: "from-cyan-400 to-emerald-400",
+    };
+  }
+  if (planId === "team") {
+    return {
+      accentFrom: "from-violet-400",
+      accentTo: "to-purple-600",
+      borderColor: "border-violet-500/20",
+      checkBg: "bg-violet-600 border-violet-500",
+      checkColor: "text-white",
+      btnClass: "bg-violet-600 text-white hover:bg-violet-500",
+      glowGradient: "from-violet-400 to-purple-600",
+    };
+  }
+  return {
     accentFrom: "from-slate-400",
     accentTo: "to-slate-600",
-    glowColor: "rgba(148,163,184,0.1)",
     borderColor: "border-white/8",
     checkBg: "bg-slate-600 border-slate-500",
     checkColor: "text-white",
     btnClass: "bg-slate-600 text-white hover:bg-slate-500",
     glowGradient: "from-slate-400 to-slate-600",
-    features: [
-      { text: "1 Login (1 seat)", highlight: false },
-      { text: "Google Flow Access", highlight: false },
-      { text: "720p Outputs", highlight: false },
-      { text: "Chrome Extension", highlight: false },
-      { text: "Community support", highlight: false },
-    ],
-  },
-  {
-    name: "Solo",
-    tagline: "For solo creators",
-    price: { monthly: "PKR 999", annual: "PKR 799" },
-    period: "per month · 30 days",
-    description: "Full Google Flow access for individual creators. One private account, no distractions, no limits.",
-    planId: "solo",
-    featured: true,
-    accentFrom: "from-cyan-400",
-    accentTo: "to-emerald-400",
-    glowColor: "rgba(34,211,238,0.2)",
-    borderColor: "border-cyan-500/40",
-    checkBg: "bg-cyan-500 border-cyan-400",
-    checkColor: "text-white",
-    btnClass: "",
-    glowGradient: "from-cyan-400 to-emerald-400",
-    originalPrice: "PKR 1,499",
-    saveBadge: "SAVE 33%",
-    btnLabel: "Get Solo Plan",
-    features: [
-      { text: "1 Login (1 seat)", highlight: false },
-      { text: "Private Account", highlight: true },
-      { text: "Parallel Generations", highlight: true },
-      { text: "720p & 1080p Outputs", highlight: true },
-      { text: "Ad-Free Experience", highlight: false },
-      { text: "Priority Support", highlight: false },
-    ],
-  },
-  {
-    name: "Team",
-    tagline: "Built for teams",
-    price: { monthly: "PKR 1,999", annual: "PKR 1,599" },
-    period: "per month · 30 days",
-    description: "Everything in Solo, scaled up for your whole team. 3 private accounts, full power unlocked.",
-    planId: "team",
-    featured: false,
-    accentFrom: "from-violet-400",
-    accentTo: "to-purple-600",
-    glowColor: "rgba(139,92,246,0.1)",
-    borderColor: "border-violet-500/20",
-    checkBg: "bg-violet-600 border-violet-500",
-    checkColor: "text-white",
-    btnClass: "bg-violet-600 text-white hover:bg-violet-500",
-    glowGradient: "from-violet-400 to-purple-600",
-    originalPrice: "PKR 2,999",
-    saveBadge: "SAVE 33%",
-    btnLabel: "Get Team Plan",
-    features: [
-      { text: "3 Logins (3 seats)", highlight: false },
-      { text: "Private Account", highlight: true },
-      { text: "Parallel Generations", highlight: true },
-      { text: "720p & 1080p Outputs", highlight: true },
-      { text: "Ad-Free Experience", highlight: false },
-      { text: "Priority Support", highlight: true },
-    ],
-  },
-];
+  };
+}
 
 const FAQS = [
   { q: "What happens after the free trial?", a: "After your 1-day trial, the extension is paused. Upgrade to Solo or Team to instantly re-activate it — no setup required." },
@@ -99,6 +51,30 @@ const FAQS = [
 export default function PricingPage() {
   const [openFaq, setOpenFaq] = useState<number | null>(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [pricing, setPricing] = useState<PricingConfig>(DEFAULT_PRICING_CONFIG);
+  const [activationBlock, setActivationBlock] = useState<{ code: string; error: string } | null>(null);
+
+  useEffect(() => {
+    fetch("/api/pricing")
+      .then((r) => r.json())
+      .then((d) => {
+        if (d.success) setPricing(d.config);
+      })
+      .catch(() => undefined);
+
+    if (getSession()) {
+      fetch("/api/user/status")
+        .then((r) => r.json())
+        .then((d) => {
+          if (d.success && d.activationBlock) {
+            setActivationBlock(d.activationBlock);
+          }
+        })
+        .catch(() => undefined);
+    }
+  }, []);
+
+  const plans = pricing.plans.filter((p) => p.enabled);
 
   return (
     <div className="min-h-screen bg-[#030308] text-slate-100 font-sans selection:bg-cyan-500/30 overflow-x-hidden">
@@ -165,33 +141,54 @@ export default function PricingPage() {
         <div className="text-center max-w-4xl mx-auto mb-8">
           <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-white/[0.04] border border-white/10 text-slate-300 text-xs font-semibold mb-5 backdrop-blur-md">
             <Sparkles size={13} className="text-cyan-400" />
-            Transparent pricing · No hidden fees
+            {pricing.heroEyebrow}
           </div>
           <h1 className="text-3xl sm:text-4xl md:text-6xl font-black leading-[1.0] tracking-tighter mb-3 text-white">
-            Pick your{" "}
-            <span className="text-transparent bg-clip-text bg-gradient-to-br from-cyan-400 via-teal-300 to-emerald-400">
-              plan.
-            </span>
+            {pricing.heroTitle.includes("plan") ? (
+              <>
+                Pick your{" "}
+                <span className="text-transparent bg-clip-text bg-gradient-to-br from-cyan-400 via-teal-300 to-emerald-400">
+                  plan.
+                </span>
+              </>
+            ) : (
+              pricing.heroTitle
+            )}
           </h1>
           <p className="text-base text-slate-400 max-w-xl mx-auto">
-            No API costs. No waitlists. Full access to Google&apos;s most powerful AI video models.
+            {pricing.heroSubtitle}
           </p>
         </div>
+
+        {activationBlock ? (
+          <div className="mx-auto mb-8 max-w-3xl rounded-2xl border border-rose-500/30 bg-rose-500/10 px-5 py-4 text-center">
+            <p className="text-sm text-rose-100">{activationBlock.error}</p>
+            <Link
+              href="/dashboard"
+              className="mt-3 inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-xs font-bold text-white hover:bg-white/10"
+            >
+              Go to Dashboard
+            </Link>
+          </div>
+        ) : null}
 
         {/* ─── PRICING CARDS ─── */}
         <div className="max-w-6xl mx-auto mb-6">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-stretch">
-            {PLANS.map((plan) => (
+            {plans.map((plan) => {
+              const visuals = planVisuals(plan.id);
+              const monthlyPrice = formatPkr(plan.priceMonthlyPkr);
+              return (
               <div
-                key={plan.name}
+                key={plan.id}
                 className={`relative flex flex-col rounded-2xl sm:rounded-3xl border p-5 sm:p-8 transition-all duration-500 group min-w-0 ${
                   plan.featured
                     ? "bg-gradient-to-b from-[#0a1a20] to-[#030308] border-cyan-500/40 shadow-[0_0_80px_rgba(34,211,238,0.12),0_0_0_1px_rgba(34,211,238,0.1)]"
-                    : `bg-[#07070f] ${plan.borderColor} hover:border-white/15`
+                    : `bg-[#07070f] ${visuals.borderColor} hover:border-white/15`
                 }`}
               >
                 {/* Top gradient line */}
-                <div className={`absolute top-0 left-6 right-6 h-[1px] bg-gradient-to-r ${plan.accentFrom} ${plan.accentTo} opacity-${plan.featured ? "80" : "0 group-hover:opacity-40"} transition-opacity rounded-full`} />
+                <div className={`absolute top-0 left-6 right-6 h-[1px] bg-gradient-to-r ${visuals.accentFrom} ${visuals.accentTo} opacity-${plan.featured ? "80" : "0 group-hover:opacity-40"} transition-opacity rounded-full`} />
 
                 {/* Most Popular badge */}
                 {plan.featured && (
@@ -203,7 +200,7 @@ export default function PricingPage() {
 
                 {/* Plan header */}
                 <div className="mb-5">
-                  <div className={`inline-flex items-center gap-1.5 text-xs font-bold tracking-widest uppercase mb-2 text-transparent bg-clip-text bg-gradient-to-r ${plan.accentFrom} ${plan.accentTo}`}>
+                  <div className={`inline-flex items-center gap-1.5 text-xs font-bold tracking-widest uppercase mb-2 text-transparent bg-clip-text bg-gradient-to-r ${visuals.accentFrom} ${visuals.accentTo}`}>
                     {plan.tagline}
                   </div>
                   <h2 className="text-2xl font-black text-white">{plan.name}</h2>
@@ -212,33 +209,33 @@ export default function PricingPage() {
 
                 {/* Price */}
                 <div className="mb-5 pb-5 border-b border-white/[0.06]">
-                  {(plan as any).originalPrice && (
+                  {plan.originalPricePkr && plan.originalPricePkr > plan.priceMonthlyPkr && (
                     <div className="flex items-center gap-2 mb-1">
-                      <span className="text-slate-500 text-sm line-through">{(plan as any).originalPrice}</span>
-                      <span className="text-xs font-black px-2 py-0.5 rounded-full bg-emerald-500 text-white tracking-wide">{(plan as any).saveBadge}</span>
+                      <span className="text-slate-500 text-sm line-through">{formatPkr(plan.originalPricePkr)}</span>
+                      {plan.saveBadge && (
+                        <span className="text-xs font-black px-2 py-0.5 rounded-full bg-emerald-500 text-white tracking-wide">{plan.saveBadge}</span>
+                      )}
                     </div>
                   )}
                   <div className="flex items-end gap-2">
                     <span className="text-2xl sm:text-3xl md:text-4xl font-black tracking-tight text-white">
-                      {plan.price.monthly}
+                      {monthlyPrice}
                     </span>
-                    {plan.price.monthly !== "Free" && (
+                    {monthlyPrice !== "Free" && (
                       <div className="mb-2">
                         <span className="text-slate-400 text-sm block">/month</span>
                       </div>
                     )}
                   </div>
-                  {plan.price.monthly === "Free" && <p className="text-slate-500 text-sm mt-1">{plan.period}</p>}
+                  {monthlyPrice === "Free" && <p className="text-slate-500 text-sm mt-1">{plan.periodLabel}</p>}
                 </div>
 
                 {/* Features */}
                 <ul className="space-y-3 mb-7 flex-1">
                   {plan.features.map((feature) => (
                     <li key={feature.text} className="flex items-center gap-2.5">
-                      <div className={`w-5 h-5 rounded-full flex items-center justify-center shrink-0 border ${
-                        (plan as any).checkBg ?? "bg-white/5 border-white/10"
-                      }`}>
-                        <Check size={10} strokeWidth={3} className={(plan as any).checkColor ?? "text-slate-400"} />
+                      <div className={`w-5 h-5 rounded-full flex items-center justify-center shrink-0 border ${visuals.checkBg}`}>
+                        <Check size={10} strokeWidth={3} className={visuals.checkColor} />
                       </div>
                       <span className={`text-sm leading-relaxed ${feature.highlight ? "text-white font-semibold" : "text-slate-400"}`}>
                         {feature.text}
@@ -248,43 +245,46 @@ export default function PricingPage() {
                 </ul>
 
                 {/* CTA */}
-                {plan.planId === "trial" ? (
+                {plan.id === "trial" ? (
                   <div className="relative group/btn">
-                    <div className={`absolute -inset-[1px] rounded-xl bg-gradient-to-r ${(plan as any).glowGradient} opacity-60 blur-sm group-hover/btn:opacity-90 group-hover/btn:blur-md transition-all duration-300`} />
+                    <div className={`absolute -inset-[1px] rounded-xl bg-gradient-to-r ${visuals.glowGradient} opacity-60 blur-sm group-hover/btn:opacity-90 group-hover/btn:blur-md transition-all duration-300`} />
                     <div className="relative">
-                      <Link href="/signup" className={`block w-full text-center rounded-xl px-6 py-3 text-sm font-bold transition-all ${
-                        (plan as any).btnClass
-                      }`}>
-                        Start Free Trial
+                      <Link href="/signup" className={`block w-full text-center rounded-xl px-6 py-3 text-sm font-bold transition-all ${visuals.btnClass}`}>
+                        {plan.btnLabel}
                       </Link>
                     </div>
                   </div>
+                ) : activationBlock ? (
+                  <div className="relative">
+                    <span className="block w-full cursor-not-allowed rounded-xl px-6 py-3 text-center text-sm font-bold opacity-50 bg-white/10 text-slate-400">
+                      {activationBlock.code === "PENDING_PAYMENT" ? "Payment pending" : "Plan active"}
+                    </span>
+                  </div>
                 ) : plan.featured ? (
                   <div className="relative group/btn">
-                    <div className={`absolute -inset-[1px] rounded-2xl bg-gradient-to-r ${(plan as any).glowGradient} opacity-80 blur-sm group-hover/btn:opacity-100 group-hover/btn:blur-md transition-all duration-300`} />
+                    <div className={`absolute -inset-[1px] rounded-2xl bg-gradient-to-r ${visuals.glowGradient} opacity-80 blur-sm group-hover/btn:opacity-100 group-hover/btn:blur-md transition-all duration-300`} />
                     <div className="relative">
                       <Link
-                        href={`/checkout/${plan.planId}`}
+                        href={`/checkout/${plan.id}`}
                         className="block w-full text-center rounded-lg px-4 py-3 text-sm font-semibold transition-transform hover:-translate-y-px bg-gradient-to-r from-cyan-500 to-teal-500 text-slate-950"
                       >
-                        {(plan as any).btnLabel ?? "Purchase"}
+                        {plan.btnLabel}
                       </Link>
                     </div>
                   </div>
                 ) : (
                   <div className="relative group/btn">
-                    <div className={`absolute -inset-[1px] rounded-xl bg-gradient-to-r ${(plan as any).glowGradient} opacity-60 blur-sm group-hover/btn:opacity-90 group-hover/btn:blur-md transition-all duration-300`} />
+                    <div className={`absolute -inset-[1px] rounded-xl bg-gradient-to-r ${visuals.glowGradient} opacity-60 blur-sm group-hover/btn:opacity-90 group-hover/btn:blur-md transition-all duration-300`} />
                     <div className="relative">
-                      <Link href={`/checkout/${plan.planId}`} className={`block w-full text-center rounded-xl px-6 py-3 text-sm font-bold transition-all ${
-                        (plan as any).btnClass
-                      }`}>
-                        {(plan as any).btnLabel ?? "Purchase"}
+                      <Link href={`/checkout/${plan.id}`} className={`block w-full text-center rounded-xl px-6 py-3 text-sm font-bold transition-all ${visuals.btnClass}`}>
+                        {plan.btnLabel}
                       </Link>
                     </div>
                   </div>
                 )}
               </div>
-            ))}
+            );
+            })}
           </div>
 
 

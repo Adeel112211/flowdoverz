@@ -77,6 +77,18 @@ export async function GET(request: NextRequest) {
     );
   }
 
+  const { getDb } = await import("@/lib/firebase-admin");
+  const dbCheck = getDb();
+  if (dbCheck) {
+    const userDoc = await dbCheck.collection("users").doc(email).get();
+    if (userDoc.exists && userDoc.data()?.suspended) {
+      return NextResponse.json(
+        { success: false, code: "ACCOUNT_SUSPENDED", message: "Account suspended. Contact support." },
+        { status: 403 },
+      );
+    }
+  }
+
   const slot = (searchParams.get("slot") || "C1").toUpperCase();
   const ownerSlots = await listSlots(WORKSPACE_OWNER);
   const record = await getSlotCookies(WORKSPACE_OWNER, slot);
@@ -97,6 +109,30 @@ export async function GET(request: NextRequest) {
     : (status.trialExpiresAt ? new Date(status.trialExpiresAt) : now);
   const daysRemaining = Math.max(0, Math.ceil((expiryDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)));
 
+  const extensionVersion = request.headers.get("x-extension-version") || searchParams.get("extension_version");
+  try {
+    const { getDb } = await import("@/lib/firebase-admin");
+    const db = getDb();
+    if (db) {
+      await db.collection("users").doc(email).set(
+        {
+          lastSyncAt: now.toISOString(),
+          lastSyncSlot: slot,
+          ...(extensionVersion ? { extensionVersion } : {}),
+        },
+        { merge: true },
+      );
+    }
+  } catch {
+    // non-blocking
+  }
+
+  const { getSystemSettings } = await import("@/lib/admin-settings");
+  const systemSettings = await getSystemSettings();
+  const { getExtensionConfig } = await import("@/lib/extension-store");
+  const extensionConfig = await getExtensionConfig();
+  const latestVersion = extensionConfig.activeVersion || systemSettings.minExtensionVersion;
+
   return NextResponse.json({
     success: true,
     cookies: record?.cookies ?? [],
@@ -104,7 +140,7 @@ export async function GET(request: NextRequest) {
     active_slot: slot,
     available_slots: availableSlots,
     cookies_access: true,
-    latest_extension_version: "1.0.0",
+    latest_extension_version: latestVersion,
     user: {
       email,
       days_remaining: daysRemaining,

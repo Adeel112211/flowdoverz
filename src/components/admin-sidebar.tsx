@@ -3,14 +3,21 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Users, CreditCard, Cookie, Settings, LayoutDashboard, LogOut, Menu, X } from "lucide-react";
+import { Users, CreditCard, Cookie, Settings, LayoutDashboard, LogOut, Menu, X, Activity, Radio, Mail, Send, Tag, Puzzle, Receipt } from "lucide-react";
 import { BrandLogo } from "@/components/brand-logo";
 
 const navItems = [
   { name: "Dashboard", href: "/admin", icon: LayoutDashboard },
   { name: "Client Manager", href: "/admin/clients", icon: Users },
   { name: "Payments", href: "/admin/payments", icon: CreditCard },
+  { name: "Receipts", href: "/admin/receipts", icon: Receipt },
   { name: "Cookie Manager", href: "/admin/cookies", icon: Cookie },
+  { name: "Sync Status", href: "/admin/sync", icon: Radio },
+  { name: "SMTP & Templates", href: "/admin/smtp", icon: Send },
+  { name: "Activity Log", href: "/admin/activity", icon: Activity },
+  { name: "Email History", href: "/admin/emails", icon: Mail },
+  { name: "Pricing", href: "/admin/pricing", icon: Tag },
+  { name: "Extension", href: "/admin/extension", icon: Puzzle },
   { name: "Settings", href: "/admin/settings", icon: Settings },
 ];
 
@@ -97,7 +104,7 @@ export function AdminSidebar() {
                 key={item.href}
                 href={item.href}
                 onClick={() => setMobileMenuOpen(false)}
-                className={`flex items-center gap-3 px-6 py-3 text-sm font-semibold transition-all group ${
+                className={`flex items-center gap-3 px-6 py-3 text-sm font-semibold transition-all group max-md:min-h-11 max-md:py-3.5 ${
                   isActive
                     ? "bg-cyan-500 text-white"
                     : "text-slate-400 hover:bg-white/5 hover:text-slate-200"

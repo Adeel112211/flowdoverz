@@ -1,20 +1,35 @@
 import { NextRequest, NextResponse } from "next/server";
 import { isAdminUiRequest, verifyAdminPassword } from "@/lib/admin";
-import { getDb } from "@/lib/firebase-admin";
+import {
+  getAdminRecoveryEmail,
+  maskEmail,
+  setAdminPassword,
+} from "@/lib/admin-password-reset";
+
+export const dynamic = "force-dynamic";
+
+export async function GET() {
+  if (!(await isAdminUiRequest())) {
+    return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+  }
+
+  const recoveryEmail = await getAdminRecoveryEmail();
+  return NextResponse.json({
+    success: true,
+    maskedEmail: maskEmail(recoveryEmail),
+  });
+}
 
 export async function POST(request: NextRequest) {
   if (!(await isAdminUiRequest())) {
     return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
   }
 
-  const db = getDb();
-  if (!db) {
-    return NextResponse.json({ success: false, error: "Database not available" }, { status: 500 });
-  }
-
   try {
     const body = await request.json();
-    const { currentPassword, newPassword } = body;
+
+    const currentPassword = String(body.currentPassword || "");
+    const newPassword = String(body.newPassword || "");
 
     if (!currentPassword || !newPassword) {
       return NextResponse.json({ success: false, error: "Missing required fields" }, { status: 400 });
@@ -24,10 +39,11 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: "Incorrect current password" }, { status: 400 });
     }
 
-    await db.collection("settings").doc("admin").set({ password: newPassword }, { merge: true });
+    await setAdminPassword(newPassword);
 
     return NextResponse.json({ success: true, message: "Password updated successfully" });
-  } catch (error: any) {
-    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Request failed";
+    return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
 }
