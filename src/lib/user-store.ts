@@ -83,6 +83,68 @@ export async function registerUser(
   };
 }
 
+const PAID_PLANS = ["solo", "studio", "team"];
+
+export async function createUserByAdmin(input: {
+  email: string;
+  name: string;
+  password: string;
+  subscriptionPlan: string;
+  trialExpiresAt?: string;
+  subscriptionExpiresAt?: string;
+}): Promise<{ ok: true } | { ok: false; error: string }> {
+  const db = getDb();
+  if (!db) {
+    return { ok: false, error: "Database not configured." };
+  }
+
+  const normalized = normalizeEmail(input.email);
+  const trimmedName = input.name.trim();
+  const subscriptionPlan = input.subscriptionPlan || "trial";
+
+  if (!normalized || !normalized.includes("@")) {
+    return { ok: false, error: "Enter a valid email address." };
+  }
+  if (trimmedName.length < 2) {
+    return { ok: false, error: "Enter the client's name." };
+  }
+  if (input.password.length < 8) {
+    return { ok: false, error: "Password must be at least 8 characters." };
+  }
+
+  const usersRef = db.collection("users");
+  const existingUserDoc = await usersRef.doc(normalized).get();
+  if (existingUserDoc.exists) {
+    return { ok: false, error: "A client with this email already exists." };
+  }
+
+  const salt = randomBytes(16).toString("hex");
+  const now = new Date();
+  const defaultTrialExpiry = new Date(now.getTime() + 14 * 24 * 60 * 60 * 1000).toISOString();
+  const defaultSubExpiry = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000).toISOString();
+
+  const trialExpiresAt =
+    input.trialExpiresAt ||
+    (PAID_PLANS.includes(subscriptionPlan) ? now.toISOString() : defaultTrialExpiry);
+  const subscriptionExpiresAt = PAID_PLANS.includes(subscriptionPlan)
+    ? input.subscriptionExpiresAt || defaultSubExpiry
+    : null;
+
+  const newUser: StoredUser = {
+    email: normalized,
+    name: trimmedName,
+    salt,
+    passwordHash: hashPassword(input.password, salt),
+    createdAt: now.toISOString(),
+    trialExpiresAt,
+    subscriptionPlan,
+    subscriptionExpiresAt,
+  };
+
+  await usersRef.doc(normalized).set(newUser);
+  return { ok: true };
+}
+
 export async function authenticateUser(
   email: string,
   password: string,

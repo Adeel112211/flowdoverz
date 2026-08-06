@@ -2,9 +2,19 @@ import { NextRequest, NextResponse } from "next/server";
 import { isAdminUiRequest } from "@/lib/admin";
 import { getDb, getAdminAuth, getFirebaseInitError, isFirebaseConfigured } from "@/lib/firebase-admin";
 import { sendAccountActivatedEmail } from "@/lib/email";
+import { createUserByAdmin } from "@/lib/user-store";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+const PAID_PLANS = ["solo", "studio", "team"];
+
+function planDisplayName(plan: string) {
+  if (plan === "solo") return "Solo";
+  if (plan === "studio") return "Studio";
+  if (plan === "team") return "Team";
+  return plan;
+}
 
 function databaseErrorResponse() {
   if (!isFirebaseConfigured()) {
@@ -78,7 +88,7 @@ export async function PUT(request: NextRequest) {
     const updateData: Record<string, unknown> = {};
     if (subscriptionPlan !== undefined) {
       updateData.subscriptionPlan = subscriptionPlan;
-      if (["studio", "team"].includes(subscriptionPlan)) {
+      if (PAID_PLANS.includes(subscriptionPlan)) {
         updateData.expirationEmailSent = false;
       }
     }
@@ -87,14 +97,56 @@ export async function PUT(request: NextRequest) {
 
     await db.collection("users").doc(email).update(updateData);
 
-    if (subscriptionPlan && ["studio", "team"].includes(subscriptionPlan)) {
-      const planName = subscriptionPlan === "studio" ? "Studio" : "Team";
+    if (subscriptionPlan && PAID_PLANS.includes(subscriptionPlan)) {
+      const planName = planDisplayName(subscriptionPlan);
       await sendAccountActivatedEmail(email, planName).catch(console.error);
     }
 
     return NextResponse.json({ success: true, message: "Client updated successfully" });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : "Failed to update client";
+    return NextResponse.json({ success: false, error: message }, { status: 500 });
+  }
+}
+
+export async function POST(request: NextRequest) {
+  if (!(await isAdminUiRequest())) {
+    return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+  }
+
+  const dbError = databaseErrorResponse();
+  if (dbError) return dbError;
+
+  try {
+    const body = await request.json();
+    const { email, name, password, subscriptionPlan, trialExpiresAt, subscriptionExpiresAt } = body;
+
+    const result = await createUserByAdmin({
+      email: String(email || ""),
+      name: String(name || ""),
+      password: String(password || ""),
+      subscriptionPlan: String(subscriptionPlan || "trial"),
+      trialExpiresAt: trialExpiresAt || undefined,
+      subscriptionExpiresAt: subscriptionExpiresAt || undefined,
+    });
+
+    if (!result.ok) {
+      return NextResponse.json({ success: false, error: result.error }, { status: 400 });
+    }
+
+    const plan = String(subscriptionPlan || "trial");
+    if (PAID_PLANS.includes(plan)) {
+      const planName = planDisplayName(plan);
+      const now = new Date().toISOString();
+      const expiry =
+        subscriptionExpiresAt ||
+        new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+      await sendAccountActivatedEmail(String(email), planName, now, expiry).catch(console.error);
+    }
+
+    return NextResponse.json({ success: true, message: "Client created successfully" });
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : "Failed to create client";
     return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
 }
