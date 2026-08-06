@@ -22,6 +22,7 @@ type Payment = {
   createdAt: string;
   processedAt?: string;
   screenshot?: string;
+  hasScreenshot?: boolean;
 };
 
 const FILTERS = ["all", "pending", "approved", "rejected", "refunded"] as const;
@@ -137,17 +138,53 @@ export default function PaymentsPage() {
 
   const fetchPayments = async () => {
     try {
-      const res = await fetch("/api/admin/payments");
-      const data = await res.json();
-      if (data.success) {
+      const res = await fetch("/api/admin/payments", { credentials: "same-origin" });
+      let data: { success?: boolean; payments?: Payment[]; error?: string } = {};
+      try {
+        data = await res.json();
+      } catch {
+        setError(`Failed to fetch payments (HTTP ${res.status}).`);
+        return;
+      }
+      if (data.success && data.payments) {
         setPayments(data.payments);
+        setError("");
       } else {
-        setError(data.error);
+        setError(data.error || `Failed to fetch payments (HTTP ${res.status}).`);
       }
     } catch {
-      setError("Failed to fetch payments");
+      setError("Failed to fetch payments. Check your connection and redeploy.");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const openScreenshot = async (payment: Payment) => {
+    if (payment.screenshot) {
+      setSelectedScreenshot(payment.screenshot);
+      return;
+    }
+    if (!payment.hasScreenshot) return;
+
+    try {
+      const res = await fetch(`/api/admin/payments?id=${encodeURIComponent(payment.id)}`, {
+        credentials: "same-origin",
+      });
+      const data = await res.json();
+      if (data.success && data.payment?.screenshot) {
+        setSelectedScreenshot(data.payment.screenshot);
+        setPayments((current) =>
+          current.map((row) =>
+            row.id === payment.id
+              ? { ...row, screenshot: data.payment.screenshot }
+              : row,
+          ),
+        );
+      } else {
+        setError(data.error || "Could not load payment screenshot.");
+      }
+    } catch {
+      setError("Could not load payment screenshot.");
     }
   };
 
@@ -263,10 +300,10 @@ export default function PaymentsPage() {
       className: "text-center",
       headerClassName: "text-center",
       render: (payment) => 
-        payment.screenshot ? (
+        payment.screenshot || payment.hasScreenshot ? (
           <button
             type="button"
-            onClick={() => setSelectedScreenshot(payment.screenshot!)}
+            onClick={() => openScreenshot(payment)}
             className="text-cyan-400 hover:text-cyan-300 transition-colors p-1.5 bg-cyan-400/10 hover:bg-cyan-400/20 rounded-md inline-flex items-center justify-center"
             title="View Screenshot"
           >

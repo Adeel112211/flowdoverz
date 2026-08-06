@@ -1,36 +1,61 @@
 import { NextRequest, NextResponse } from "next/server";
-import { isAdminRequest } from "@/lib/admin";
+import { isAdminUiRequest } from "@/lib/admin";
 import { getDb } from "@/lib/firebase-admin";
 import { sendAccountActivatedEmail, sendPaymentRejectedEmail } from "@/lib/email";
 
-// GET all payments
+function serializePayment(id: string, data: Record<string, unknown>, includeScreenshot = false) {
+  const { screenshot, ...rest } = data;
+  return {
+    id,
+    ...rest,
+    hasScreenshot: Boolean(screenshot),
+    ...(includeScreenshot && screenshot ? { screenshot: String(screenshot) } : {}),
+  } as Record<string, unknown> & { id: string; hasScreenshot: boolean; createdAt?: string };
+}
+
+// GET all payments (or one payment when ?id= is provided)
 export async function GET(request: NextRequest) {
   try {
-    const isAdmin = await isAdminRequest(request);
-    if (!isAdmin) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    if (!(await isAdminUiRequest(request))) {
+      return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
     }
 
     const db = getDb();
     if (!db) {
-      return NextResponse.json({ error: "Database not available" }, { status: 500 });
+      return NextResponse.json(
+        { success: false, error: "Database not available. Check Firebase env vars on Vercel." },
+        { status: 503 },
+      );
     }
 
-    const snapshot = await db.collection("manual_payments")
-      .orderBy("createdAt", "desc")
-      .get();
-      
-    const payments = snapshot.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data()
-    }));
+    const paymentId = request.nextUrl.searchParams.get("id");
+    if (paymentId) {
+      const doc = await db.collection("manual_payments").doc(paymentId).get();
+      if (!doc.exists) {
+        return NextResponse.json({ success: false, error: "Payment not found" }, { status: 404 });
+      }
+      return NextResponse.json({
+        success: true,
+        payment: serializePayment(doc.id, doc.data() || {}, true),
+      });
+    }
+
+    const snapshot = await db.collection("manual_payments").get();
+
+    const payments = snapshot.docs
+      .map((doc) => serializePayment(doc.id, doc.data()))
+      .sort((a, b) => {
+        const aTime = Date.parse(String(a.createdAt || 0));
+        const bTime = Date.parse(String(b.createdAt || 0));
+        return bTime - aTime;
+      });
 
     return NextResponse.json({ success: true, payments });
   } catch (error: any) {
     console.error("Fetch Manual Payments Error:", error);
     return NextResponse.json(
       { success: false, error: error.message || "Internal server error" },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }
@@ -38,9 +63,8 @@ export async function GET(request: NextRequest) {
 // POST to approve or reject a payment
 export async function POST(request: NextRequest) {
   try {
-    const isAdmin = await isAdminRequest(request);
-    if (!isAdmin) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    if (!(await isAdminUiRequest(request))) {
+      return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
     }
 
     const db = getDb();
