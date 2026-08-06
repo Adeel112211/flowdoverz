@@ -139,13 +139,18 @@ export default function PaymentsPage() {
   const fetchPayments = async () => {
     try {
       const res = await fetch("/api/admin/payments", { credentials: "same-origin" });
+      const raw = await res.text();
       let data: { success?: boolean; payments?: Payment[]; error?: string } = {};
+
       try {
-        data = await res.json();
+        data = raw ? JSON.parse(raw) : {};
       } catch {
-        setError(`Failed to fetch payments (HTTP ${res.status}).`);
+        setError(
+          raw.trim().slice(0, 180) || `Failed to fetch payments (HTTP ${res.status}).`,
+        );
         return;
       }
+
       if (data.success && data.payments) {
         setPayments(data.payments);
         setError("");
