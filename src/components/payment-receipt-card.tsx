@@ -76,7 +76,7 @@ function ReceiptScanCode({ scanUrl }: { scanUrl: string }) {
   }, [scanUrl]);
 
   return (
-    <div className="mx-auto mt-4 text-center">
+    <div className="mx-auto mt-3 max-md:mt-2 text-center sm:mt-4">
       {dataUrl ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img
@@ -84,15 +84,15 @@ function ReceiptScanCode({ scanUrl }: { scanUrl: string }) {
           alt={`Scan to visit ${label}`}
           width={168}
           height={168}
-          className="mx-auto block"
+          className="mx-auto block h-[120px] w-[120px] sm:h-[168px] sm:w-[168px]"
         />
       ) : (
         <div
-          className="mx-auto block h-[168px] w-[168px] animate-pulse rounded bg-slate-800/80"
+          className="mx-auto block h-[120px] w-[120px] animate-pulse rounded bg-slate-800/80 sm:h-[168px] sm:w-[168px]"
           aria-hidden="true"
         />
       )}
-      <p className="mt-2 font-mono text-[10px] text-slate-500">Scan to visit {label}</p>
+      <p className="mt-1.5 max-md:text-[9px] font-mono text-[10px] text-slate-500 sm:mt-2">Scan to visit {label}</p>
     </div>
   );
 }
@@ -132,34 +132,34 @@ export function PaymentReceiptCard({
   }
 
   return (
-    <div className="mx-auto flex w-full max-w-[380px] flex-col items-center gap-3">
+    <div className="mx-auto flex w-full max-w-[380px] flex-col items-center gap-3 max-md:gap-2">
       <div
         ref={cardRef}
         className="mx-auto w-full max-w-[380px] overflow-hidden rounded-2xl"
         style={{ filter: `drop-shadow(${T.glow})` }}
       >
       <div
-        className="min-h-[420px] px-7 pb-8 pt-6 text-center"
+        className="min-h-0 px-5 pb-5 pt-4 text-center sm:min-h-[420px] sm:px-7 sm:pb-8 sm:pt-6"
         style={{ backgroundColor: T.paper }}
       >
-        <p className="font-mono text-[11px] tracking-[0.35em] text-slate-500">***</p>
-        <p className="mt-2 font-mono text-sm font-bold tracking-[0.35em] text-slate-100">
+        <p className="font-mono text-[10px] tracking-[0.35em] text-slate-500 sm:text-[11px]">***</p>
+        <p className="mt-1.5 font-mono text-xs font-bold tracking-[0.35em] text-slate-100 sm:mt-2 sm:text-sm">
           {isRefund ? "REFUND" : "RECEIPT"}
         </p>
         <p
-          className={`mt-2 font-mono text-base font-extrabold tracking-[0.18em] ${
+          className={`mt-1.5 font-mono text-sm font-extrabold tracking-[0.18em] sm:mt-2 sm:text-base ${
             isRefund ? "text-rose-400" : "text-cyan-400"
           }`}
         >
           FLOWDOVERZ
         </p>
         <div
-          className={`mx-auto mt-4 h-1 w-32 rounded-full bg-gradient-to-r ${
+          className={`mx-auto mt-3 h-1 w-28 rounded-full bg-gradient-to-r sm:mt-4 sm:w-32 ${
             isRefund ? "from-rose-500 to-orange-500" : "from-cyan-500 to-teal-500"
           }`}
         />
 
-        <div className="mt-6 space-y-3.5 text-left">
+        <div className="mt-4 space-y-2 text-left sm:mt-6 sm:space-y-3.5">
           <MetaRow label="Name" value={receipt.userName} />
           <MetaRow
             label="Account#"
@@ -168,9 +168,9 @@ export function PaymentReceiptCard({
           />
         </div>
 
-        <div className="my-5 border-t border-slate-600/50" />
+        <div className="my-3 border-t border-slate-600/50 sm:my-5" />
 
-        <div className="space-y-3.5 text-left">
+        <div className="space-y-2 text-left sm:space-y-3.5">
           <MetaRow
             label={`${receipt.planName} plan`}
             value={receipt.amountLabel}
@@ -186,9 +186,9 @@ export function PaymentReceiptCard({
           />
         </div>
 
-        <div className="my-5 border-t border-slate-600/50" />
+        <div className="my-3 border-t border-slate-600/50 sm:my-5" />
 
-        <div className="space-y-3.5 text-left">
+        <div className="space-y-2 text-left sm:space-y-3.5">
           {isRefund ? (
             <>
               <MetaRow label="Refund receipt" value={receipt.receiptNumber} />
@@ -215,7 +215,7 @@ export function PaymentReceiptCard({
           )}
         </div>
 
-        <p className="mt-6 font-mono text-[11px] tracking-[0.35em] text-slate-500">***</p>
+        <p className="mt-4 font-mono text-[10px] tracking-[0.35em] text-slate-500 sm:mt-6 sm:text-[11px]">***</p>
         <ReceiptScanCode scanUrl={scanUrl} />
       </div>
       </div>

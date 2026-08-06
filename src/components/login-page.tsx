@@ -4,6 +4,7 @@ import Link from "next/link";
 import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AuthBridge } from "@/components/auth-bridge";
+import { AuthPageBackground } from "@/components/auth-page-background";
 import { BrandLogo } from "@/components/brand-logo";
 import { useClientSession } from "@/hooks/use-client-session";
 import { signIn } from "@/lib/auth";
@@ -36,7 +37,8 @@ export function LoginPage() {
   }
 
   return (
-    <div className="relative flex h-dvh w-full max-w-full overflow-hidden items-center justify-center px-4 py-10 sm:py-12">
+    <div className="relative flex min-h-dvh w-full max-w-full overflow-x-hidden px-4 py-10 sm:py-12 max-md:items-start max-md:justify-start max-md:py-6 max-md:pt-8 max-md:pb-10 md:h-dvh md:items-center md:justify-center md:overflow-hidden">
+      <AuthPageBackground />
       {/* Error Modal */}
       {error && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-[#080810]/80 backdrop-blur-md animate-in fade-in duration-300">
@@ -61,22 +63,18 @@ export function LoginPage() {
       )}
       <AuthBridge session={session} daysRemaining={14} />
 
-      <div className="pointer-events-none absolute inset-0 overflow-hidden">
-        <div className="absolute left-1/2 top-1/4 h-[500px] w-[800px] -translate-x-1/2 rounded-full bg-cyan-500/10 blur-[120px]" />
-      </div>
-
       <div className="animate-fade-up relative w-full max-w-md">
-        <div className="mb-8 flex flex-col items-center text-center">
+        <div className="mb-8 flex flex-col items-center text-center max-md:mb-5">
           <Link href="/">
             <BrandLogo size="lg" stacked />
           </Link>
-          <h1 className="mt-8 text-3xl md:text-4xl font-black tracking-tight text-transparent bg-clip-text bg-gradient-to-br from-white via-white to-slate-400">Welcome back</h1>
+          <h1 className="mt-8 max-md:mt-5 text-3xl md:text-4xl font-black tracking-tight text-transparent bg-clip-text bg-gradient-to-br from-white via-white to-slate-400">Welcome back</h1>
           <p className="mt-3 text-base text-slate-400 max-w-sm mx-auto">
             Enter your FlowDoverz workspace credentials to continue generating.
           </p>
         </div>
 
-        <div className="relative overflow-hidden rounded-[2rem] border border-white/10 bg-[#06080d]/80 p-6 sm:p-8 md:p-10 shadow-[0_0_60px_rgba(34,211,238,0.15)] backdrop-blur-3xl group">
+        <div className="relative overflow-hidden rounded-[2rem] border border-white/10 bg-[#06080d]/80 p-6 sm:p-8 md:p-10 shadow-[0_0_60px_rgba(34,211,238,0.15)] backdrop-blur-3xl group max-md:shadow-[0_10px_40px_rgba(34,211,238,0.2)]">
           <div className="absolute inset-0 bg-gradient-to-b from-cyan-500/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-700 pointer-events-none" />
 
 
@@ -134,7 +132,7 @@ export function LoginPage() {
             <button
               type="submit"
               disabled={loading}
-              className="relative z-10 mt-4 w-full rounded-2xl bg-gradient-to-r from-cyan-400 to-emerald-400 px-8 py-4 text-sm font-black tracking-wide text-slate-950 transition-all duration-300 hover:scale-[1.02] shadow-[0_0_20px_rgba(34,211,238,0.4)] hover:shadow-[0_0_35px_rgba(34,211,238,0.6)] disabled:opacity-60 disabled:hover:scale-100"
+              className="relative z-10 mt-4 w-full rounded-2xl bg-gradient-to-r from-cyan-400 to-emerald-400 px-8 py-4 text-sm font-black tracking-wide text-slate-950 transition-all duration-300 hover:scale-[1.02] shadow-[0_0_20px_rgba(34,211,238,0.4)] hover:shadow-[0_0_35px_rgba(34,211,238,0.6)] disabled:opacity-60 disabled:hover:scale-100 max-md:hover:scale-100 max-md:shadow-[0_8px_24px_rgba(34,211,238,0.35)]"
             >
               {loading ? "Authenticating..." : "Login"}
             </button>
