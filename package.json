@@ -19,6 +19,11 @@
     "react-icons": "^5.7.0",
     "recharts": "^3.10.1"
   },
+  "overrides": {
+    "jwks-rsa": {
+      "jose": "4.15.9"
+    }
+  },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",

@@ -118,7 +118,7 @@ export async function DELETE(request: NextRequest) {
 
     await db.collection("users").doc(email).delete();
 
-    const adminAuth = getAdminAuth();
+    const adminAuth = await getAdminAuth();
     if (adminAuth) {
       try {
         const userRecord = await adminAuth.getUserByEmail(email);

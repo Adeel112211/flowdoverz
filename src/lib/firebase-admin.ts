@@ -5,7 +5,8 @@ import type { Auth } from "firebase-admin/auth";
 let firebaseApp: App | null = null;
 let firestoreDb: Firestore | null = null;
 let firebaseAuth: Auth | null = null;
-let initAttempted = false;
+let coreInitAttempted = false;
+let authInitAttempted = false;
 let lastInitError: string | null = null;
 
 type ServiceAccountCredentials = {
@@ -94,9 +95,9 @@ export function getFirebaseInitError() {
   return lastInitError;
 }
 
-function initFirebaseAdmin() {
-  if (initAttempted) return;
-  initAttempted = true;
+function initFirebaseCore() {
+  if (coreInitAttempted) return;
+  coreInitAttempted = true;
   lastInitError = null;
 
   const credentials = resolveCredentials();
@@ -110,7 +111,6 @@ function initFirebaseAdmin() {
   try {
     const { initializeApp, cert, getApps } = require("firebase-admin/app") as typeof import("firebase-admin/app");
     const { getFirestore } = require("firebase-admin/firestore") as typeof import("firebase-admin/firestore");
-    const { getAuth } = require("firebase-admin/auth") as typeof import("firebase-admin/auth");
 
     if (!getApps().length) {
       firebaseApp = initializeApp({
@@ -125,7 +125,6 @@ function initFirebaseAdmin() {
     }
 
     firestoreDb = getFirestore(firebaseApp);
-    firebaseAuth = getAuth(firebaseApp);
   } catch (error) {
     lastInitError =
       error instanceof Error
@@ -134,16 +133,29 @@ function initFirebaseAdmin() {
     console.error("Firebase admin initialization error", error);
     firebaseApp = null;
     firestoreDb = null;
+  }
+}
+
+async function initFirebaseAuth() {
+  initFirebaseCore();
+  if (authInitAttempted || firebaseAuth || !firebaseApp) return;
+  authInitAttempted = true;
+
+  try {
+    const { getAuth } = await import("firebase-admin/auth");
+    firebaseAuth = getAuth(firebaseApp);
+  } catch (error) {
+    console.error("Firebase auth module failed to load", error);
     firebaseAuth = null;
   }
 }
 
 export function getDb(): Firestore | null {
-  initFirebaseAdmin();
+  initFirebaseCore();
   return firestoreDb;
 }
 
-export function getAdminAuth(): Auth | null {
-  initFirebaseAdmin();
+export async function getAdminAuth(): Promise<Auth | null> {
+  await initFirebaseAuth();
   return firebaseAuth;
 }
