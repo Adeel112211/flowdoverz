@@ -12,16 +12,38 @@ function parseHosts(value: string | undefined): string[] {
     .filter(Boolean);
 }
 
+function hostsFromUrl(url: string | undefined): string[] {
+  if (!url?.trim()) return [];
+  try {
+    return [normalizeHost(new URL(url.trim()).hostname)];
+  } catch {
+    return [];
+  }
+}
+
+function mergeHosts(...groups: string[][]): string[] {
+  return [...new Set(groups.flat())];
+}
+
 export function getMarketingHosts(): string[] {
-  return parseHosts(process.env.MARKETING_HOSTS || process.env.MARKETING_HOST);
+  return mergeHosts(
+    parseHosts(process.env.MARKETING_HOSTS || process.env.MARKETING_HOST),
+    hostsFromUrl(process.env.NEXT_PUBLIC_MARKETING_URL),
+  );
 }
 
 export function getAppHosts(): string[] {
-  return parseHosts(process.env.APP_HOSTS || process.env.APP_HOST);
+  return mergeHosts(
+    parseHosts(process.env.APP_HOSTS || process.env.APP_HOST),
+    hostsFromUrl(process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL),
+  );
 }
 
 export function getAdminHosts(): string[] {
-  return parseHosts(process.env.ADMIN_HOSTS || process.env.ADMIN_HOST);
+  return mergeHosts(
+    parseHosts(process.env.ADMIN_HOSTS || process.env.ADMIN_HOST),
+    hostsFromUrl(process.env.NEXT_PUBLIC_ADMIN_URL || process.env.ADMIN_URL),
+  );
 }
 
 export function stripTrailingSlash(url: string): string {
@@ -75,11 +97,7 @@ export function classifyHost(host: string): "client" | "admin" | "unknown" {
 }
 
 export function isMultiDomainEnabled(): boolean {
-  return (
-    getMarketingHosts().length > 0 ||
-    getAppHosts().length > 0 ||
-    getAdminHosts().length > 0
-  );
+  return getAdminHosts().length > 0 && getAppHosts().length > 0;
 }
 
 export function appPath(path: string): string {

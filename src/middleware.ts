@@ -42,7 +42,7 @@ export function middleware(request: NextRequest) {
   const isAdminRoute = matchesPrefix(path, ADMIN_PREFIXES) || path === "/api/cookies";
 
   if (zone === "admin") {
-    if (path === "/") {
+    if (path === "/" || path === "/login" || path === "/signup") {
       return NextResponse.redirect(new URL("/admin", request.url));
     }
     if (!isAdminRoute) {
@@ -53,7 +53,8 @@ export function middleware(request: NextRequest) {
 
   if (zone === "client") {
     if (isAdminRoute) {
-      return externalRedirect(getAdminUrl(), path, request);
+      const adminPath = path.startsWith("/admin") ? path : "/admin";
+      return externalRedirect(getAdminUrl(), adminPath, request);
     }
     return NextResponse.next();
   }
