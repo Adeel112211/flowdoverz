@@ -3,6 +3,7 @@ type AdminFilterPillsProps<T extends string> = {
   value: T;
   onChange: (val: T) => void;
   formatLabel?: (option: T) => string;
+  className?: string;
 };
 
 export function AdminFilterPills<T extends string>({
@@ -10,9 +11,12 @@ export function AdminFilterPills<T extends string>({
   value,
   onChange,
   formatLabel,
+  className = "",
 }: AdminFilterPillsProps<T>) {
   return (
-    <div className="flex w-full overflow-x-auto gap-1.5 rounded-2xl border border-white/10 bg-[#0F172A]/80 p-1 shadow-2xl backdrop-blur-xl max-md:max-w-full sm:w-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+    <div
+      className={`flex w-full max-w-full overflow-x-auto gap-1.5 rounded-2xl border border-white/10 bg-[#0F172A]/80 p-1 shadow-2xl backdrop-blur-xl sm:w-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none] ${className}`}
+    >
       {options.map((option) => (
         <button
           key={option}

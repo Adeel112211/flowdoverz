@@ -6,6 +6,30 @@ export const DEMO_USER = {
 
 const SESSION_KEY = "flowdoverz_session";
 const SID_COOKIE = "flowdoverz_sid";
+const SESSION_CHANGE = "flowdoverz_session_change";
+
+let cachedSession: Session | null | undefined;
+
+function invalidateSessionCache() {
+  cachedSession = undefined;
+}
+
+export function notifySessionChange() {
+  if (typeof window !== "undefined") {
+    invalidateSessionCache();
+    window.dispatchEvent(new Event(SESSION_CHANGE));
+  }
+}
+
+export function subscribeSession(onStoreChange: () => void) {
+  if (typeof window === "undefined") return () => {};
+  window.addEventListener(SESSION_CHANGE, onStoreChange);
+  window.addEventListener("storage", onStoreChange);
+  return () => {
+    window.removeEventListener(SESSION_CHANGE, onStoreChange);
+    window.removeEventListener("storage", onStoreChange);
+  };
+}
 
 export type Session = {
   email: string;
@@ -24,6 +48,8 @@ function clearSidCookie() {
 function persistSession(session: Session) {
   window.localStorage.setItem(SESSION_KEY, JSON.stringify(session));
   writeSidCookie(session.sid);
+  cachedSession = session;
+  notifySessionChange();
 }
 
 type AuthResult = { ok: true; session: Session } | { ok: false; error: string };
@@ -97,14 +123,25 @@ export async function signUp(
 
 export function getSession(): Session | null {
   if (typeof window === "undefined") return null;
+  if (cachedSession !== undefined) return cachedSession;
+
   const raw = window.localStorage.getItem(SESSION_KEY);
-  if (!raw) return null;
+  if (!raw) {
+    cachedSession = null;
+    return null;
+  }
+
   try {
     const parsed = JSON.parse(raw) as Partial<Session>;
-    if (!parsed.email || !parsed.name || !parsed.sid) return null;
+    if (!parsed.email || !parsed.name || !parsed.sid) {
+      cachedSession = null;
+      return null;
+    }
     writeSidCookie(parsed.sid);
-    return parsed as Session;
+    cachedSession = parsed as Session;
+    return cachedSession;
   } catch {
+    cachedSession = null;
     return null;
   }
 }
@@ -113,6 +150,8 @@ export function signOut() {
   if (typeof window !== "undefined") {
     window.localStorage.removeItem(SESSION_KEY);
     clearSidCookie();
+    cachedSession = null;
+    notifySessionChange();
   }
 }
 

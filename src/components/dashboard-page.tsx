@@ -5,7 +5,8 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AuthBridge } from "@/components/auth-bridge";
 import { BrandLogo } from "@/components/brand-logo";
-import { getSession, signOut, type Session } from "@/lib/auth";
+import { useClientSession } from "@/hooks/use-client-session";
+import { signOut } from "@/lib/auth";
 import { DownloadCloud, ExternalLink, Timer, Rocket, CheckCircle2, AlertCircle, User, LogOut, MonitorSmartphone, Receipt, X, Sparkles } from "lucide-react";
 
 type UserStatus = {
@@ -35,7 +36,7 @@ type ClientReceipt = {
 
 export function DashboardPage() {
   const router = useRouter();
-  const [session, setSession] = useState<Session | null>(null);
+  const session = useClientSession();
   const [status, setStatus] = useState<UserStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
@@ -48,14 +49,15 @@ export function DashboardPage() {
   const [showExpiredModal, setShowExpiredModal] = useState(false);
 
   useEffect(() => {
-    const current = getSession();
-    if (!current) {
+    if (!session) {
       router.replace("/login");
       return;
     }
-    setSession(current);
 
-    fetch("/api/user/status")
+    const controller = new AbortController();
+    const { signal } = controller;
+
+    fetch("/api/user/status", { signal })
       .then((res) => res.json())
       .then((data) => {
         if (data.success) {
@@ -65,10 +67,15 @@ export function DashboardPage() {
           router.push("/login");
         }
       })
-      .catch(console.error)
-      .finally(() => setLoading(false));
+      .catch((err) => {
+        if (err instanceof Error && err.name === "AbortError") return;
+        console.error(err);
+      })
+      .finally(() => {
+        if (!signal.aborted) setLoading(false);
+      });
 
-    fetch("/api/extension")
+    fetch("/api/extension", { signal })
       .then((res) => res.json())
       .then((data) => {
         if (data.success) {
@@ -78,17 +85,25 @@ export function DashboardPage() {
           setMobileInstallSteps(data.extension.mobileInstallSteps || []);
         }
       })
-      .catch(console.error);
+      .catch((err) => {
+        if (err instanceof Error && err.name === "AbortError") return;
+        console.error(err);
+      });
 
-    fetch("/api/user/receipts")
+    fetch("/api/user/receipts", { signal })
       .then((res) => res.json())
       .then((data) => {
         if (data.success && Array.isArray(data.receipts)) {
           setReceipts(data.receipts);
         }
       })
-      .catch(console.error);
-  }, [router]);
+      .catch((err) => {
+        if (err instanceof Error && err.name === "AbortError") return;
+        console.error(err);
+      });
+
+    return () => controller.abort();
+  }, [router, session]);
 
   useEffect(() => {
     if (!loading && status && !status.active) {

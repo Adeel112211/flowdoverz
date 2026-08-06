@@ -18,6 +18,8 @@ type AdminDataTableProps<T> = {
   rowKey: (row: T) => string;
   emptyState: ReactNode;
   renderMobileActions?: (row: T) => ReactNode;
+  /** Optional mobile-only card (< md). Desktop/tablet card list unchanged. */
+  renderMobileCard?: (row: T) => ReactNode;
   headerActions?: ReactNode;
 };
 
@@ -29,6 +31,7 @@ export function AdminDataTable<T>({
   rowKey,
   emptyState,
   renderMobileActions,
+  renderMobileCard,
   headerActions,
 }: AdminDataTableProps<T>) {
   const mobileColumns = columns.filter((col) => !col.hideOnMobile);
@@ -52,10 +55,17 @@ export function AdminDataTable<T>({
         <>
           {/* Card list — used below xl so tables never force page horizontal scroll */}
           <div className="flex w-full max-w-full min-w-0 flex-col gap-3 pb-4 xl:hidden">
+            {data.map((row) =>
+              renderMobileCard ? (
+                <div key={rowKey(row)} className="w-full min-w-0 md:hidden">
+                  {renderMobileCard(row)}
+                </div>
+              ) : null,
+            )}
             {data.map((row) => (
               <article
-                key={rowKey(row)}
-                className="w-full max-w-full min-w-0 overflow-hidden rounded-xl border border-white/10 bg-[#0F172A]/80 p-3 shadow-lg backdrop-blur-xl sm:p-4"
+                key={renderMobileCard ? `${rowKey(row)}-md` : rowKey(row)}
+                className={`w-full max-w-full min-w-0 overflow-hidden rounded-xl border border-white/10 bg-[#0F172A]/80 p-3 shadow-lg backdrop-blur-xl sm:p-4 ${renderMobileCard ? "hidden md:block" : ""}`}
               >
                 <dl className="space-y-2.5 sm:space-y-3">
                   {mobileColumns.map((col) => (
@@ -80,8 +90,8 @@ export function AdminDataTable<T>({
 
           {/* Desktop table — scrolls internally, header stays sticky */}
           <div className="hidden xl:flex flex-col flex-1 min-h-0 w-full max-w-full min-w-0 border-t border-white/10 bg-[#0F172A]/40 backdrop-blur-xl shadow-2xl overflow-hidden">
-            <div className="overflow-y-auto flex-1 min-h-0">
-              <table className="w-full table-auto text-left text-sm text-slate-300">
+            <div className="overflow-x-auto overflow-y-auto flex-1 min-h-0">
+              <table className="w-full min-w-[960px] table-auto text-left text-sm text-slate-300">
                 <thead className="sticky top-0 z-10 bg-[#0F172A] text-xs md:text-sm uppercase tracking-widest text-cyan-400 border-b border-cyan-500/20">
                   <tr>
                     {columns.map((col) => (

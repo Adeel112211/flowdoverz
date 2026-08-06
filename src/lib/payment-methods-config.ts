@@ -85,3 +85,16 @@ export function checkoutQrSrc(method: CheckoutPaymentMethod) {
   const text = method.accountNumber.replace(/-/g, "");
   return `/api/checkout/qr?text=${encodeURIComponent(text)}`;
 }
+
+export function getCheckoutPaymentMethod(id: string | undefined | null) {
+  if (!id) return null;
+  return CHECKOUT_PAYMENT_METHODS.find((method) => method.id === id) ?? null;
+}
+
+export function payToMethodDisplayLabel(
+  id: string | undefined | null,
+  storedLabel?: string | null,
+) {
+  if (storedLabel) return storedLabel;
+  return getCheckoutPaymentMethod(id)?.name ?? null;
+}

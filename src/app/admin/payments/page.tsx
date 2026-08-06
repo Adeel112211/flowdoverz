@@ -19,7 +19,10 @@ import { AdminPageLayout } from "@/components/admin-page-layout";
 import { AdminLoadingState } from "@/components/admin-loading-state";
 import { AdminGlassModal, AdminGlassPanel } from "@/components/admin-glass-modal";
 import { PlanBadge } from "@/components/plan-badge";
+import { PayToMethodBadge } from "@/components/pay-to-method-badge";
+import { PaymentMobileCard } from "@/components/admin-mobile-cards";
 import { senderPaymentLabel } from "@/lib/sender-payment-options";
+import { payToMethodDisplayLabel } from "@/lib/payment-methods-config";
 
 type Payment = {
   id: string;
@@ -29,6 +32,8 @@ type Payment = {
   transactionId: string;
   senderPaymentSource?: string;
   senderPaymentSourceLabel?: string;
+  payToMethodId?: string;
+  payToMethodLabel?: string;
   status: "pending" | "approved" | "rejected" | "refunded";
   createdAt: string;
   processedAt?: string;
@@ -155,8 +160,10 @@ export default function PaymentsPage() {
       const matchesEmail = p.userEmail?.toLowerCase().includes(q);
       const matchesTransaction = p.transactionId?.toLowerCase().includes(q);
       const senderLabel = (p.senderPaymentSourceLabel || senderPaymentLabel(p.senderPaymentSource)).toLowerCase();
+      const payToLabel = (payToMethodDisplayLabel(p.payToMethodId, p.payToMethodLabel) || "").toLowerCase();
       const matchesSender = senderLabel.includes(q);
-      if (!matchesEmail && !matchesTransaction && !matchesSender) return false;
+      const matchesPayTo = payToLabel.includes(q);
+      if (!matchesEmail && !matchesTransaction && !matchesSender && !matchesPayTo) return false;
     }
 
     if (filter === "all") return true;
@@ -339,14 +346,15 @@ export default function PaymentsPage() {
     {
       key: "user",
       header: "Email",
-      className: "w-full",
+      className: "min-w-[180px] max-w-[280px]",
       render: (payment) => (
         <span className="text-slate-400 block truncate max-w-[200px] md:max-w-[300px]" title={payment.userEmail}>{payment.userEmail}</span>
       ),
     },
     {
       key: "date",
-      header: "Activate",
+      header: "Submitted",
+      mobileLabel: "Submitted",
       render: (payment) => (
         <span className="text-slate-400 whitespace-nowrap">
           {new Date(payment.createdAt).toLocaleDateString()}
@@ -366,6 +374,17 @@ export default function PaymentsPage() {
         <span className="text-slate-300 whitespace-nowrap">
           {payment.senderPaymentSourceLabel || senderPaymentLabel(payment.senderPaymentSource)}
         </span>
+      ),
+    },
+    {
+      key: "payTo",
+      header: "Paid To",
+      mobileLabel: "Paid to",
+      render: (payment) => (
+        <PayToMethodBadge
+          methodId={payment.payToMethodId}
+          label={payment.payToMethodLabel}
+        />
       ),
     },
     {
@@ -449,6 +468,17 @@ export default function PaymentsPage() {
         rowKey={(payment) => payment.id}
         emptyState={<EmptyPayments />}
         renderMobileActions={renderActions}
+        renderMobileCard={(payment) => (
+          <PaymentMobileCard
+            payment={payment}
+            statusBadge={<PaymentStatus status={payment.status} />}
+            planBadge={<PlanBadge planId={payment.planId} />}
+            onApprove={() => openActionConfirm(payment, "approve")}
+            onReject={() => openActionConfirm(payment, "reject")}
+            onRefund={() => openActionConfirm(payment, "refund")}
+            onScreenshot={() => openScreenshot(payment)}
+          />
+        )}
         headerActions={
           <div className="relative w-full sm:w-64">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
@@ -495,6 +525,15 @@ export default function PaymentsPage() {
                   <span className="font-semibold text-slate-300">
                     {pendingAction.payment.senderPaymentSourceLabel ||
                       senderPaymentLabel(pendingAction.payment.senderPaymentSource)}
+                  </span>
+                </p>
+                <p className="mt-1 text-xs text-slate-500">
+                  Paid to:{" "}
+                  <span className="inline-flex align-middle">
+                    <PayToMethodBadge
+                      methodId={pendingAction.payment.payToMethodId}
+                      label={pendingAction.payment.payToMethodLabel}
+                    />
                   </span>
                 </p>
 

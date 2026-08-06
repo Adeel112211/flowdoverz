@@ -15,7 +15,6 @@ import {
   Plus,
   Search,
   Trash2,
-  Download,
   X,
   XCircle,
   type LucideIcon,
@@ -29,6 +28,7 @@ import { AdminLoadingState } from "@/components/admin-loading-state";
 import { AdminGlassModal, AdminGlassPanel } from "@/components/admin-glass-modal";
 import { useAdminToast } from "@/components/admin-toast";
 import { AdminPageLayout } from "@/components/admin-page-layout";
+import { ClientMobileCard } from "@/components/admin-mobile-cards";
 
 type Client = {
   email: string;
@@ -113,7 +113,7 @@ function ActionIconButton({
       onClick={onClick}
       aria-label={label}
       title={label}
-      className={`rounded-lg p-2 shrink-0 transition-colors ${bgClass} ${colorClass} hover:brightness-125`}
+      className={`shrink-0 rounded-lg p-2 transition-colors hover:brightness-125 ${bgClass} ${colorClass}`}
     >
       <Icon size={16} strokeWidth={2.25} />
     </button>
@@ -192,8 +192,6 @@ export default function ClientsPage() {
   const [deletingClient, setDeletingClient] = useState(false);
   const [filter, setFilter] = useState<Filter>("all");
   const [searchQuery, setSearchQuery] = useState("");
-  const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [bulkLoading, setBulkLoading] = useState(false);
 
   useEffect(() => {
     fetchClients();
@@ -245,37 +243,6 @@ export default function ClientsPage() {
     } catch {
       toast("Error updating client", "error");
     }
-  };
-
-  const runBulk = async (action: string) => {
-    if (!selected.size) return;
-    setBulkLoading(true);
-    try {
-      const res = await fetch("/api/admin/clients/bulk", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action, emails: Array.from(selected) }),
-      });
-      const data = await res.json();
-      if (data.success) {
-        toast(data.message || "Bulk action completed");
-        setSelected(new Set());
-        fetchClients();
-      } else {
-        toast(data.error || "Bulk action failed", "error");
-      }
-    } finally {
-      setBulkLoading(false);
-    }
-  };
-
-  const toggleSelect = (email: string) => {
-    setSelected((prev) => {
-      const next = new Set(prev);
-      if (next.has(email)) next.delete(email);
-      else next.add(email);
-      return next;
-    });
   };
 
   const handleCreate = async (e: React.FormEvent) => {
@@ -471,20 +438,6 @@ export default function ClientsPage() {
     return "Clients";
   };
 
-  const exportCsv = () => {
-    const rows = filteredClients.map((c) =>
-      [c.email, c.name || "", c.subscriptionPlan || "", c.trialExpiresAt || "", c.subscriptionExpiresAt || ""].join(","),
-    );
-    const csv = ["email,name,plan,trial_expires,plan_expires", ...rows].join("\n");
-    const blob = new Blob([csv], { type: "text/csv" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "clients.csv";
-    a.click();
-    URL.revokeObjectURL(url);
-  };
-
   const renderActions = (client: Client) => (
     <div className="inline-flex flex-nowrap items-center justify-end gap-1.5 shrink-0">
       <ActionIconButton
@@ -525,18 +478,6 @@ export default function ClientsPage() {
 
   const columns: AdminTableColumn<Client>[] = [
     {
-      key: "select",
-      header: "",
-      render: (client) => (
-        <input
-          type="checkbox"
-          checked={selected.has(client.email)}
-          onChange={() => toggleSelect(client.email)}
-          aria-label={`Select ${client.email}`}
-        />
-      ),
-    },
-    {
       key: "name",
       header: "Name",
       render: (client) => (
@@ -552,7 +493,7 @@ export default function ClientsPage() {
     {
       key: "email",
       header: "Email",
-      className: "w-full",
+      className: "min-w-[180px] max-w-[280px]",
       render: (client) => (
         <Link
           href={`/admin/clients/${encodeURIComponent(client.email)}`}
@@ -564,10 +505,11 @@ export default function ClientsPage() {
       ),
     },
     {
-      key: "activated",
-      header: "Activate",
+      key: "joined",
+      header: "Joined",
+      mobileLabel: "Joined",
       render: (client) => (
-        <span className="whitespace-nowrap text-emerald-400 font-medium">
+        <span className="whitespace-nowrap text-slate-400 font-medium">
           {client.createdAt ? new Date(client.createdAt).toLocaleDateString() : "N/A"}
         </span>
       ),
@@ -645,18 +587,6 @@ export default function ClientsPage() {
         </div>
       )}
 
-      {selected.size > 0 && (
-        <div className="mb-4 flex flex-wrap items-center gap-2 rounded-xl border border-cyan-500/20 bg-cyan-500/5 px-4 py-3">
-          <span className="text-sm font-semibold text-cyan-200">{selected.size} selected</span>
-          <button type="button" disabled={bulkLoading} onClick={() => runBulk("extend_sub_30")} className="rounded-lg border border-white/10 px-3 py-1.5 text-xs font-bold text-slate-300 hover:bg-white/5">+30 days</button>
-          <button type="button" disabled={bulkLoading} onClick={() => runBulk("extend_trial_7")} className="rounded-lg border border-white/10 px-3 py-1.5 text-xs font-bold text-slate-300 hover:bg-white/5">+7 trial</button>
-          <button type="button" disabled={bulkLoading} onClick={() => runBulk("suspend")} className="rounded-lg border border-rose-500/20 px-3 py-1.5 text-xs font-bold text-rose-300 hover:bg-rose-500/10">Suspend</button>
-          <button type="button" onClick={exportCsv} className="ml-auto inline-flex items-center gap-1 rounded-lg border border-white/10 px-3 py-1.5 text-xs font-bold text-slate-300 hover:bg-white/5">
-            <Download className="w-3.5 h-3.5" /> Export CSV
-          </button>
-        </div>
-      )}
-
       <AdminDataTable
         title={getTableTitle()}
         count={filteredClients.length}
@@ -665,6 +595,20 @@ export default function ClientsPage() {
         rowKey={(client) => client.email}
         emptyState={<EmptyClients />}
         renderMobileActions={renderActions}
+        renderMobileCard={(client) => (
+          <ClientMobileCard
+            client={client}
+            onEdit={() =>
+              setEditing({
+                ...client,
+                subscriptionPlan: normalizePlanValue(client.subscriptionPlan),
+              })
+            }
+            onPassword={() => openPasswordModal(client)}
+            onPayments={() => openPaymentModal(client)}
+            onDelete={() => setDeleteClient(client)}
+          />
+        )}
         headerActions={
           <div className="relative w-full sm:w-64">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />

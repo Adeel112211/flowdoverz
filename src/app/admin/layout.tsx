@@ -36,7 +36,7 @@ export default async function AdminLayout({ children }: { children: ReactNode })
 
       <AdminSidebar />
       <main className="relative z-10 flex min-h-[calc(100dvh-73px)] min-w-0 flex-1 flex-col overflow-x-hidden md:h-dvh md:min-h-0 md:overflow-hidden">
-        <div className="flex min-h-0 flex-1 flex-col overflow-x-hidden max-md:overflow-y-auto md:overflow-hidden p-3 sm:p-6 md:h-full md:p-8 md:pb-0">
+        <div className="flex min-h-0 flex-1 flex-col overflow-x-hidden max-md:overflow-y-auto md:overflow-hidden max-md:px-0 max-md:pt-0 max-md:pb-3 p-3 sm:p-6 md:h-full md:p-8 md:pb-0">
           <AdminShell>{children}</AdminShell>
         </div>
       </main>

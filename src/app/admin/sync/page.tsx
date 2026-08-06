@@ -8,6 +8,7 @@ import { AdminPageLayout } from "@/components/admin-page-layout";
 import { AdminLoadingState } from "@/components/admin-loading-state";
 import { AdminFilterPills } from "@/components/admin-filter-pills";
 import { AdminDataTable, type AdminTableColumn } from "@/components/admin-data-table";
+import { SyncMobileCard } from "@/components/admin-mobile-cards";
 
 type SyncClient = {
   email: string;
@@ -145,6 +146,9 @@ export default function SyncStatusPage() {
             data={filtered}
             rowKey={(c) => c.email}
             emptyState={<p className="text-slate-500 text-center py-8">No clients</p>}
+            renderMobileCard={(c) => (
+              <SyncMobileCard client={c} statusBadge={<StatusBadge status={c.syncStatus} />} />
+            )}
           />
         )}
       </div>

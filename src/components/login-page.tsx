@@ -1,11 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AuthBridge } from "@/components/auth-bridge";
 import { BrandLogo } from "@/components/brand-logo";
-import { getSession, signIn, type Session } from "@/lib/auth";
+import { useClientSession } from "@/hooks/use-client-session";
+import { signIn } from "@/lib/auth";
 import { Eye, EyeOff, AlertCircle, X } from "lucide-react";
 
 export function LoginPage() {
@@ -13,11 +14,7 @@ export function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
-  const [session, setSession] = useState<Session | null>(null);
-
-  useEffect(() => {
-    setSession(getSession());
-  }, []);
+  const session = useClientSession();
 
   async function handleSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();

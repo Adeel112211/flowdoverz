@@ -5,9 +5,16 @@ import Link from "next/link";
 import { ChevronDown, Menu, X, Sparkles, Zap, Layers, Lock, Video, Play, MonitorSmartphone, Laptop, Globe } from "lucide-react";
 import { FaApple, FaWindows, FaUbuntu, FaChrome, FaEdge, FaGoogle, FaAndroid } from "react-icons/fa";
 import { SiBrave, SiArc } from "react-icons/si";
+import { useClientSession } from "@/hooks/use-client-session";
+import { UserMenuButton } from "@/components/user-menu-button";
+
+const dashboardBtnClass =
+  "px-6 py-2.5 text-sm font-bold text-slate-950 bg-gradient-to-r from-cyan-400 to-emerald-400 rounded-full shadow-[0_0_15px_rgba(34,211,238,0.4)] hover:scale-105 hover:shadow-[0_0_25px_rgba(34,211,238,0.6)] transition-all duration-300";
+
 export default function LandingPage() {
   const [scrolled, setScrolled] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const session = useClientSession();
 
   useEffect(() => {
     const handleScroll = () => {
@@ -57,25 +64,36 @@ export default function LandingPage() {
             <Link href="/pricing" className="text-base font-bold text-slate-400 hover:text-white transition-colors">Pricing</Link>
           </nav>
 
-          <div className="hidden md:flex items-center gap-4">
-            <Link
-              href="/login"
-              className="px-5 py-2 text-sm font-bold text-slate-300 hover:text-white transition-colors"
-            >
-              Login
-            </Link>
-            <Link
-              href="/signup"
-              className="px-6 py-2.5 text-sm font-bold text-slate-950 bg-gradient-to-r from-cyan-400 to-emerald-400 rounded-full shadow-[0_0_15px_rgba(34,211,238,0.4)] hover:scale-105 hover:shadow-[0_0_25px_rgba(34,211,238,0.6)] transition-all duration-300"
-            >
-              Get Started
-            </Link>
+          <div className="hidden md:flex items-center gap-3">
+            {session ? (
+              <>
+                <Link href="/dashboard" className={dashboardBtnClass}>
+                  Dashboard
+                </Link>
+                <UserMenuButton session={session} />
+              </>
+            ) : (
+              <>
+                <Link
+                  href="/login"
+                  className="px-5 py-2 text-sm font-bold text-slate-300 hover:text-white transition-colors"
+                >
+                  Login
+                </Link>
+                <Link href="/signup" className={dashboardBtnClass}>
+                  Get Started
+                </Link>
+              </>
+            )}
           </div>
 
-          {/* Mobile Toggle */}
-          <button className="md:hidden text-white" onClick={toggleMobileMenu}>
-            {mobileMenuOpen ? <X size={28} /> : <Menu size={28} />}
-          </button>
+          {/* Mobile: account + menu */}
+          <div className="flex items-center gap-3 md:hidden">
+            {session ? <UserMenuButton session={session} /> : null}
+            <button type="button" className="text-white" onClick={toggleMobileMenu}>
+              {mobileMenuOpen ? <X size={28} /> : <Menu size={28} />}
+            </button>
+          </div>
         </div>
       </header>
 
@@ -89,12 +107,20 @@ export default function LandingPage() {
           <Link href="/pricing" onClick={closeMenu} className="text-2xl font-bold text-white border-b border-white/10 pb-4">Pricing</Link>
           
           <div className="mt-8 flex flex-col gap-4">
-            <Link href="/login" onClick={closeMenu} className="text-center px-5 py-4 text-base font-bold text-slate-300 border border-white/10 hover:bg-white/5 rounded-2xl transition-colors">
-              Login
-            </Link>
-            <Link href="/signup" onClick={closeMenu} className="text-center px-5 py-4 text-base font-bold text-slate-950 bg-gradient-to-r from-cyan-400 to-emerald-400 rounded-2xl shadow-[0_0_15px_rgba(34,211,238,0.3)] transition-all">
-              Get Started
-            </Link>
+            {session ? (
+              <Link href="/dashboard" onClick={closeMenu} className={`text-center ${dashboardBtnClass}`}>
+                Dashboard
+              </Link>
+            ) : (
+              <>
+                <Link href="/login" onClick={closeMenu} className="text-center px-5 py-4 text-base font-bold text-slate-300 border border-white/10 hover:bg-white/5 rounded-2xl transition-colors">
+                  Login
+                </Link>
+                <Link href="/signup" onClick={closeMenu} className={`text-center px-5 py-4 text-base font-bold rounded-2xl ${dashboardBtnClass}`}>
+                  Get Started
+                </Link>
+              </>
+            )}
           </div>
         </div>
       )}

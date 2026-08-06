@@ -4,7 +4,8 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { Check, Zap, Shield, Users, Sparkles, ArrowRight, Menu, X, Star } from "lucide-react";
 import { DEFAULT_PRICING_CONFIG, formatPkr, type PricingConfig, type PricingPlan } from "@/lib/pricing-config";
-import { getSession } from "@/lib/auth";
+import { useClientSession } from "@/hooks/use-client-session";
+import { UserMenuButton } from "@/components/user-menu-button";
 
 function planVisuals(planId: PricingPlan["id"]) {
   if (planId === "solo") {
@@ -53,26 +54,35 @@ export default function PricingPage() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [pricing, setPricing] = useState<PricingConfig>(DEFAULT_PRICING_CONFIG);
   const [activationBlock, setActivationBlock] = useState<{ code: string; error: string } | null>(null);
+  const session = useClientSession();
 
   useEffect(() => {
-    fetch("/api/pricing")
+    const controller = new AbortController();
+
+    fetch("/api/pricing", { signal: controller.signal })
       .then((r) => r.json())
       .then((d) => {
         if (d.success) setPricing(d.config);
       })
-      .catch(() => undefined);
+      .catch((err) => {
+        if (err instanceof Error && err.name === "AbortError") return;
+      });
 
-    if (getSession()) {
-      fetch("/api/user/status")
+    if (session) {
+      fetch("/api/user/status", { signal: controller.signal })
         .then((r) => r.json())
         .then((d) => {
           if (d.success && d.activationBlock) {
             setActivationBlock(d.activationBlock);
           }
         })
-        .catch(() => undefined);
+        .catch((err) => {
+          if (err instanceof Error && err.name === "AbortError") return;
+        });
     }
-  }, []);
+
+    return () => controller.abort();
+  }, [session]);
 
   const plans = pricing.plans.filter((p) => p.enabled);
 
@@ -108,15 +118,32 @@ export default function PricingPage() {
           </nav>
 
           <div className="hidden md:flex items-center gap-3">
-            <Link href="/login" className="px-4 py-2 text-sm font-bold text-slate-400 hover:text-white transition-colors">Login</Link>
-            <Link href="/signup" className="px-5 py-2.5 text-sm font-bold text-slate-950 bg-gradient-to-r from-cyan-400 to-emerald-400 rounded-full shadow-[0_0_15px_rgba(34,211,238,0.35)] hover:scale-105 hover:shadow-[0_0_25px_rgba(34,211,238,0.6)] transition-all duration-300">
-              Get Started
-            </Link>
+            {session ? (
+              <>
+                <Link
+                  href="/dashboard"
+                  className="px-5 py-2.5 text-sm font-bold text-slate-950 bg-gradient-to-r from-cyan-400 to-emerald-400 rounded-full shadow-[0_0_15px_rgba(34,211,238,0.35)] hover:scale-105 hover:shadow-[0_0_25px_rgba(34,211,238,0.6)] transition-all duration-300"
+                >
+                  Dashboard
+                </Link>
+                <UserMenuButton session={session} />
+              </>
+            ) : (
+              <>
+                <Link href="/login" className="px-4 py-2 text-sm font-bold text-slate-400 hover:text-white transition-colors">Login</Link>
+                <Link href="/signup" className="px-5 py-2.5 text-sm font-bold text-slate-950 bg-gradient-to-r from-cyan-400 to-emerald-400 rounded-full shadow-[0_0_15px_rgba(34,211,238,0.35)] hover:scale-105 hover:shadow-[0_0_25px_rgba(34,211,238,0.6)] transition-all duration-300">
+                  Get Started
+                </Link>
+              </>
+            )}
           </div>
 
-          <button className="md:hidden text-white" onClick={() => setMobileMenuOpen(!mobileMenuOpen)}>
-            {mobileMenuOpen ? <X size={26} /> : <Menu size={26} />}
-          </button>
+          <div className="flex items-center gap-3 md:hidden">
+            {session ? <UserMenuButton session={session} /> : null}
+            <button type="button" className="text-white" onClick={() => setMobileMenuOpen(!mobileMenuOpen)}>
+              {mobileMenuOpen ? <X size={26} /> : <Menu size={26} />}
+            </button>
+          </div>
         </div>
       </header>
 
@@ -129,8 +156,16 @@ export default function PricingPage() {
             </Link>
           ))}
           <div className="mt-6 flex flex-col gap-4">
-            <Link href="/login" onClick={() => setMobileMenuOpen(false)} className="text-center py-4 font-bold text-slate-300 border border-white/10 rounded-2xl">Login</Link>
-            <Link href="/signup" onClick={() => setMobileMenuOpen(false)} className="text-center py-4 font-bold text-slate-950 bg-gradient-to-r from-cyan-400 to-emerald-400 rounded-2xl">Get Started</Link>
+            {session ? (
+              <Link href="/dashboard" onClick={() => setMobileMenuOpen(false)} className="text-center py-4 font-bold text-slate-950 bg-gradient-to-r from-cyan-400 to-emerald-400 rounded-2xl">
+                Dashboard
+              </Link>
+            ) : (
+              <>
+                <Link href="/login" onClick={() => setMobileMenuOpen(false)} className="text-center py-4 font-bold text-slate-300 border border-white/10 rounded-2xl">Login</Link>
+                <Link href="/signup" onClick={() => setMobileMenuOpen(false)} className="text-center py-4 font-bold text-slate-950 bg-gradient-to-r from-cyan-400 to-emerald-400 rounded-2xl">Get Started</Link>
+              </>
+            )}
           </div>
         </div>
       )}

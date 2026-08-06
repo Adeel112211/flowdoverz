@@ -15,7 +15,8 @@ import {
 import { BrandLogo } from "@/components/brand-logo";
 import { PlanAmount, PlanBadge } from "@/components/plan-badge";
 import { ReceiptPreviewModal } from "@/components/receipt-preview-modal";
-import { getSession, signOut, type Session } from "@/lib/auth";
+import { useClientSession } from "@/hooks/use-client-session";
+import { signOut } from "@/lib/auth";
 import type { PurchaseRecord } from "@/lib/client-receipts";
 
 type ReceiptAccount = {
@@ -56,7 +57,7 @@ function PurchaseStatus({ status }: { status: PurchaseRecord["status"] }) {
 
 export function ReceiptsPage() {
   const router = useRouter();
-  const [session, setSession] = useState<Session | null>(null);
+  const session = useClientSession();
   const [account, setAccount] = useState<ReceiptAccount | null>(null);
   const [purchases, setPurchases] = useState<PurchaseRecord[]>([]);
   const [loading, setLoading] = useState(true);
@@ -65,14 +66,14 @@ export function ReceiptsPage() {
   const [previewPurchase, setPreviewPurchase] = useState<PurchaseRecord | null>(null);
 
   useEffect(() => {
-    const current = getSession();
-    if (!current) {
+    if (!session) {
       router.replace("/login");
       return;
     }
-    setSession(current);
 
-    fetch("/api/user/receipts")
+    const controller = new AbortController();
+
+    fetch("/api/user/receipts", { signal: controller.signal })
       .then((res) => res.json())
       .then((data) => {
         if (!data.success) {
@@ -83,9 +84,16 @@ export function ReceiptsPage() {
         setAccount(data.account);
         setPurchases(data.purchases || []);
       })
-      .catch(console.error)
-      .finally(() => setLoading(false));
-  }, [router]);
+      .catch((err) => {
+        if (err instanceof Error && err.name === "AbortError") return;
+        console.error(err);
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setLoading(false);
+      });
+
+    return () => controller.abort();
+  }, [router, session]);
 
   const filteredPurchases = useMemo(() => {
     return purchases.filter((p) => {

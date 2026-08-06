@@ -139,7 +139,7 @@ function DateRangeDropdown({
   }, [isOpen]);
 
   return (
-    <div className="relative z-30 w-full sm:w-auto sm:min-w-[12rem]">
+    <div className="relative z-30 w-fit max-w-full sm:min-w-[12rem]">
       <button
         ref={buttonRef}
         type="button"
@@ -149,7 +149,7 @@ function DateRangeDropdown({
         }}
         aria-expanded={isOpen}
         aria-haspopup="listbox"
-        className={`flex w-full sm:w-48 md:w-56 items-center justify-between gap-2 bg-[#0F172A]/95 border text-white font-semibold rounded-xl p-3 backdrop-blur-xl shadow-lg transition-all cursor-pointer hover:bg-white/5 ${
+        className={`flex w-auto min-w-[10.5rem] max-w-full sm:w-48 md:w-56 items-center justify-between gap-2 bg-[#0F172A]/95 border text-white font-semibold rounded-xl p-3 backdrop-blur-xl shadow-lg transition-all cursor-pointer hover:bg-white/5 ${
           isOpen
             ? "border-cyan-400/60 ring-2 ring-cyan-500/40"
             : "border-white/10 hover:border-white/20"
@@ -317,22 +317,25 @@ export default function AdminDashboard() {
 
   return (
     <AdminPageLayout
+      scrollContent={false}
+      lockScroll
       header={
         <AdminPageHeader
           title="Admin Dashboard"
           description="Welcome back. Here is what is happening with FlowDoverz today."
           actions={<DateRangeDropdown value={timeRange} onChange={setTimeRange} />}
+          actionsClassName="relative z-30 flex w-full justify-end sm:block sm:w-auto"
         />
       }
     >
-      <div className="flex w-full min-w-0 max-w-full flex-col gap-4 lg:gap-5">
-        <div className="flex flex-col gap-3 sm:gap-4">
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
+      <div className="flex w-full min-w-0 max-w-full flex-col gap-4 overflow-visible lg:gap-5">
+        <div className="flex flex-col gap-3 overflow-visible pt-1 sm:gap-4 sm:pt-2">
+          <div className="grid grid-cols-1 gap-3 overflow-visible sm:grid-cols-3 sm:gap-4">
             <MetricCard title="Total Users" value={metrics.totalUsers} icon={Users} color="text-emerald-400" bg="bg-emerald-400/10" />
             <MetricCard title="Active Plan" value={metrics.activeSubscriptions} icon={Activity} color="text-cyan-400" bg="bg-cyan-400/10" />
             <MetricCard title="Total Revenue" value={formatPkrDisplay(metrics.totalRevenue)} icon={Banknote} color="text-purple-400" bg="bg-purple-400/10" />
           </div>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
+          <div className="grid grid-cols-2 gap-3 overflow-visible sm:grid-cols-4 sm:gap-4">
             <MetricCard title="Pending" value={metrics.pendingApprovals} icon={Clock} color="text-amber-400" bg="bg-amber-400/10" />
             <MetricCard title="Signups Today" value={metrics.signupsToday ?? 0} icon={UserPlus} color="text-teal-400" bg="bg-teal-400/10" />
             <MetricCard title="Expiring Week" value={metrics.expiringThisWeek ?? 0} icon={AlertTriangle} color="text-rose-400" bg="bg-rose-400/10" />
@@ -480,27 +483,51 @@ function MetricCard({
   color: string;
   bg: string;
 }) {
+  const valueNode =
+    typeof value === "string" || typeof value === "number" ? (
+      <p className="text-2xl max-md:leading-none sm:text-4xl lg:text-5xl font-black text-white tracking-tight drop-shadow-md tabular-nums">
+        {value}
+      </p>
+    ) : (
+      <div className="text-white drop-shadow-md max-md:[&_span]:text-xl max-md:[&_span:first-child]:text-2xl sm:[&_span:first-child]:text-3xl lg:[&_span:first-child]:text-4xl">
+        {value}
+      </div>
+    );
+
   return (
-    <div className="rounded-xl border border-white/10 bg-gradient-to-br from-[#0F172A]/90 to-[#1e293b]/50 backdrop-blur-md p-4 sm:p-6 shadow-2xl relative overflow-hidden group transition-all duration-300 hover:-translate-y-1 hover:border-cyan-500/30 hover:shadow-[0_10px_40px_-10px_rgba(34,211,238,0.25)] flex flex-col justify-between min-h-[120px] sm:min-h-[150px]">
+    <div className="group relative overflow-hidden rounded-xl border border-white/10 bg-gradient-to-br from-[#0F172A]/90 to-[#1e293b]/50 p-3.5 shadow-2xl backdrop-blur-md transition-all duration-300 hover:border-cyan-500/30 hover:shadow-[0_10px_40px_-10px_rgba(34,211,238,0.25)] sm:min-h-[150px] sm:p-6">
       <div className="absolute -top-20 -right-20 w-48 h-48 bg-gradient-to-br from-white/10 to-transparent rounded-full blur-2xl transition-transform group-hover:scale-150 duration-700" />
 
-      <div className="flex justify-between items-start relative z-10 gap-3">
-        <p className="text-xs sm:text-sm font-bold text-slate-400 uppercase tracking-wider">
+      {/* Mobile: compact grid — icon beside title/value, no wide empty gap */}
+      <div className="relative z-10 grid grid-cols-[minmax(0,1fr)_auto] grid-rows-[auto_auto] gap-x-2.5 gap-y-1 sm:hidden">
+        <p className="col-start-1 row-start-1 text-[10px] font-bold uppercase tracking-wider text-slate-400 leading-tight">
           {title}
         </p>
-        <div className={`p-2 sm:p-3 rounded-xl ${bg} shadow-inner ring-1 ring-white/10 shrink-0`}>
-          <Icon className={`w-4 h-4 sm:w-5 sm:h-5 ${color}`} />
+        <div
+          className={`col-start-2 row-start-1 row-span-2 self-center rounded-lg p-1.5 shadow-inner ring-1 ring-white/10 ${bg}`}
+        >
+          <Icon className={`h-4 w-4 ${color}`} />
         </div>
+        <div className="col-start-1 row-start-2 min-w-0">{valueNode}</div>
       </div>
 
-      <div className="relative z-10 mt-4 sm:mt-6 min-w-0">
-        {typeof value === "string" || typeof value === "number" ? (
-          <p className="text-3xl sm:text-4xl lg:text-5xl font-black text-white tracking-tight drop-shadow-md tabular-nums">
-            {value}
-          </p>
-        ) : (
-          <div className="text-white drop-shadow-md">{value}</div>
-        )}
+      {/* sm+: original layout */}
+      <div className="relative z-10 hidden min-h-[102px] flex-col justify-between sm:flex">
+        <div className="flex items-start justify-between gap-3">
+          <p className="text-xs font-bold uppercase tracking-wider text-slate-400 sm:text-sm">{title}</p>
+          <div className={`shrink-0 rounded-xl p-2 shadow-inner ring-1 ring-white/10 sm:p-3 ${bg}`}>
+            <Icon className={`h-4 w-4 sm:h-5 sm:w-5 ${color}`} />
+          </div>
+        </div>
+        <div className="mt-4 min-w-0 sm:mt-6">
+          {typeof value === "string" || typeof value === "number" ? (
+            <p className="text-3xl font-black tracking-tight text-white drop-shadow-md tabular-nums sm:text-4xl lg:text-5xl">
+              {value}
+            </p>
+          ) : (
+            <div className="text-white drop-shadow-md">{value}</div>
+          )}
+        </div>
       </div>
     </div>
   );

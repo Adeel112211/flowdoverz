@@ -319,12 +319,12 @@ export function CookiesPage() {
 
       <main className="mx-auto flex min-h-0 w-full max-w-7xl flex-1 flex-col overflow-x-hidden min-w-0 max-md:overflow-visible md:overflow-y-auto">
         {/* One-click daily action */}
-        <div className="shrink-0 grid gap-4 grid-cols-1 sm:grid-cols-2">
+        <div className="shrink-0 grid gap-4 grid-cols-1 sm:grid-cols-2 md:pt-0.5">
           <button
             type="button"
             disabled={saving}
             onClick={() => pasteFromClipboard(true)}
-            className="rounded-2xl bg-gradient-to-r from-cyan-400 to-emerald-400 px-6 py-6 text-left shadow-[0_0_15px_rgba(34,211,238,0.2)] hover:shadow-[0_0_25px_rgba(34,211,238,0.4)] hover:-translate-y-0.5 transition-all disabled:opacity-60 disabled:hover:translate-y-0"
+            className="rounded-2xl bg-gradient-to-r from-cyan-400 to-emerald-400 px-6 py-6 text-left shadow-[0_0_15px_rgba(34,211,238,0.2)] transition-all max-md:hover:-translate-y-0.5 max-md:hover:shadow-[0_0_25px_rgba(34,211,238,0.4)] md:hover:shadow-[0_10px_30px_rgba(34,211,238,0.45)] disabled:opacity-60 disabled:hover:translate-y-0 disabled:hover:shadow-[0_0_15px_rgba(34,211,238,0.2)]"
           >
             <p className="text-xl font-black text-slate-950">Paste & Replace</p>
             <p className="mt-2 text-sm font-medium text-slate-800">
@@ -335,7 +335,7 @@ export function CookiesPage() {
             type="button"
             disabled={saving}
             onClick={() => fileRef.current?.click()}
-            className="rounded-2xl border border-cyan-500/30 bg-cyan-500/10 px-6 py-6 text-left hover:bg-cyan-500/15 transition-all disabled:opacity-60 hover:-translate-y-0.5 disabled:hover:translate-y-0"
+            className="rounded-2xl border border-cyan-500/30 bg-cyan-500/10 px-6 py-6 text-left transition-all hover:bg-cyan-500/15 max-md:hover:-translate-y-0.5 md:hover:border-cyan-400/50 md:hover:shadow-[0_10px_28px_rgba(34,211,238,0.25)] disabled:opacity-60 disabled:hover:translate-y-0"
           >
             <p className="text-xl font-black text-cyan-50">Upload JSON File</p>
             <p className="mt-2 text-sm text-cyan-200/70">

@@ -15,6 +15,7 @@ import { AdminPageHeader } from "@/components/admin-page-header";
 import { AdminPageLayout } from "@/components/admin-page-layout";
 import { PlanAmount, PlanBadge } from "@/components/plan-badge";
 import { ReceiptPreviewModal } from "@/components/receipt-preview-modal";
+import { ReceiptMobileCard } from "@/components/admin-mobile-cards";
 import type { PurchaseRecord } from "@/lib/client-receipts";
 
 const FILTERS = ["all", "approved", "refunded"] as const;
@@ -115,7 +116,7 @@ export default function AdminReceiptsPage() {
     {
       key: "email",
       header: "Email",
-      className: "w-full",
+      className: "min-w-[180px] max-w-[280px]",
       render: (p) => (
         <span className="block max-w-[200px] truncate text-slate-400 md:max-w-[300px]" title={p.email}>
           {p.email}
@@ -198,6 +199,24 @@ export default function AdminReceiptsPage() {
         rowKey={(p) => p.paymentId}
         emptyState={<EmptyReceipts />}
         renderMobileActions={renderViewReceipt}
+        renderMobileCard={(p) => (
+          <ReceiptMobileCard
+            purchase={{
+              paymentId: p.paymentId,
+              userName: p.userName,
+              email: p.email,
+              planId: p.planId,
+              amountLabel: p.amountLabel,
+              paymentDateLabel: p.paymentDateLabel,
+              receiptNumber: p.receiptNumber,
+              status: p.status,
+            }}
+            statusBadge={<PurchaseStatus status={p.status} />}
+            planBadge={<PlanBadge planId={p.planId} />}
+            amountLabel={<PlanAmount planId={p.planId} amount={p.amountLabel} />}
+            onView={() => setPreviewPurchase(p)}
+          />
+        )}
         headerActions={
           <div className="relative w-full sm:w-64">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
