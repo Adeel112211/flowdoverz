@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { authenticateUser } from "@/lib/user-store";
+import { sessionCookieOptions } from "@/lib/site-urls";
 
 const SID_COOKIE = "flowdoverz_sid";
 
@@ -35,11 +36,7 @@ export async function POST(request: NextRequest) {
     },
   });
 
-  response.cookies.set(SID_COOKIE, result.user.sid, {
-    path: "/",
-    sameSite: "lax",
-    maxAge: 60 * 60 * 24 * 30,
-  });
+  response.cookies.set(SID_COOKIE, result.user.sid, sessionCookieOptions(60 * 60 * 24 * 30));
 
   return response;
 }

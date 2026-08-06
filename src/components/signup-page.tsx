@@ -5,6 +5,7 @@ import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
 import { BrandLogo } from "@/components/brand-logo";
 import { AuthPageBackground } from "@/components/auth-page-background";
+import { appPath, marketingPath } from "@/lib/site-urls";
 import { signUp } from "@/lib/auth";
 import { Eye, EyeOff, ChevronDown, AlertCircle, X } from "lucide-react";
 
@@ -68,7 +69,7 @@ export function SignupPage() {
       )}
       <div className="animate-fade-up relative w-full max-w-md">
         <div className="mb-8 flex flex-col items-center text-center max-md:mb-5">
-          <Link href="/">
+          <Link href={marketingPath("/")}>
             <BrandLogo size="lg" stacked />
           </Link>
           <h1 className="mt-8 max-md:mt-5 text-3xl md:text-4xl font-black tracking-tight text-transparent bg-clip-text bg-gradient-to-br from-white via-white to-slate-400">Create workspace</h1>
@@ -189,7 +190,7 @@ export function SignupPage() {
 
           <p className="mt-6 max-md:mt-5 text-center text-sm text-slate-400">
             Already have an account?{" "}
-            <Link href="/login" className="font-semibold text-cyan-300 hover:text-cyan-200">
+            <Link href={appPath("/login")} className="font-semibold text-cyan-300 hover:text-cyan-200">
               Login
             </Link>
           </p>

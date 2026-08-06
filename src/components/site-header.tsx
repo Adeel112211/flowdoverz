@@ -4,6 +4,7 @@ import Link from "next/link";
 import { BrandLogo } from "@/components/brand-logo";
 import { useClientSession } from "@/hooks/use-client-session";
 import { UserMenuButton } from "@/components/user-menu-button";
+import { appPath } from "@/lib/site-urls";
 
 const NAV = [
   { href: "#features", label: "Features" },
@@ -37,7 +38,7 @@ export function SiteHeader() {
           {session ? (
             <div className="flex items-center gap-3">
               <Link
-                href="/dashboard"
+                href={appPath("/dashboard")}
                 className="rounded-lg bg-gradient-to-r from-cyan-500 to-teal-500 px-4 py-2 text-sm font-semibold text-slate-950 shadow-[0_4px_20px_rgba(34,211,238,0.25)] transition-transform hover:-translate-y-px"
               >
                 Dashboard
@@ -47,13 +48,13 @@ export function SiteHeader() {
           ) : (
             <>
               <Link
-                href="/login"
+                href={appPath("/login")}
                 className="hidden rounded-lg px-4 py-2 text-sm font-medium text-slate-300 transition-colors hover:text-white sm:inline-flex"
               >
                 Sign in
               </Link>
               <Link
-                href="/signup"
+                href={appPath("/signup")}
                 className="rounded-lg bg-gradient-to-r from-cyan-500 to-teal-500 px-4 py-2 text-sm font-semibold text-slate-950 shadow-[0_4px_20px_rgba(34,211,238,0.25)] transition-transform hover:-translate-y-px"
               >
                 Start free

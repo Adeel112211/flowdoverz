@@ -4,12 +4,9 @@ import { type EmailTemplateId } from "@/lib/email-templates-defaults";
 import { renderTemplateEmail } from "@/lib/email-render";
 import { applyTemplatePlaceholders } from "@/lib/email-templates-defaults";
 import { getMergedTemplate, getSmtpConfig } from "@/lib/smtp-store";
+import { getAppUrl } from "@/lib/site-urls";
 
-const APP_URL = (
-  process.env.APP_URL ||
-  process.env.NEXT_PUBLIC_APP_URL ||
-  "https://flowdoverz.app"
-).replace(/\/$/, "");
+const APP_URL = getAppUrl();
 
 async function resolveMailConfig() {
   const stored = await getSmtpConfig();

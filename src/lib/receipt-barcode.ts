@@ -1,15 +1,12 @@
 import QRCode from "qrcode";
 import { buildReceiptScanCodeHtmlFromDataUrl, buildReceiptScanCodeHtmlWithCid } from "./receipt-barcode-html";
 import { RECEIPT_THEME as T } from "./receipt-theme";
+import { getAppUrl } from "@/lib/site-urls";
 
 export const RECEIPT_QR_CID = "receipt-qr@flowdoverz";
 
 export function getReceiptWebsiteUrl() {
-  return (
-    process.env.APP_URL ||
-    process.env.NEXT_PUBLIC_APP_URL ||
-    "https://flowdoverz.app"
-  ).replace(/\/$/, "");
+  return getAppUrl();
 }
 
 export async function buildReceiptScanCodePngBuffer(url?: string) {

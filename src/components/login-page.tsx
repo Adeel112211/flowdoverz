@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { AuthBridge } from "@/components/auth-bridge";
 import { AuthPageBackground } from "@/components/auth-page-background";
 import { BrandLogo } from "@/components/brand-logo";
+import { appPath, marketingPath } from "@/lib/site-urls";
 import { useClientSession } from "@/hooks/use-client-session";
 import { signIn } from "@/lib/auth";
 import { Eye, EyeOff, AlertCircle, X } from "lucide-react";
@@ -65,7 +66,7 @@ export function LoginPage() {
 
       <div className="animate-fade-up relative w-full max-w-md">
         <div className="mb-8 flex flex-col items-center text-center max-md:mb-5">
-          <Link href="/">
+          <Link href={marketingPath("/")}>
             <BrandLogo size="lg" stacked />
           </Link>
           <h1 className="mt-8 max-md:mt-5 text-3xl md:text-4xl font-black tracking-tight text-transparent bg-clip-text bg-gradient-to-br from-white via-white to-slate-400">Welcome back</h1>
@@ -140,7 +141,7 @@ export function LoginPage() {
 
           <p className="mt-6 text-center text-sm text-slate-400">
             No account yet?{" "}
-            <Link href="/signup" className="font-semibold text-cyan-300 hover:text-cyan-200">
+            <Link href={appPath("/signup")} className="font-semibold text-cyan-300 hover:text-cyan-200">
               Create one free
             </Link>
           </p>
