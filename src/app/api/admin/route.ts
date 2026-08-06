@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import {
   adminCookieOptions,
   createAdminToken,
+  isAdminPasswordConfigured,
   isAdminUiRequest,
   issueAdminSyncKey,
   revokeAdminSyncKey,
@@ -23,6 +24,16 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         { success: false, error: "Invalid request" },
         { status: 400 },
+      );
+    }
+
+    if (!(await isAdminPasswordConfigured())) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: "Admin password is not configured. Add FLOWBRIDGE_ADMIN_PASSWORD in Vercel.",
+        },
+        { status: 503 },
       );
     }
 

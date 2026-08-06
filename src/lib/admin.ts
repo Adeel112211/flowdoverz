@@ -9,7 +9,7 @@ export const WORKSPACE_OWNER = "workspace";
 const DATA_DIR = path.join(process.cwd(), ".data");
 const SYNC_KEY_PATH = path.join(DATA_DIR, "admin-sync.json");
 
-async function adminPassword() {
+async function adminPassword(): Promise<string | null> {
   try {
     const { getDb } = await import("@/lib/firebase-admin");
     const db = getDb();
@@ -18,23 +18,38 @@ async function adminPassword() {
       if (doc.exists) {
         const data = doc.data();
         if (data?.password) {
-          return data.password;
+          return String(data.password);
         }
       }
     }
   } catch (err) {
     console.error("Error reading admin password from Firestore:", err);
   }
-  return process.env.FLOWBRIDGE_ADMIN_PASSWORD || "AdeelAdmin@2026";
+
+  const fromEnv = process.env.FLOWBRIDGE_ADMIN_PASSWORD?.trim();
+  return fromEnv || null;
 }
 
-async function signingSecret() {
+async function signingSecret(): Promise<string | null> {
+  const configured = process.env.FLOWBRIDGE_ADMIN_SECRET?.trim();
+  if (configured) return configured;
+
   const pwd = await adminPassword();
-  return process.env.FLOWBRIDGE_ADMIN_SECRET || `fb-admin:${pwd}`;
+  if (!pwd) return null;
+
+  return createHmac("sha256", "flowdoverz-admin-token").update(pwd).digest("hex");
+}
+
+export async function isAdminPasswordConfigured() {
+  return Boolean(await adminPassword());
 }
 
 export async function verifyAdminPassword(password: string) {
   const expected = await adminPassword();
+  if (!expected) {
+    console.error("Admin password is not configured. Set FLOWBRIDGE_ADMIN_PASSWORD in Vercel.");
+    return false;
+  }
   const a = Buffer.from(password);
   const b = Buffer.from(expected);
   if (a.length !== b.length) return false;
@@ -42,8 +57,11 @@ export async function verifyAdminPassword(password: string) {
 }
 
 export async function createAdminToken() {
-  const issuedAt = Date.now().toString();
   const secret = await signingSecret();
+  if (!secret) {
+    throw new Error("Admin signing secret is not configured.");
+  }
+  const issuedAt = Date.now().toString();
   const sig = createHmac("sha256", secret)
     .update(`admin:${issuedAt}`)
     .digest("hex");
@@ -61,6 +79,8 @@ export async function verifyAdminToken(token: string | undefined | null) {
   }
 
   const secret = await signingSecret();
+  if (!secret) return false;
+
   const expected = createHmac("sha256", secret)
     .update(`admin:${issuedAt}`)
     .digest("hex");
