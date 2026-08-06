@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
   classifyHost,
-  getAdminUrl,
   getAppUrl,
   isMultiDomainEnabled,
 } from "@/lib/site-urls";
@@ -53,8 +52,10 @@ export function middleware(request: NextRequest) {
 
   if (zone === "client") {
     if (isAdminRoute) {
-      const adminPath = path.startsWith("/admin") ? path : "/admin";
-      return externalRedirect(getAdminUrl(), adminPath, request);
+      if (path.startsWith("/api/")) {
+        return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
+      }
+      return NextResponse.redirect(new URL("/", request.url));
     }
     return NextResponse.next();
   }
