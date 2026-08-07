@@ -50,8 +50,8 @@ export function AdminSidebar() {
 
   return (
     <>
-      {/* Mobile Top Header */}
-      <div className="md:hidden flex shrink-0 items-center justify-between p-4 border-b border-white/5 bg-[#0F172A]/80 backdrop-blur-xl sticky top-0 z-50">
+      {/* Mobile Top Header — fixed above page scroll */}
+      <div className="md:hidden flex shrink-0 items-center justify-between p-4 border-b border-white/5 bg-[#0F172A] z-50">
         <Link href="/admin">
           <BrandLogo size="md" />
         </Link>

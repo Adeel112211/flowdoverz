@@ -16,11 +16,11 @@ export default async function AdminLayout({ children }: { children: ReactNode })
 
   if (!isAdmin) {
     return (
-      <div className="relative flex min-h-screen items-center justify-center bg-[#080810] px-4">
+      <div className="fixed inset-0 z-50 flex items-center justify-center overflow-hidden bg-[#080810] px-4 py-4">
         <div className="pointer-events-none absolute inset-0 overflow-hidden">
           <div className="absolute left-1/2 top-1/4 h-[500px] w-[800px] -translate-x-1/2 rounded-full bg-cyan-500/10 blur-[120px]" />
         </div>
-        <div className="relative z-10 w-full max-w-md">
+        <div className="relative z-10 w-full max-w-md max-h-full overflow-y-auto overscroll-none [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           <AdminLogin />
         </div>
       </div>
@@ -35,8 +35,8 @@ export default async function AdminLayout({ children }: { children: ReactNode })
       </div>
 
       <AdminSidebar />
-      <main className="relative z-10 flex min-w-0 flex-1 flex-col overflow-hidden">
-        <div className="flex min-h-0 flex-1 flex-col overflow-x-hidden overflow-y-auto max-md:px-0 max-md:pt-0 max-md:pb-3 p-3 sm:p-6 md:p-8 md:pb-0">
+      <main className="relative z-10 flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden max-md:px-0 max-md:pt-0 max-md:pb-0 p-3 sm:p-6 md:overflow-x-hidden md:overflow-y-auto md:p-8 md:pb-0">
           <AdminShell>{children}</AdminShell>
         </div>
       </main>

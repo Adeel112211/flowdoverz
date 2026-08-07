@@ -178,10 +178,10 @@ export function AdminLogin() {
     "w-full rounded-xl border border-white/10 bg-black/40 px-4 py-3 text-sm text-white placeholder-slate-500 transition-all duration-300 focus:border-cyan-400 focus:bg-black/60 focus:shadow-[0_0_15px_rgba(34,211,238,0.2)] focus:outline-none";
 
   return (
-    <div className="relative overflow-hidden mx-auto w-full max-w-sm rounded-3xl border border-white/5 bg-white/[0.02] p-6 sm:p-8 md:p-10 shadow-2xl backdrop-blur-xl group">
+    <div className="relative mx-auto w-full max-w-sm overflow-hidden rounded-3xl border border-white/5 bg-white/[0.02] p-5 shadow-2xl backdrop-blur-xl group sm:p-8 md:p-10">
       <div className="absolute inset-0 bg-gradient-to-b from-cyan-500/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-700 pointer-events-none" />
-      <div className="mb-8 flex justify-center">
-        <BrandLogo className="h-10 text-cyan-400" stacked />
+      <div className="mb-5 flex justify-center sm:mb-8">
+        <BrandLogo className="h-9 text-cyan-400 sm:h-10" stacked />
       </div>
 
       {mode === "login" && (
