@@ -33,8 +33,12 @@ export async function getAdminRecoveryEmail(): Promise<string> {
   return DEFAULT_ADMIN_RECOVERY_EMAIL;
 }
 
+export const ADMIN_RESET_CODE_LENGTH = 4;
+/** Minimum length for admin panel password (PIN-style digits allowed). */
+export const ADMIN_PASSWORD_MIN_LENGTH = 4;
+
 export function generateResetCode() {
-  return String(randomInt(100000, 999999));
+  return String(randomInt(1000, 9999));
 }
 
 export async function canRequestPasswordReset() {
@@ -107,8 +111,8 @@ export async function setAdminPassword(newPassword: string) {
   const db = getDb();
   if (!db) throw new Error("Database not available.");
 
-  if (newPassword.length < 8) {
-    throw new Error("Password must be at least 8 characters.");
+  if (newPassword.length < ADMIN_PASSWORD_MIN_LENGTH) {
+    throw new Error(`Password must be at least ${ADMIN_PASSWORD_MIN_LENGTH} characters.`);
   }
 
   await db.collection("settings").doc("admin").set({ password: newPassword }, { merge: true });

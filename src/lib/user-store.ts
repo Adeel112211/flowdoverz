@@ -88,9 +88,7 @@ export async function registerClientUser(
     "./signup-security"
   );
 
-  const trialGranted = signupIp
-    ? await isTrialEligibleForIp(signupIp)
-    : true;
+  const trialGranted = await isTrialEligibleForIp(signupIp);
   const trialExpiresAt = trialGranted
     ? new Date(now.getTime() + getTrialDurationMs(settings)).toISOString()
     : null;

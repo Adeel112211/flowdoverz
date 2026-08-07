@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useState, type MouseEvent } from "react";
 import { useRouter } from "next/navigation";
 import { AuthBridge } from "@/components/auth-bridge";
 import { BrandLogo } from "@/components/brand-logo";
@@ -68,6 +68,7 @@ export function DashboardPage() {
   const [resending, setResending] = useState(false);
   const [now, setNow] = useState(() => Date.now());
   const [sessionReady, setSessionReady] = useState(false);
+  const [isDownloading, setIsDownloading] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -222,8 +223,31 @@ export function DashboardPage() {
   }
   const maxDevices = isTrial ? 1 : status?.subscriptionPlan?.toLowerCase() === "team" ? 3 : 1;
 
+  async function handleDownload(e: MouseEvent) {
+    e.preventDefault();
+    if (!extensionDownloadUrl || isDownloading) return;
+    
+    setIsDownloading(true);
+    try {
+      const res = await fetch(extensionDownloadUrl);
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = extensionDownloadUrl.split("/").pop() || "flowdoverz-extension.zip";
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+    } catch (err) {
+      console.error("Download failed", err);
+    } finally {
+      setIsDownloading(false);
+    }
+  }
+
   return (
-    <div className="min-h-dvh w-full max-w-full overflow-x-hidden bg-[#080810] text-slate-100 font-sans selection:bg-cyan-500/30 flex flex-col">
+    <div className="flex h-dvh w-full max-w-full flex-col overflow-x-hidden overflow-y-auto bg-[#080810] text-slate-100 font-sans selection:bg-cyan-500/30">
       <AuthBridge session={session} daysRemaining={14} />
 
       {/* Dynamic Background */}
@@ -231,7 +255,7 @@ export function DashboardPage() {
         <div className="absolute left-1/2 top-1/4 h-[500px] w-[min(800px,100vw)] -translate-x-1/2 rounded-full bg-cyan-500/10 blur-[120px]" />
       </div>
 
-      <header className="relative z-50 border-b border-white/5 bg-[#080810]/80 backdrop-blur-md sticky top-0">
+      <header className="relative z-50 sticky top-0 shrink-0 border-b border-white/5 bg-[#080810]/80 backdrop-blur-md">
         <div className="mx-auto flex h-16 sm:h-20 w-full items-center justify-between px-4 sm:px-8 lg:px-24 xl:px-32 2xl:px-64">
           <Link href="/" className="hover:opacity-80 transition-opacity">
             <BrandLogo size="lg" />
@@ -356,9 +380,15 @@ export function DashboardPage() {
                 <a
                   href={extensionDownloadUrl || "#"}
                   download
-                  className={`flex items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-cyan-400 to-emerald-400 px-6 sm:px-8 py-3.5 sm:py-4 text-sm sm:text-base font-black tracking-wide text-slate-950 transition-all shadow-[0_0_20px_rgba(34,211,238,0.3)] hover:-translate-y-0.5 hover:shadow-[0_0_30px_rgba(34,211,238,0.5)] w-full sm:w-auto ${!extensionDownloadUrl ? "pointer-events-none opacity-50" : ""}`}
+                  onClick={handleDownload}
+                  className={`flex items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-cyan-400 to-emerald-400 px-6 sm:px-8 py-3.5 sm:py-4 text-sm sm:text-base font-black tracking-wide text-slate-950 transition-all shadow-[0_0_20px_rgba(34,211,238,0.3)] w-full sm:w-auto ${!extensionDownloadUrl || isDownloading ? "pointer-events-none opacity-80" : "hover:-translate-y-0.5 hover:shadow-[0_0_30px_rgba(34,211,238,0.5)]"}`}
                 >
-                  <DownloadCloud size={20} /> Download Extension{extensionVersion ? ` v${extensionVersion}` : ""}
+                  {isDownloading ? (
+                    <div className="w-5 h-5 rounded-full border-2 border-slate-950 border-t-transparent animate-spin" />
+                  ) : (
+                    <DownloadCloud size={20} />
+                  )}
+                  {isDownloading ? "Starting Download..." : `Download Extension${extensionVersion ? ` v${extensionVersion}` : ""}`}
                 </a>
                 <a
                   href="https://labs.google/fx/tools/flow"

@@ -7,6 +7,7 @@ import {
   ArrowLeft,
   Ban,
   CheckCircle2,
+  ChevronDown,
   Clock,
   CreditCard,
   KeyRound,
@@ -81,7 +82,6 @@ export default function ClientDetailPage() {
           trialExpiresAt: editForm.trialExpiresAt,
           subscriptionExpiresAt: editForm.subscriptionExpiresAt,
           suspended: editForm.suspended,
-          adminNotes: editForm.adminNotes,
           assignedSlot: editForm.assignedSlot,
         }),
       });
@@ -234,14 +234,6 @@ export default function ClientDetailPage() {
           </Link>
         </AdminGlassPanel>
 
-        {client.adminNotes && (
-          <AdminGlassPanel className="p-6 lg:col-span-2">
-            <h3 className="text-sm font-bold uppercase tracking-wide text-slate-400 mb-2">
-              Admin Notes
-            </h3>
-            <p className="text-sm text-slate-300 whitespace-pre-wrap">{client.adminNotes}</p>
-          </AdminGlassPanel>
-        )}
       </div>
 
       <div className="mt-4 flex flex-wrap gap-3">
@@ -268,7 +260,7 @@ export default function ClientDetailPage() {
           closeOnBackdrop
           maxWidth="lg"
         >
-          <AdminGlassPanel accent="cyan">
+          <AdminGlassPanel accent="cyan" sheet>
             <h2 className="mb-6 text-xl sm:text-2xl font-black text-white">Edit Client</h2>
             <div className="space-y-4">
               <div>
@@ -304,28 +296,20 @@ export default function ClientDetailPage() {
                 <label className="mb-2 block text-xs font-bold uppercase text-slate-400">
                   Assigned Slot
                 </label>
-                <select
-                  value={editForm.assignedSlot || "C1"}
-                  onChange={(e) => setEditForm({ ...editForm, assignedSlot: e.target.value })}
-                  className="w-full rounded-xl border border-white/10 bg-[#080810] px-4 py-3 text-sm text-slate-200 outline-none"
-                >
-                  {SLOTS.map((s) => (
-                    <option key={s} value={s}>
-                      {s}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="mb-2 block text-xs font-bold uppercase text-slate-400">
-                  Admin Notes
-                </label>
-                <textarea
-                  value={editForm.adminNotes || ""}
-                  onChange={(e) => setEditForm({ ...editForm, adminNotes: e.target.value })}
-                  rows={3}
-                  className="w-full rounded-xl border border-white/10 bg-[#080810] px-4 py-3 text-sm text-slate-200 outline-none resize-none"
-                />
+                <div className="relative">
+                  <select
+                    value={editForm.assignedSlot || "C1"}
+                    onChange={(e) => setEditForm({ ...editForm, assignedSlot: e.target.value })}
+                    className="w-full appearance-none rounded-xl border border-white/10 bg-[#080810] px-4 py-3 pr-11 text-sm text-slate-200 outline-none transition-all hover:border-white/20 focus:border-cyan-400 focus:ring-1 focus:ring-cyan-400"
+                  >
+                    {SLOTS.map((s) => (
+                      <option key={s} value={s}>
+                        {s}
+                      </option>
+                    ))}
+                  </select>
+                  <ChevronDown className="pointer-events-none absolute right-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                </div>
               </div>
               <label className="flex items-center gap-2 text-sm text-slate-300">
                 <input

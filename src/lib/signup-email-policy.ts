@@ -6,6 +6,49 @@ import {
   SIGNUP_EMAIL_REJECTED,
 } from "./signup-email-rules";
 
+let disposableSet: Set<string> | null = null;
+let wildcardSuffixes: string[] = [];
+
+function loadDisposableSets() {
+  if (disposableSet) return;
+
+  try {
+    // Server-only: keep the huge list out of the browser bundle.
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const list = require("disposable-email-domains") as string[];
+    disposableSet = new Set(
+      (Array.isArray(list) ? list : []).map((d) => String(d).toLowerCase()),
+    );
+  } catch {
+    disposableSet = new Set();
+  }
+
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const wildcards = require("disposable-email-domains/wildcard.json") as string[];
+    wildcardSuffixes = (Array.isArray(wildcards) ? wildcards : []).map((d) =>
+      String(d).toLowerCase().replace(/^\*\./, ""),
+    );
+  } catch {
+    wildcardSuffixes = [];
+  }
+}
+
+function isInDisposablePackage(domain: string): boolean {
+  loadDisposableSets();
+  const lower = domain.toLowerCase();
+  if (disposableSet?.has(lower)) return true;
+
+  const parts = lower.split(".");
+  for (let i = 0; i < parts.length - 1; i++) {
+    if (disposableSet?.has(parts.slice(i).join("."))) return true;
+  }
+
+  return wildcardSuffixes.some(
+    (suffix) => lower === suffix || lower.endsWith(`.${suffix}`),
+  );
+}
+
 async function domainHasMx(domain: string): Promise<boolean> {
   try {
     const records = await Promise.race([
@@ -41,7 +84,13 @@ export async function validateSignupEmail(
     }
   }
 
+  // Fast local patterns + curated list (also used in the browser)
   if (isBlockedSignupDomain(domain)) {
+    return { ok: false, error: SIGNUP_EMAIL_REJECTED };
+  }
+
+  // Full npm disposable list (server-only, ~120k domains)
+  if (isInDisposablePackage(domain)) {
     return { ok: false, error: SIGNUP_EMAIL_REJECTED };
   }
 

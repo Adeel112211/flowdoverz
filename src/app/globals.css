@@ -58,6 +58,16 @@ input:-webkit-autofill:active{
     transition: background-color 5000s ease-in-out 0s;
 }
 
+/* Hide textarea resize grip (diagonal lines) */
+textarea.resize-none,
+textarea[style*="resize: none"] {
+  resize: none;
+}
+
+textarea.resize-none::-webkit-resizer {
+  display: none;
+}
+
 /* Hide number input spinners */
 input[type="number"]::-webkit-outer-spin-button,
 input[type="number"]::-webkit-inner-spin-button {
@@ -95,8 +105,10 @@ input[type="number"] {
   overflow-x: hidden;
   overflow-y: auto;
   overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
   scrollbar-width: thin;
   scrollbar-color: rgba(34, 211, 238, 0.35) transparent;
+  touch-action: pan-y;
 }
 
 .admin-modal-scroll::-webkit-scrollbar {

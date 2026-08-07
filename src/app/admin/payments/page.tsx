@@ -512,7 +512,7 @@ export default function PaymentsPage() {
 
         return (
           <AdminGlassModal open={Boolean(pendingAction)} maxWidth="md">
-            <AdminGlassPanel accent={accent}>
+            <AdminGlassPanel accent={accent} sheet>
               <div className="flex flex-col items-center text-center">
                 <div
                   className={`mb-4 flex h-14 w-14 items-center justify-center rounded-full ring-1 backdrop-blur-sm ${config.iconWrapClass}`}

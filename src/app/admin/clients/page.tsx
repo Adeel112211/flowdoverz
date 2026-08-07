@@ -5,6 +5,7 @@ import Link from "next/link";
 import {
   AlertCircle,
   CheckCircle2,
+  ChevronDown,
   Clock,
   CreditCard,
   Eye,
@@ -632,7 +633,7 @@ export default function ClientsPage() {
 
       {deleteClient && (
         <AdminGlassModal open={Boolean(deleteClient)} maxWidth="md">
-          <AdminGlassPanel accent="rose">
+          <AdminGlassPanel accent="rose" sheet>
             <div className="flex flex-col items-center text-center">
               <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-rose-500/10 ring-1 ring-rose-500/25 backdrop-blur-sm">
                 <Trash2 className="h-7 w-7 text-rose-400" />
@@ -669,7 +670,7 @@ export default function ClientsPage() {
 
       {creating && (
         <AdminGlassModal open={creating} align="end" scrollable onClose={() => setCreating(false)} closeOnBackdrop>
-          <AdminGlassPanel accent="emerald">
+          <AdminGlassPanel accent="emerald" sheet>
             <h2 className="mb-6 text-xl sm:text-2xl font-black text-white relative z-10">
               Add New Client
             </h2>
@@ -764,7 +765,7 @@ export default function ClientsPage() {
           onClose={() => setPasswordClient(null)}
           closeOnBackdrop
         >
-          <AdminGlassPanel accent="violet">
+          <AdminGlassPanel accent="violet" sheet>
             <h2 className="mb-2 text-xl sm:text-2xl font-black text-white relative z-10">
               Change Password
             </h2>
@@ -855,7 +856,7 @@ export default function ClientsPage() {
           }}
           closeOnBackdrop
         >
-          <AdminGlassPanel accent="emerald">
+          <AdminGlassPanel accent="emerald" sheet>
             <div className="mb-6 flex items-start justify-between gap-4">
               <div className="min-w-0">
                 <h2 className="text-xl sm:text-2xl font-black text-white">Payment Details</h2>
@@ -960,7 +961,7 @@ export default function ClientsPage() {
           onClose={() => setPaymentScreenshot(null)}
           closeOnBackdrop
         >
-          <AdminGlassPanel accent="slate" className="p-3 sm:p-4">
+          <AdminGlassPanel accent="slate" sheet className="p-3 sm:p-4">
             <div className="relative">
               <button
                 type="button"
@@ -985,10 +986,11 @@ export default function ClientsPage() {
         <AdminGlassModal
           open={Boolean(editing)}
           align="end"
+          scrollable
           onClose={() => setEditing(null)}
           closeOnBackdrop
         >
-          <AdminGlassPanel accent="cyan">
+          <AdminGlassPanel accent="cyan" sheet>
             <h2 className="mb-6 text-xl sm:text-2xl font-black text-white">
               Edit Client
             </h2>
@@ -1040,24 +1042,18 @@ export default function ClientsPage() {
               </div>
               <div>
                 <label className="mb-2 block text-sm font-bold text-slate-400">Assigned Slot</label>
-                <select
-                  value={editing.assignedSlot || "C1"}
-                  onChange={(e) => setEditing({ ...editing, assignedSlot: e.target.value })}
-                  className="w-full rounded-xl border border-white/10 bg-[#080810] px-4 py-3 text-slate-200"
-                >
-                  {["C1", "C2", "C3", "C4", "C5"].map((s) => (
-                    <option key={s} value={s}>{s}</option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="mb-2 block text-sm font-bold text-slate-400">Admin Notes</label>
-                <textarea
-                  value={editing.adminNotes || ""}
-                  onChange={(e) => setEditing({ ...editing, adminNotes: e.target.value })}
-                  rows={3}
-                  className="w-full rounded-xl border border-white/10 bg-[#080810] px-4 py-3 text-slate-200 resize-none outline-none"
-                />
+                <div className="relative">
+                  <select
+                    value={editing.assignedSlot || "C1"}
+                    onChange={(e) => setEditing({ ...editing, assignedSlot: e.target.value })}
+                    className="w-full appearance-none rounded-xl border border-white/10 bg-[#080810] px-4 py-3 pr-11 text-slate-200 outline-none transition-all hover:border-white/20 focus:border-cyan-400 focus:ring-1 focus:ring-cyan-400"
+                  >
+                    {["C1", "C2", "C3", "C4", "C5"].map((s) => (
+                      <option key={s} value={s}>{s}</option>
+                    ))}
+                  </select>
+                  <ChevronDown className="pointer-events-none absolute right-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                </div>
               </div>
               <label className="flex items-center gap-2 text-sm text-slate-300">
                 <input

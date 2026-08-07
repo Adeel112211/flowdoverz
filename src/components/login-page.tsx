@@ -38,7 +38,7 @@ export function LoginPage() {
   }
 
   return (
-    <div className="relative flex min-h-dvh w-full max-w-full overflow-x-hidden px-4 py-10 sm:py-12 max-md:items-start max-md:justify-start max-md:py-6 max-md:pt-8 max-md:pb-10 md:h-dvh md:items-center md:justify-center md:overflow-hidden">
+    <div className="relative flex min-h-dvh w-full max-w-full items-start justify-center overflow-x-hidden overflow-y-auto px-4 py-10 sm:py-12 max-md:pt-8 max-md:pb-10 md:items-center">
       <AuthPageBackground />
       {/* Error Modal */}
       {error && (
@@ -65,12 +65,14 @@ export function LoginPage() {
       <AuthBridge session={session} daysRemaining={14} />
 
       <div className="animate-fade-up relative w-full max-w-xl">
-        <div className="mb-8 flex flex-col items-center text-center max-md:mb-5">
-          <Link href={marketingPath("/")}>
-            <BrandLogo size="xl" stacked />
+        <div className="mb-4 flex flex-col items-center overflow-visible pt-2 text-center max-md:mb-3 sm:pt-3">
+          <Link href={marketingPath("/")} className="inline-flex overflow-visible">
+            <BrandLogo size="xl" stacked showTagline={false} />
           </Link>
-          <h1 className="text-3xl md:text-4xl font-black tracking-tight text-transparent bg-clip-text bg-gradient-to-br from-white via-white to-slate-400">Welcome back</h1>
-          <p className="mt-3 text-base text-slate-400 whitespace-nowrap mx-auto">
+          <h1 className="mt-3 max-md:mt-2 text-3xl md:text-4xl font-black tracking-tight text-transparent bg-clip-text bg-gradient-to-br from-white via-white to-slate-400">
+            Welcome back
+          </h1>
+          <p className="mt-1 text-base text-slate-400 mx-auto sm:mt-1.5">
             Enter your FlowDoverz workspace credentials to continue generating.
           </p>
         </div>

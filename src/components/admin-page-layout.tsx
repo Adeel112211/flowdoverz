@@ -22,7 +22,7 @@ export function AdminPageLayout({
       <div
         className={
           scrollContent
-            ? "flex min-h-0 flex-1 flex-col overflow-x-hidden overflow-y-auto pt-1 pb-4 max-md:px-3 md:pt-2 md:pb-6 md:px-0"
+            ? "flex min-h-0 flex-1 flex-col overflow-x-hidden overflow-y-auto overscroll-contain pt-1 pb-4 max-md:px-3 md:pt-2 md:pb-6 md:px-0"
             : lockScroll
               ? "flex min-h-0 flex-1 flex-col overflow-hidden pt-1 max-md:px-3 md:pt-2 md:px-0"
               : "flex min-h-0 flex-1 flex-col overflow-x-hidden pt-1 max-md:overflow-y-auto max-md:px-3 md:overflow-hidden md:pt-2 md:px-0"

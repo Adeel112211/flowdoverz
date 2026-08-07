@@ -1,8 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { BrandLogo } from "@/components/brand-logo";
 import { ArrowLeft, Eye, EyeOff } from "lucide-react";
+
+/** Must match server `ADMIN_RESET_CODE_LENGTH` in admin-password-reset.ts */
+const CODE_LENGTH = 4;
 
 type Mode = "login" | "reset-request" | "reset-confirm";
 
@@ -16,10 +19,15 @@ export function AdminLogin() {
 
   const [maskedEmail, setMaskedEmail] = useState("");
   const [sendingCode, setSendingCode] = useState(false);
-  const [resetCode, setResetCode] = useState("");
+  const [codeDigits, setCodeDigits] = useState<string[]>(() =>
+    Array.from({ length: CODE_LENGTH }, () => ""),
+  );
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [resetting, setResetting] = useState(false);
+  const codeRefs = useRef<Array<HTMLInputElement | null>>([]);
+
+  const resetCode = codeDigits.join("");
 
   useEffect(() => {
     if (mode === "reset-request" && !maskedEmail) {
@@ -79,7 +87,9 @@ export function AdminLogin() {
       if (data.success) {
         setMessage(data.message || "Reset code sent.");
         if (data.maskedEmail) setMaskedEmail(data.maskedEmail);
+        setCodeDigits(Array.from({ length: CODE_LENGTH }, () => ""));
         setMode("reset-confirm");
+        requestAnimationFrame(() => codeRefs.current[0]?.focus());
       } else {
         setError(data.error || "Could not send reset code.");
       }
@@ -88,6 +98,42 @@ export function AdminLogin() {
     } finally {
       setSendingCode(false);
     }
+  };
+
+  const setDigitAt = (index: number, raw: string) => {
+    const digit = raw.replace(/\D/g, "").slice(-1);
+    setCodeDigits((prev) => {
+      const next = [...prev];
+      next[index] = digit;
+      return next;
+    });
+    if (digit && index < CODE_LENGTH - 1) {
+      codeRefs.current[index + 1]?.focus();
+    }
+  };
+
+  const handleCodeKeyDown = (index: number, e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Backspace" && !codeDigits[index] && index > 0) {
+      codeRefs.current[index - 1]?.focus();
+    }
+    if (e.key === "ArrowLeft" && index > 0) {
+      e.preventDefault();
+      codeRefs.current[index - 1]?.focus();
+    }
+    if (e.key === "ArrowRight" && index < CODE_LENGTH - 1) {
+      e.preventDefault();
+      codeRefs.current[index + 1]?.focus();
+    }
+  };
+
+  const handleCodePaste = (e: React.ClipboardEvent<HTMLInputElement>) => {
+    e.preventDefault();
+    const pasted = e.clipboardData.getData("text").replace(/\D/g, "").slice(0, CODE_LENGTH);
+    if (!pasted) return;
+    const next = Array.from({ length: CODE_LENGTH }, (_, i) => pasted[i] || "");
+    setCodeDigits(next);
+    const focusAt = Math.min(pasted.length, CODE_LENGTH - 1);
+    codeRefs.current[focusAt]?.focus();
   };
 
   const confirmReset = async (e: React.FormEvent) => {
@@ -115,7 +161,7 @@ export function AdminLogin() {
         setMessage(data.message || "Password reset. Log in with your new password.");
         setMode("login");
         setPassword("");
-        setResetCode("");
+        setCodeDigits(Array.from({ length: CODE_LENGTH }, () => ""));
         setNewPassword("");
         setConfirmPassword("");
       } else {
@@ -197,7 +243,7 @@ export function AdminLogin() {
           <div className="mb-6 text-center">
             <h1 className="text-2xl font-black text-white">Reset password</h1>
             <p className="mt-3 text-sm text-slate-400">
-              We&apos;ll email a 6-digit code to your recovery address
+              We&apos;ll email a {CODE_LENGTH}-digit code to your recovery address
               {maskedEmail ? ` (${maskedEmail})` : ""}.
             </p>
           </div>
@@ -231,29 +277,37 @@ export function AdminLogin() {
           <div className="mb-6 text-center">
             <h1 className="text-2xl font-black text-white">Enter reset code</h1>
             <p className="mt-3 text-sm text-slate-400">
-              Check {maskedEmail || "your recovery email"} for the 6-digit code.
+              Check {maskedEmail || "your recovery email"} for the {CODE_LENGTH}-digit code.
             </p>
           </div>
 
           <form onSubmit={confirmReset} className="space-y-4">
-            <input
-              type="text"
-              inputMode="numeric"
-              pattern="[0-9]{6}"
-              maxLength={6}
-              value={resetCode}
-              onChange={(e) => setResetCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
-              className={`${inputClass} text-center text-lg tracking-[0.4em] font-bold`}
-              placeholder="000000"
-              autoFocus
-            />
+            <div className="flex justify-center gap-2.5 sm:gap-3" onPaste={handleCodePaste}>
+              {codeDigits.map((digit, index) => (
+                <input
+                  key={index}
+                  ref={(el) => {
+                    codeRefs.current[index] = el;
+                  }}
+                  type="text"
+                  inputMode="numeric"
+                  autoComplete={index === 0 ? "one-time-code" : "off"}
+                  maxLength={1}
+                  value={digit}
+                  onChange={(e) => setDigitAt(index, e.target.value)}
+                  onKeyDown={(e) => handleCodeKeyDown(index, e)}
+                  aria-label={`Digit ${index + 1} of ${CODE_LENGTH}`}
+                  className="h-14 w-12 sm:h-16 sm:w-14 rounded-2xl border border-white/10 bg-black/40 text-center text-2xl font-black text-white outline-none transition-all focus:border-cyan-400 focus:shadow-[0_0_15px_rgba(34,211,238,0.25)]"
+                />
+              ))}
+            </div>
             <input
               type="password"
               value={newPassword}
               onChange={(e) => setNewPassword(e.target.value)}
               className={inputClass}
               placeholder="New password"
-              minLength={8}
+              minLength={4}
             />
             <input
               type="password"
@@ -261,14 +315,14 @@ export function AdminLogin() {
               onChange={(e) => setConfirmPassword(e.target.value)}
               className={inputClass}
               placeholder="Confirm new password"
-              minLength={8}
+              minLength={4}
             />
 
             {error && <p className="text-sm text-rose-400 text-center">{error}</p>}
 
             <button
               type="submit"
-              disabled={resetting || resetCode.length !== 6 || newPassword.length < 8}
+              disabled={resetting || resetCode.length !== CODE_LENGTH || newPassword.length < 4}
               className="w-full rounded-2xl bg-gradient-to-r from-cyan-400 to-emerald-400 px-8 py-4 text-sm font-black text-slate-950 disabled:opacity-60"
             >
               {resetting ? "Resetting..." : "Reset password"}

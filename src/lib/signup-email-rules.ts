@@ -1,14 +1,23 @@
-import disposableDomains from "disposable-email-domains";
+/**
+ * Shared signup email rules (safe for client + server).
+ * Heavy disposable-domain lists are applied on the server in signup-email-policy.ts.
+ */
 
-const DISPOSABLE = new Set(disposableDomains.map((d) => d.toLowerCase()));
-
+/** Domains known to be temp / disposable (kept light for the browser bundle). */
 const BLOCKED_DOMAIN_SUFFIXES = [
+  "dnsink.com",
+  "dnsink.net",
+  "dnsink.org",
   "mailinator.com",
+  "mailinator.net",
+  "mailinator.org",
+  "mailinator2.com",
   "guerrillamail.com",
   "guerrillamail.net",
   "guerrillamail.org",
   "guerrillamail.biz",
   "guerrillamail.de",
+  "guerrillamailblock.com",
   "sharklasers.com",
   "grr.la",
   "pokemail.net",
@@ -17,16 +26,28 @@ const BLOCKED_DOMAIN_SUFFIXES = [
   "temp-mail.org",
   "temp-mail.io",
   "tempmailo.com",
+  "tempail.com",
+  "tempr.email",
+  "tempmail.plus",
+  "tempinbox.com",
+  "temporarymail.com",
+  "temporary-mail.net",
+  "tempmailaddress.com",
   "10minutemail.com",
   "10minutemail.net",
   "yopmail.com",
   "yopmail.fr",
   "yopmail.net",
   "throwaway.email",
+  "throwam.com",
   "getnada.com",
   "maildrop.cc",
   "trashmail.com",
+  "trash-mail.com",
+  "trashemail.de",
+  "trashmail.me",
   "fakeinbox.com",
+  "fakemailgenerator.com",
   "dispostable.com",
   "mailnesia.com",
   "mailcatch.com",
@@ -39,6 +60,8 @@ const BLOCKED_DOMAIN_SUFFIXES = [
   "inboxkitten.com",
   "tmpmail.org",
   "tmpmail.net",
+  "tmpeml.com",
+  "tmpbox.net",
   "dropmail.me",
   "harakirimail.com",
   "spamgourmet.com",
@@ -52,17 +75,57 @@ const BLOCKED_DOMAIN_SUFFIXES = [
   "emkei.cz",
   "mailnull.com",
   "spambog.com",
-  "trashmail.me",
   "mailscrap.com",
+  "discard.email",
+  "emailfake.com",
+  "generator.email",
+  "emailtemporario.com.br",
+  "emailtemp.org",
+  "emailna.co",
+  "linshiyouxiang.net",
+  "1secmail.com",
+  "1secmail.org",
+  "1secmail.net",
+  "secmail.pro",
+  "spamfree24.org",
+  "wegwerfmail.de",
+  "byom.de",
+  "mailnator.com",
+  "nowmymail.com",
+  "easytrashmail.com",
+  "inboxbear.com",
+  "safetymail.info",
+  "spamherelots.com",
+  "binkmail.com",
+  "bobmail.info",
+  "devnullmail.com",
+  "letthemeatspam.com",
+  "mailin8r.com",
+  "mailinater.com",
+  "notmailinator.com",
+  "reallymymail.com",
+  "reconmail.com",
+  "sogetthis.com",
+  "spamhereplease.com",
+  "superrito.com",
+  "thisisnotmyrealemail.com",
+  "trbvm.com",
+  "veryrealemail.com",
+  "zippymail.info",
 ];
 
 const BLOCKED_DOMAIN_KEYWORDS = [
   "tempmail",
   "temp-mail",
+  "tempinbox",
+  "temporarymail",
+  "temporary-mail",
   "trashmail",
+  "trash-mail",
   "disposable",
   "throwaway",
   "fakeinbox",
+  "fakemail",
   "guerrillamail",
   "mailinator",
   "yopmail",
@@ -74,13 +137,25 @@ const BLOCKED_DOMAIN_KEYWORDS = [
   "spambog",
   "burner",
   "tmpmail",
-  "fakemail",
+  "tmpeml",
   "trashbox",
   "mailsac",
   "mailcatch",
   "mohmal",
   "mailnesia",
+  "dnsink",
+  "emailsink",
+  "mailsink",
+  "tempsink",
+  "mailsucker",
+  "throwam",
+  "wegwerf",
+  "secmail",
+  "1secmail",
 ];
+
+const TEMP_LABEL_RE =
+  /^(?:temp|tmp|trash|fake|spam|disposable|throwaway|burner|guerrilla|mailinator|yopmail|dnsink|mails?ink|emailsink|tempsink|tempmail|tempail|trashmail|fakemail|getnada|maildrop|minutemail|10minute|spambox|moakt|mohmal|discard|dropmail|inboxkitten|mailpoof|mailnull|mailscrap|tempr|byom|secmail)/i;
 
 const BLOCKED_LOCAL_PARTS = new Set([
   "test",
@@ -100,7 +175,8 @@ const BLOCKED_LOCAL_PARTS = new Set([
   "anonymous",
 ]);
 
-export const SIGNUP_EMAIL_REJECTED = "This email address can't be used.";
+export const SIGNUP_EMAIL_REJECTED =
+  "Temporary or disposable email addresses are not allowed. Use a real email (Gmail, Outlook, Yahoo, etc.).";
 
 export function parseSignupEmail(email: string) {
   const normalized = email.trim().toLowerCase();
@@ -114,14 +190,46 @@ export function parseSignupEmail(email: string) {
 }
 
 function domainHasBlockedKeyword(domain: string): boolean {
-  const lower = domain.toLowerCase();
-  return BLOCKED_DOMAIN_KEYWORDS.some((keyword) => lower.includes(keyword));
+  const compact = domain.toLowerCase().replace(/[.-]/g, "");
+  return BLOCKED_DOMAIN_KEYWORDS.some((keyword) =>
+    compact.includes(keyword.replace(/[.-]/g, "")),
+  );
 }
 
-export function isBlockedSignupDomain(domain: string): boolean {
-  const lower = domain.toLowerCase();
-  if (DISPOSABLE.has(lower)) return true;
+function labelLooksLikeTempMail(label: string): boolean {
+  const value = label.toLowerCase();
+  if (TEMP_LABEL_RE.test(value)) return true;
+  if (value.includes("sink") && /(dns|mail|email|temp|tmp|trash|fake)/.test(value)) {
+    return true;
+  }
+  if (value.includes("temp") && /(mail|inbox|box|email|addr)/.test(value)) {
+    return true;
+  }
+  return false;
+}
+
+export function isBlockedSignupDomain(
+  domain: string,
+  extraBlocked: Iterable<string> = [],
+): boolean {
+  const lower = domain.toLowerCase().trim();
+  if (!lower) return true;
+
+  const extras = extraBlocked instanceof Set ? extraBlocked : new Set(
+    Array.from(extraBlocked, (d) => String(d).toLowerCase()),
+  );
+
+  if (extras.has(lower)) return true;
+
+  const parts = lower.split(".");
+  for (let i = 0; i < parts.length - 1; i++) {
+    const parent = parts.slice(i).join(".");
+    if (extras.has(parent)) return true;
+  }
+
   if (domainHasBlockedKeyword(lower)) return true;
+  if (parts.some((label) => labelLooksLikeTempMail(label))) return true;
+
   return BLOCKED_DOMAIN_SUFFIXES.some(
     (suffix) => lower === suffix || lower.endsWith(`.${suffix}`),
   );
@@ -131,7 +239,6 @@ function looksLikeRandomToken(value: string): boolean {
   if (value.length < 8) return false;
   if (/^[a-f0-9]{8,}$/i.test(value)) return true;
   if (/^[a-z0-9._-]{10,}$/i.test(value) && !/[aeiou]/i.test(value)) return true;
-  // Long alphanumeric strings without vowels (e.g. x7k9m2p4q1w8) — not normal names like dazzygameplay12
   if (
     /^(?=.*[a-z])(?=.*[0-9])[a-z0-9]{12,}$/i.test(value) &&
     !value.includes(".") &&

@@ -226,7 +226,7 @@ export function AdminSettingsClient() {
 
         <SectionCard
           title="Change admin password"
-          description="Use this when you know your current password. Minimum 8 characters."
+          description="Use this when you know your current password. Minimum 4 characters."
           icon={Lock}
         >
           {status && <StatusBanner type={status.type} message={status.message} />}
@@ -249,7 +249,7 @@ export function AdminSettingsClient() {
                 value={newPassword}
                 onChange={(e) => setNewPassword(e.target.value)}
                 required
-                minLength={8}
+                minLength={4}
                 className={inputClass}
               />
             </div>
@@ -260,7 +260,7 @@ export function AdminSettingsClient() {
                 value={confirmPassword}
                 onChange={(e) => setConfirmPassword(e.target.value)}
                 required
-                minLength={8}
+                minLength={4}
                 className={inputClass}
               />
             </div>
@@ -280,8 +280,8 @@ export function AdminSettingsClient() {
         title="Reset password via email"
         description={
           maskedEmail
-            ? `Send a 6-digit code to ${maskedEmail}, then set a new password. Code expires in 15 minutes.`
-            : "Send a 6-digit code to your recovery email, then set a new password."
+            ? `Send a 4-digit code to ${maskedEmail}, then set a new password. Code expires in 15 minutes.`
+            : "Send a 4-digit code to your recovery email, then set a new password."
         }
         icon={Send}
         className="lg:sticky lg:top-4"
@@ -300,16 +300,16 @@ export function AdminSettingsClient() {
 
         <form onSubmit={resetPasswordViaEmail} className="space-y-5 border-t border-white/10 pt-6">
           <div>
-            <label className={labelClass}>6-digit code from email</label>
+            <label className={labelClass}>4-digit code from email</label>
             <input
               type="text"
               inputMode="numeric"
-              pattern="[0-9]{6}"
-              maxLength={6}
+              pattern="[0-9]{4}"
+              maxLength={4}
               value={resetCode}
-              onChange={(e) => setResetCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+              onChange={(e) => setResetCode(e.target.value.replace(/\D/g, "").slice(0, 4))}
               className={`${inputClass} text-center text-xl tracking-[0.45em] font-bold`}
-              placeholder="000000"
+              placeholder="0000"
             />
           </div>
           <div>
@@ -319,7 +319,7 @@ export function AdminSettingsClient() {
               value={emailNewPassword}
               onChange={(e) => setEmailNewPassword(e.target.value)}
               required
-              minLength={8}
+              minLength={4}
               className={inputClass}
             />
           </div>
@@ -330,13 +330,13 @@ export function AdminSettingsClient() {
               value={emailConfirmPassword}
               onChange={(e) => setEmailConfirmPassword(e.target.value)}
               required
-              minLength={8}
+              minLength={4}
               className={inputClass}
             />
           </div>
           <button
             type="submit"
-            disabled={resettingViaEmail || resetCode.length !== 6 || emailNewPassword.length < 8}
+            disabled={resettingViaEmail || resetCode.length !== 4 || emailNewPassword.length < 4}
             className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-cyan-400 to-emerald-400 py-3 text-sm font-bold text-slate-950 disabled:opacity-50"
           >
             <KeyRound className="h-4 w-4" />

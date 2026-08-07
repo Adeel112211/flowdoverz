@@ -46,7 +46,7 @@ export function SignupPage() {
     setEmail(value);
     setCodeSent(false);
     setVerificationCode("");
-    if (emailInvalid) checkEmail(value);
+    checkEmail(value);
   }
 
   async function sendCode() {
@@ -128,7 +128,7 @@ export function SignupPage() {
     verificationCode.replace(/\D/g, "").length === 6;
 
   return (
-    <div className="relative flex min-h-dvh w-full max-w-full overflow-x-hidden px-4 py-8 sm:py-10 pb-12">
+    <div className="relative flex min-h-dvh w-full max-w-full items-start justify-center overflow-x-hidden overflow-y-auto px-4 py-10 pb-14 sm:py-12 md:items-center">
       <AuthPageBackground />
       {error && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-[#080810]/80 backdrop-blur-md animate-in fade-in duration-300">
@@ -149,15 +149,15 @@ export function SignupPage() {
           </div>
         </div>
       )}
-      <div className="animate-fade-up relative z-10 mx-auto w-full max-w-lg py-4">
-        <div className="mb-6 flex flex-col items-center text-center sm:mb-8">
-          <Link href={marketingPath("/")}>
-            <BrandLogo size="xl" stacked />
+      <div className="animate-fade-up relative z-10 mx-auto w-full max-w-lg py-2 sm:py-4">
+        <div className="mb-4 flex flex-col items-center overflow-visible pt-2 text-center sm:mb-5 sm:pt-3">
+          <Link href={marketingPath("/")} className="inline-flex overflow-visible">
+            <BrandLogo size="xl" stacked showTagline={false} />
           </Link>
-          <h1 className="text-3xl font-black tracking-tight text-transparent bg-clip-text bg-gradient-to-br from-white via-white to-slate-400 md:text-4xl">
+          <h1 className="mt-3 text-3xl font-black tracking-tight text-transparent bg-clip-text bg-gradient-to-br from-white via-white to-slate-400 sm:mt-4 md:text-4xl">
             Create workspace
           </h1>
-          <p className="mt-2 text-sm text-slate-400 whitespace-nowrap mx-auto sm:mt-3 sm:text-base">
+          <p className="mt-1 text-sm text-slate-400 mx-auto sm:mt-2 sm:text-base">
             Start your free trial today — no credit card required.
           </p>
         </div>
@@ -209,6 +209,14 @@ export function SignupPage() {
                   {sendingCode ? "Sending..." : resendSeconds > 0 ? `${resendSeconds}s` : codeSent ? "Resend" : "Send code"}
                 </button>
               </div>
+              {emailInvalid && (
+                <p className="mt-2 text-xs font-medium text-rose-400">
+                  Temp / disposable emails are blocked. Use Gmail, Outlook, Yahoo, or another real inbox.
+                </p>
+              )}
+              <p className="mt-2 text-xs text-slate-500">
+                One free trial per network IP. Extra accounts from the same IP must choose a paid plan.
+              </p>
             </div>
 
             {codeSent && (

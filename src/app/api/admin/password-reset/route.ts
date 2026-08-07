@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { sendAdminPasswordResetEmail } from "@/lib/email";
 import {
+  ADMIN_PASSWORD_MIN_LENGTH,
+  ADMIN_RESET_CODE_LENGTH,
   canRequestPasswordReset,
   clearPasswordResetCode,
   generateResetCode,
@@ -65,16 +67,23 @@ export async function POST(request: NextRequest) {
       const code = String(body.code || "").trim();
       const newPassword = String(body.newPassword || "");
 
-      if (!code || code.length !== 6) {
+      const digits = code.replace(/\D/g, "");
+      if (!digits || digits.length !== ADMIN_RESET_CODE_LENGTH) {
         return NextResponse.json(
-          { success: false, error: "Enter the 6-digit code from your email." },
+          {
+            success: false,
+            error: `Enter the ${ADMIN_RESET_CODE_LENGTH}-digit code from your email.`,
+          },
           { status: 400 },
         );
       }
 
-      if (newPassword.length < 8) {
+      if (newPassword.length < ADMIN_PASSWORD_MIN_LENGTH) {
         return NextResponse.json(
-          { success: false, error: "New password must be at least 8 characters." },
+          {
+            success: false,
+            error: `New password must be at least ${ADMIN_PASSWORD_MIN_LENGTH} characters.`,
+          },
           { status: 400 },
         );
       }
@@ -86,7 +95,7 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      const valid = await verifyPasswordResetCode(code);
+      const valid = await verifyPasswordResetCode(digits);
       if (!valid) {
         return NextResponse.json(
           { success: false, error: "Invalid or expired code. Request a new one." },

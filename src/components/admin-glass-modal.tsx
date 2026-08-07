@@ -1,6 +1,7 @@
 "use client";
 
-import { ReactNode } from "react";
+import { ReactNode, useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 
 const WIDTH_CLASS = {
   md: "max-w-md",
@@ -23,30 +24,57 @@ export function AdminGlassPanel({
   children,
   className = "",
   accent = "cyan",
+  sheet = false,
 }: {
   children: ReactNode;
   className?: string;
   accent?: "cyan" | "emerald" | "violet" | "rose" | "slate";
+  /** Bottom-sheet styling for mobile modals */
+  sheet?: boolean;
 }) {
-  const accentGlow =
-    accent === "emerald"
-      ? "bg-emerald-400/10"
+  const shadowGlow = sheet
+    ? ""
+    : accent === "emerald"
+      ? "shadow-[0_0_60px_rgba(16,185,129,0.15)]"
       : accent === "violet"
-        ? "bg-violet-400/10"
+        ? "shadow-[0_0_60px_rgba(139,92,246,0.15)]"
         : accent === "rose"
-          ? "bg-rose-400/10"
+          ? "shadow-[0_0_60px_rgba(244,63,94,0.15)]"
           : accent === "slate"
-            ? "bg-slate-400/10"
-            : "bg-cyan-400/10";
+            ? "shadow-[0_0_60px_rgba(148,163,184,0.15)]"
+            : "shadow-[0_0_60px_rgba(34,211,238,0.15)]";
+
+  const hoverGlow =
+    accent === "emerald"
+      ? "from-emerald-500/10"
+      : accent === "violet"
+        ? "from-violet-500/10"
+        : accent === "rose"
+          ? "from-rose-500/10"
+          : accent === "slate"
+            ? "from-slate-500/10"
+            : "from-cyan-500/10";
+
+  const shape = sheet
+    ? "rounded-none border-0 bg-transparent p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] sm:p-8 md:p-10"
+    : "overflow-hidden rounded-3xl border border-white/10 bg-[#06080d] p-6 sm:p-8 md:p-10";
 
   return (
-    <div
-      className={`relative overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br from-white/[0.14] via-white/[0.06] to-white/[0.02] p-6 shadow-[0_24px_80px_rgba(0,0,0,0.55),inset_0_1px_0_rgba(255,255,255,0.12),inset_0_-1px_0_rgba(255,255,255,0.04)] backdrop-blur-2xl max-md:p-4 sm:p-8 ${className}`}
-    >
-      <div className="pointer-events-none absolute inset-x-8 top-0 h-px bg-gradient-to-r from-transparent via-white/40 to-transparent" />
-      <div className={`pointer-events-none absolute -top-20 -right-16 h-40 w-40 rounded-full ${accentGlow} blur-3xl`} />
-      <div className="pointer-events-none absolute -bottom-24 -left-16 h-44 w-44 rounded-full bg-white/[0.04] blur-3xl" />
-      <div className="relative z-10">{children}</div>
+    <div className={`relative isolate group ${shadowGlow} ${shape} ${className}`}>
+      <div
+        className={`pointer-events-none absolute inset-0 bg-gradient-to-b ${hoverGlow} to-transparent opacity-0 transition-opacity duration-700 group-hover:opacity-100 ${
+          sheet ? "" : "rounded-3xl"
+        }`}
+      />
+      <div className="relative z-10">
+        {sheet ? (
+          <div
+            aria-hidden
+            className="mx-auto mb-4 mt-0.5 h-1 w-10 rounded-full bg-white/25 sm:hidden"
+          />
+        ) : null}
+        {children}
+      </div>
     </div>
   );
 }
@@ -61,7 +89,7 @@ export function AdminPanel({
 }) {
   return (
     <div
-      className={`rounded-xl border border-white/10 bg-[#0F172A] p-6 sm:p-8 max-md:p-4 ${className}`}
+      className={`overflow-hidden rounded-2xl border border-white/10 bg-[#0F172A] p-6 sm:p-8 max-md:p-4 ${className}`}
     >
       {children}
     </div>
@@ -73,39 +101,64 @@ export function AdminGlassModal({
   onClose,
   children,
   maxWidth = "md",
-  zIndexClass = "z-[70]",
+  zIndexClass = "z-[100]",
   closeOnBackdrop = false,
   align = "center",
-  scrollable = false,
+  scrollable = true,
 }: AdminGlassModalProps) {
-  if (!open) return null;
+  const [mounted, setMounted] = useState(false);
 
-  return (
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  useEffect(() => {
+    if (!open) return;
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = prevOverflow;
+    };
+  }, [open]);
+
+  if (!open || !mounted) return null;
+
+  const desktopAlign =
+    align === "end" ? "sm:items-end sm:pb-6 md:items-center md:pb-4" : "sm:items-center";
+
+  const modal = (
     <div
-      className={`fixed inset-0 ${zIndexClass} flex justify-center p-3 sm:p-4 ${
-        align === "end" ? "items-end sm:items-center" : "items-center"
-      }`}
+      className={`fixed inset-0 ${zIndexClass} flex items-end justify-center p-0 sm:p-4 ${desktopAlign}`}
+      role="dialog"
+      aria-modal="true"
     >
       {closeOnBackdrop && onClose ? (
         <button
           type="button"
           aria-label="Close dialog backdrop"
-          className="absolute inset-0 bg-[#030308]/75 backdrop-blur-xl"
+          className="absolute inset-0 bg-[#030308]/80 backdrop-blur-xl"
           onClick={onClose}
         />
       ) : (
-        <div
-          aria-hidden
-          className="absolute inset-0 bg-[#030308]/75 backdrop-blur-xl"
-        />
+        <div aria-hidden className="absolute inset-0 bg-[#030308]/80 backdrop-blur-xl" />
       )}
+
+      {/* Shell owns radius + border so corners clip cleanly */}
       <div
-        className={`relative w-full max-h-[92dvh] ${WIDTH_CLASS[maxWidth]} ${
-          scrollable ? "admin-modal-scroll overflow-y-auto" : "max-md:overflow-y-auto"
-        }`}
+        className={`relative z-10 flex w-full min-h-0 flex-col overflow-hidden border border-white/10 bg-[#06080d] ${WIDTH_CLASS[maxWidth]} max-h-[min(90dvh,100%)] rounded-t-3xl rounded-b-none sm:rounded-3xl`}
       >
-        {children}
+        <div
+          className={`min-h-0 flex-1 overscroll-contain [-webkit-overflow-scrolling:touch] touch-pan-y ${
+            scrollable
+              ? "admin-modal-scroll overflow-x-hidden overflow-y-auto"
+              : "overflow-x-hidden overflow-y-auto"
+          }`}
+        >
+          {children}
+        </div>
       </div>
     </div>
   );
+
+  return createPortal(modal, document.body);
 }

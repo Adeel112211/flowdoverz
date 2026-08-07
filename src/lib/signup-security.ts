@@ -47,12 +47,24 @@ function hashIp(key: string) {
 }
 
 export function clientIpFromRequest(request: Request): string {
-  const forwarded = request.headers.get("x-forwarded-for");
-  if (forwarded) {
-    const first = forwarded.split(",")[0]?.trim();
-    if (first) return first;
+  const candidates = [
+    request.headers.get("cf-connecting-ip"),
+    request.headers.get("x-real-ip"),
+    request.headers.get("x-vercel-forwarded-for")?.split(",")[0],
+    request.headers.get("x-forwarded-for")?.split(",")[0],
+  ];
+
+  for (const raw of candidates) {
+    const value = raw?.trim();
+    if (value) return value;
   }
-  return request.headers.get("x-real-ip")?.trim() || "127.0.0.1";
+
+  return "unknown";
+}
+
+function isUnreliableIp(ip: string) {
+  const value = ip.toLowerCase().trim();
+  return !value || value === "unknown" || value === "0.0.0.0" || value === "::";
 }
 
 function isLocalIp(ip: string) {
@@ -128,18 +140,27 @@ export function hashSignupIp(ip: string): string {
   return hashIp(`trial:${ip}`);
 }
 
-export async function isTrialEligibleForIp(ip: string): Promise<boolean> {
+export async function isTrialEligibleForIp(ip: string | null | undefined): Promise<boolean> {
   const settings = await getSystemSettings();
-  if (!settings.trialOnePerIp) return true;
+  if (settings.trialOnePerIp === false) return true;
 
-  if (isLocalIp(ip) && process.env.NODE_ENV !== "production") {
+  const cleaned = String(ip || "").trim();
+
+  // Fail closed in production when IP cannot be trusted.
+  if (isUnreliableIp(cleaned)) {
+    return process.env.NODE_ENV !== "production";
+  }
+
+  if (isLocalIp(cleaned) && process.env.NODE_ENV !== "production") {
     return true;
   }
 
   const db = getDb();
-  if (!db) return true;
+  if (!db) {
+    return process.env.NODE_ENV !== "production";
+  }
 
-  const ref = db.collection("trial_ip_usage").doc(hashSignupIp(ip));
+  const ref = db.collection("trial_ip_usage").doc(hashSignupIp(cleaned));
   const doc = await ref.get();
   if (!doc.exists) return true;
 
