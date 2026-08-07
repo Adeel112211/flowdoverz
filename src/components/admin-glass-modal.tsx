@@ -28,24 +28,33 @@ export function AdminGlassPanel({
   className?: string;
   accent?: "cyan" | "emerald" | "violet" | "rose" | "slate";
 }) {
-  const accentGlow =
+  const shadowGlow =
     accent === "emerald"
-      ? "bg-emerald-400/10"
+      ? "shadow-[0_0_60px_rgba(16,185,129,0.15)] max-md:shadow-[0_10px_40px_rgba(16,185,129,0.2)]"
       : accent === "violet"
-        ? "bg-violet-400/10"
+        ? "shadow-[0_0_60px_rgba(139,92,246,0.15)] max-md:shadow-[0_10px_40px_rgba(139,92,246,0.2)]"
         : accent === "rose"
-          ? "bg-rose-400/10"
+          ? "shadow-[0_0_60px_rgba(244,63,94,0.15)] max-md:shadow-[0_10px_40px_rgba(244,63,94,0.2)]"
           : accent === "slate"
-            ? "bg-slate-400/10"
-            : "bg-cyan-400/10";
+            ? "shadow-[0_0_60px_rgba(148,163,184,0.15)] max-md:shadow-[0_10px_40px_rgba(148,163,184,0.2)]"
+            : "shadow-[0_0_60px_rgba(34,211,238,0.15)] max-md:shadow-[0_10px_40px_rgba(34,211,238,0.2)]";
+
+  const hoverGlow =
+    accent === "emerald"
+      ? "from-emerald-500/10"
+      : accent === "violet"
+        ? "from-violet-500/10"
+        : accent === "rose"
+          ? "from-rose-500/10"
+          : accent === "slate"
+            ? "from-slate-500/10"
+            : "from-cyan-500/10";
 
   return (
     <div
-      className={`relative overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br from-white/[0.14] via-white/[0.06] to-white/[0.02] p-6 shadow-[0_24px_80px_rgba(0,0,0,0.55),inset_0_1px_0_rgba(255,255,255,0.12),inset_0_-1px_0_rgba(255,255,255,0.04)] backdrop-blur-2xl max-md:p-4 sm:p-8 ${className}`}
+      className={`relative isolate transform-gpu overflow-hidden rounded-[2rem] border border-white/10 bg-[#06080d]/80 p-6 sm:p-8 md:p-10 backdrop-blur-3xl group ${shadowGlow} ${className}`}
     >
-      <div className="pointer-events-none absolute inset-x-8 top-0 h-px bg-gradient-to-r from-transparent via-white/40 to-transparent" />
-      <div className={`pointer-events-none absolute -top-20 -right-16 h-40 w-40 rounded-full ${accentGlow} blur-3xl`} />
-      <div className="pointer-events-none absolute -bottom-24 -left-16 h-44 w-44 rounded-full bg-white/[0.04] blur-3xl" />
+      <div className={`absolute inset-0 bg-gradient-to-b ${hoverGlow} to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-700 pointer-events-none`} />
       <div className="relative z-10">{children}</div>
     </div>
   );
@@ -100,7 +109,7 @@ export function AdminGlassModal({
         />
       )}
       <div
-        className={`relative w-full max-h-[92dvh] ${WIDTH_CLASS[maxWidth]} ${
+        className={`relative w-full max-h-[92dvh] rounded-[2rem] ${WIDTH_CLASS[maxWidth]} ${
           scrollable ? "admin-modal-scroll overflow-y-auto" : "max-md:overflow-y-auto"
         }`}
       >

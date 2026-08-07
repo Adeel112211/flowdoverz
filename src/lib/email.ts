@@ -20,7 +20,7 @@ async function resolveMailConfig() {
     adminEmail: stored.adminEmail || stored.user || process.env.SMTP_USER || "",
     enabled: stored.enabled !== false,
     brandName: stored.brandName || "FlowDoverz",
-    logoUrl: stored.logoUrl,
+    logoUrl: stored.logoUrl || `${APP_URL}/logo.png`,
     defaultStyle: stored.defaultStyle,
     defaultColors: stored.defaultColors,
   };

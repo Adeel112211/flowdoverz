@@ -325,7 +325,6 @@ export default function AdminDashboard() {
   return (
     <AdminPageLayout
       scrollContent={false}
-      lockScroll
       header={
         <AdminPageHeader
           title="Admin Dashboard"

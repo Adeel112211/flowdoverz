@@ -85,12 +85,48 @@ export async function getStoredTemplates(): Promise<Record<string, StoredEmailTe
   if (!db) return {};
 
   try {
-    const doc = await db.collection(TEMPLATES_DOC.collection).doc(TEMPLATES_DOC.id).get();
-    if (!doc.exists) return {};
-    const data = doc.data();
-    return (data?.templates as Record<string, StoredEmailTemplate>) || {};
+    const oldDoc = await db.collection(TEMPLATES_DOC.collection).doc(TEMPLATES_DOC.id).get();
+    const oldData = oldDoc.exists ? ((oldDoc.data()?.templates as Record<string, StoredEmailTemplate>) || {}) : {};
+
+    const snapshot = await db.collection("email_templates").get();
+    const newData: Record<string, StoredEmailTemplate> = {};
+    snapshot.forEach((doc) => {
+      newData[doc.id] = doc.data() as StoredEmailTemplate;
+    });
+
+    return { ...oldData, ...newData };
   } catch {
     return {};
+  }
+}
+
+export async function saveStoredTemplate(id: string, template: StoredEmailTemplate) {
+  const db = getDb();
+  if (!db) throw new Error("Database not configured.");
+
+  await db.collection("email_templates").doc(id).set(template, { merge: true });
+}
+
+export async function deleteStoredTemplate(id: string) {
+  const db = getDb();
+  if (!db) throw new Error("Database not configured.");
+
+  // Delete from new collection
+  await db.collection("email_templates").doc(id).delete();
+
+  // Also remove from old document if it exists to ensure complete reset
+  try {
+    const oldDocRef = db.collection(TEMPLATES_DOC.collection).doc(TEMPLATES_DOC.id);
+    const oldDoc = await oldDocRef.get();
+    if (oldDoc.exists) {
+      const data = oldDoc.data()?.templates as Record<string, StoredEmailTemplate> | undefined;
+      if (data && data[id]) {
+        delete data[id];
+        await oldDocRef.set({ templates: data }, { merge: true });
+      }
+    }
+  } catch (e) {
+    console.error("Failed to clean up old template", e);
   }
 }
 
@@ -98,7 +134,13 @@ export async function saveStoredTemplates(templates: Record<string, StoredEmailT
   const db = getDb();
   if (!db) throw new Error("Database not configured.");
 
-  await db.collection(TEMPLATES_DOC.collection).doc(TEMPLATES_DOC.id).set({ templates }, { merge: true });
+  // For backward compatibility / bulk ops, save each template individually
+  const batch = db.batch();
+  for (const [id, template] of Object.entries(templates)) {
+    const ref = db.collection("email_templates").doc(id);
+    batch.set(ref, template, { merge: true });
+  }
+  await batch.commit();
 }
 
 export async function getMergedTemplate(id: EmailTemplateId): Promise<EmailTemplateDef> {

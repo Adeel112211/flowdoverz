@@ -128,7 +128,7 @@ export function SignupPage() {
     verificationCode.replace(/\D/g, "").length === 6;
 
   return (
-    <div className="relative flex min-h-dvh w-full max-w-full overflow-x-hidden px-4 py-8 sm:py-10 pb-12">
+    <div className="relative flex min-h-dvh w-full max-w-full overflow-x-hidden px-4 py-8 max-md:items-start max-md:justify-start max-md:pb-12 md:h-dvh md:items-center md:justify-center md:overflow-hidden">
       <AuthPageBackground />
       {error && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-[#080810]/80 backdrop-blur-md animate-in fade-in duration-300">
@@ -150,14 +150,14 @@ export function SignupPage() {
         </div>
       )}
       <div className="animate-fade-up relative z-10 mx-auto w-full max-w-md py-4">
-        <div className="mb-6 flex flex-col items-center text-center sm:mb-8">
+        <div className="mb-2 flex flex-col items-center text-center sm:mb-3">
           <Link href={marketingPath("/")}>
             <BrandLogo size="xl" stacked />
           </Link>
-          <h1 className="mt-6 text-3xl font-black tracking-tight text-transparent bg-clip-text bg-gradient-to-br from-white via-white to-slate-400 sm:mt-8 md:text-4xl">
+          <h1 className="mt-2 text-3xl font-black tracking-tight text-transparent bg-clip-text bg-gradient-to-br from-white via-white to-slate-400 sm:mt-3 md:text-4xl">
             Create workspace
           </h1>
-          <p className="mt-2 text-sm text-slate-400 max-w-sm mx-auto sm:mt-3 sm:text-base">
+          <p className="mt-0.5 text-sm text-slate-400 mx-auto sm:mt-1 sm:text-base whitespace-nowrap">
             Start your free trial today — no credit card required.
           </p>
         </div>
