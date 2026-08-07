@@ -154,9 +154,9 @@ export async function sendTemplateEmail(
   let finalLogoUrl = template.logoUrl || cfg.logoUrl;
 
   if (finalLogoUrl && finalLogoUrl.startsWith("data:image/")) {
-    const match = finalLogoUrl.match(/^data:image\/(\w+);base64,(.+)$/);
+    const match = finalLogoUrl.match(/^data:image\/([\w\+\-\.]+);.*base64,(.+)$/);
     if (match) {
-      const ext = match[1];
+      const ext = match[1] === "svg+xml" ? "svg" : match[1];
       const base64Data = match[2];
       const cid = `logo-${Date.now()}@flowdoverz.app`;
       attachments.push({
@@ -184,6 +184,13 @@ export async function sendTemplateEmail(
     });
   }
 
+  // Ensure template-specific overrides don't bypass our CID trick if they are also data URIs
+  // Note: renderTemplateEmail currently favors template.logoUrl if it exists. 
+  // By passing finalLogoUrl as defaultLogoUrl AND clearing template.logoUrl, we force it to use the CID.
+  if (template.logoUrl) {
+    template.logoUrl = finalLogoUrl;
+  }
+
   const { subject, text, html } = renderTemplateEmail(template, vars, {
     supportEmail: replyTo,
     appUrl: APP_URL,
@@ -192,13 +199,6 @@ export async function sendTemplateEmail(
     defaultLogoUrl: finalLogoUrl, // Use the processed CID or original URL
     defaultColors: cfg.defaultColors,
   });
-
-  // Ensure template-specific overrides don't bypass our CID trick if they are also data URIs
-  // Note: renderTemplateEmail currently favors template.logoUrl if it exists. 
-  // By passing finalLogoUrl as defaultLogoUrl AND clearing template.logoUrl, we force it to use the CID.
-  if (template.logoUrl) {
-    template.logoUrl = finalLogoUrl;
-  }
 
   return sendRawEmail({ to, subject, text, html, type: templateId, attachments: attachments.length > 0 ? attachments : undefined });
 }
