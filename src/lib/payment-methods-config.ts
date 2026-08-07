@@ -28,7 +28,7 @@ export const CHECKOUT_PAYMENT_METHODS: CheckoutPaymentMethod[] = [
     name: "JazzCash",
     logoUrl: "/payment-logos/jazzcash.png",
     accountName: "Muhammad Adeel",
-    accountNumber: "0300-0000000",
+    accountNumber: "0302-0720610",
     qrImageUrl: "/jazzcash-qr.png",
     useTempQr: true,
     theme: {
@@ -46,8 +46,9 @@ export const CHECKOUT_PAYMENT_METHODS: CheckoutPaymentMethod[] = [
     id: "easypaisa",
     name: "EasyPaisa",
     logoUrl: "/payment-logos/easypaisa.png",
-    accountName: "[Your Name]",
-    accountNumber: "0300-0000000",
+    accountName: "Muhammad Adeel",
+    accountNumber: "0302-0720610",
+    qrImageUrl: "/easypaisa-qr.png",
     useTempQr: true,
     theme: {
       iconBg: "bg-emerald-500/15",
@@ -64,8 +65,9 @@ export const CHECKOUT_PAYMENT_METHODS: CheckoutPaymentMethod[] = [
     id: "nayapay",
     name: "NayaPay",
     logoUrl: "/payment-logos/nayapay.png",
-    accountName: "[Your Name]",
-    accountNumber: "0300-0000000",
+    accountName: "Muhammad Adeel",
+    accountNumber: "0313-6731535",
+    qrImageUrl: "/nayapay_qr.png",
     useTempQr: true,
     theme: {
       iconBg: "bg-orange-500/15",
