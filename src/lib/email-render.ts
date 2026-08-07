@@ -172,7 +172,7 @@ export function renderEmailHtml(input: RenderEmailInput): string {
   const badgeHtml = badge ? `<div style="margin-bottom:16px;">${statusBadge(badge.label, badge.tone, colors, style)}</div>` : "";
   const ctaHtml = showCta && ctaLabel ? ctaButton(ctaHref, ctaLabel, colors, style) : "";
   const titleHtml = title
-    ? `<h1 style="margin:0;font-size:${style === "bold" ? "28px" : "26px"};line-height:1.25;font-weight:800;color:${colors.heading};letter-spacing:-0.03em;font-family:${fontFamily};">${title}</h1>`
+    ? `<h1 style="margin:0;font-size:${style === "bold" ? "28px" : "26px"};line-height:1.25;font-weight:800;color:${colors.heading};letter-spacing:-0.03em;font-family:${fontFamily};word-break:break-word;">${title}</h1>`
     : "";
 
   const bodyBg = `background-color:${colors.background};`;

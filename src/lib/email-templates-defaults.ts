@@ -229,7 +229,7 @@ The FlowDoverz Team`,
     badge: "Action required",
     badgeTone: "warning",
     ctaLabel: "Review in admin panel",
-    ctaHref: "{{appUrl}}/admin/payments",
+    ctaHref: "https://adminflow.doverz.com/admin/payments",
     placeholders: ["{{clientEmail}}", "{{planName}}", "{{planId}}", "{{appUrl}}"],
     textBody: `Hello Admin,
 
@@ -238,7 +238,7 @@ A user has submitted a manual payment request.
 Email: {{clientEmail}}
 Plan: {{planName}}
 
-Admin panel: {{appUrl}}/admin/payments`,
+Admin panel: https://adminflow.doverz.com/admin/payments`,
     htmlBody: `<p style="margin:0 0 16px 0;color:#e2e8f0;">Hello Admin,</p>
 <p style="margin:0 0 4px 0;">A user submitted a manual payment that needs your review.</p>
 <p style="margin:0;">Open the admin panel to verify the transaction ID and screenshot, then approve or reject the payment.</p>`,
