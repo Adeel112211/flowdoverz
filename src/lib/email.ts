@@ -144,14 +144,30 @@ export async function sendTemplateEmail(
   const isReceiptEmail =
     templateId === "payment_receipt" || templateId === "payment_refund_receipt";
 
-  let attachments:
-    | Array<{
-        filename: string;
-        content: Buffer;
-        cid: string;
-        contentDisposition: "inline";
-      }>
-    | undefined;
+  let attachments: Array<{
+    filename: string;
+    content: Buffer;
+    cid: string;
+    contentDisposition: "inline" | "attachment";
+  }> = [];
+
+  let finalLogoUrl = template.logoUrl || cfg.logoUrl;
+
+  if (finalLogoUrl && finalLogoUrl.startsWith("data:image/")) {
+    const match = finalLogoUrl.match(/^data:image\/(\w+);base64,(.+)$/);
+    if (match) {
+      const ext = match[1];
+      const base64Data = match[2];
+      const cid = `logo-${Date.now()}@flowdoverz.app`;
+      attachments.push({
+        filename: `logo.${ext}`,
+        content: Buffer.from(base64Data, "base64"),
+        cid: cid,
+        contentDisposition: "inline",
+      });
+      finalLogoUrl = `cid:${cid}`;
+    }
+  }
 
   if (isReceiptEmail) {
     const {
@@ -160,14 +176,12 @@ export async function sendTemplateEmail(
       RECEIPT_QR_CID,
     } = await import("@/lib/receipt-barcode");
     vars["{{receiptBarcode}}"] = await buildReceiptScanCodeHtmlForEmail();
-    attachments = [
-      {
-        filename: "receipt-qr.png",
-        content: await buildReceiptScanCodePngBuffer(),
-        cid: RECEIPT_QR_CID,
-        contentDisposition: "inline",
-      },
-    ];
+    attachments.push({
+      filename: "receipt-qr.png",
+      content: await buildReceiptScanCodePngBuffer(),
+      cid: RECEIPT_QR_CID,
+      contentDisposition: "inline",
+    });
   }
 
   const { subject, text, html } = renderTemplateEmail(template, vars, {
@@ -175,11 +189,18 @@ export async function sendTemplateEmail(
     appUrl: APP_URL,
     brandName: cfg.brandName,
     defaultStyle: cfg.defaultStyle,
-    defaultLogoUrl: cfg.logoUrl,
+    defaultLogoUrl: finalLogoUrl, // Use the processed CID or original URL
     defaultColors: cfg.defaultColors,
   });
 
-  return sendRawEmail({ to, subject, text, html, type: templateId, attachments });
+  // Ensure template-specific overrides don't bypass our CID trick if they are also data URIs
+  // Note: renderTemplateEmail currently favors template.logoUrl if it exists. 
+  // By passing finalLogoUrl as defaultLogoUrl AND clearing template.logoUrl, we force it to use the CID.
+  if (template.logoUrl) {
+    template.logoUrl = finalLogoUrl;
+  }
+
+  return sendRawEmail({ to, subject, text, html, type: templateId, attachments: attachments.length > 0 ? attachments : undefined });
 }
 
 export async function sendPaymentPendingEmail(email: string) {
