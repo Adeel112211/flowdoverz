@@ -1,5 +1,5 @@
 /** Update with your WhatsApp number (country code, no + or spaces). */
-export const WHATSAPP_NUMBER = "0000000000";
+export const WHATSAPP_NUMBER = "923136731535";
 
 export const WHATSAPP_URL = `https://wa.me/${WHATSAPP_NUMBER}`;
 

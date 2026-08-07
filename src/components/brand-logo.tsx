@@ -99,7 +99,7 @@ export function BrandLogo({
 
   return (
     <div
-      className={`flex ${stacked ? "flex-col justify-center" : "items-center"} ${gap} ${className}`}
+      className={`flex items-center ${stacked ? "flex-col justify-center" : ""} ${gap} ${className}`}
     >
       {showIcon &&
         (variant === "png" ? (

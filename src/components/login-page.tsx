@@ -69,7 +69,7 @@ export function LoginPage() {
           <Link href={marketingPath("/")}>
             <BrandLogo size="xl" stacked />
           </Link>
-          <h1 className="mt-8 max-md:mt-5 text-3xl md:text-4xl font-black tracking-tight text-transparent bg-clip-text bg-gradient-to-br from-white via-white to-slate-400">Welcome back</h1>
+          <h1 className="mt-3 max-md:mt-2 text-3xl md:text-4xl font-black tracking-tight text-transparent bg-clip-text bg-gradient-to-br from-white via-white to-slate-400">Welcome back</h1>
           <p className="mt-3 text-base text-slate-400 max-w-sm mx-auto">
             Enter your FlowDoverz workspace credentials to continue generating.
           </p>
