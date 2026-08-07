@@ -311,6 +311,7 @@ export function renderTemplateEmail(
           style,
           receiptTextFromTemplateFields(template),
           receiptVariant,
+          template.logoUrl || options.defaultLogoUrl
         ),
         vars,
       )

@@ -51,9 +51,9 @@ export function AdminSidebar() {
   return (
     <>
       {/* Mobile Top Header */}
-      <div className="md:hidden flex shrink-0 items-center justify-between p-4 border-b border-white/5 bg-[#0F172A]/80 backdrop-blur-xl sticky top-0 z-50">
+      <div className="md:hidden flex shrink-0 items-center justify-between p-4 border-b border-white/5 bg-[#0F172A]/80 backdrop-blur-xl relative z-40">
         <Link href="/admin">
-          <BrandLogo size="md" />
+          <BrandLogo size="lg" />
         </Link>
         <button
           type="button"
@@ -84,7 +84,7 @@ export function AdminSidebar() {
       >
         <div className="hidden md:block p-6 border-b border-white/5">
           <Link href="/admin">
-          <BrandLogo size="md" />
+          <BrandLogo size="lg" />
           </Link>
         </div>
 

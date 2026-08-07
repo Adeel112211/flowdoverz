@@ -13,11 +13,11 @@ type BrandLogoProps = {
 };
 
 const sizes = {
-  sm: { icon: 36, text: "text-lg", gap: "gap-1", tagline: "text-[8px]" },
-  md: { icon: 48, text: "text-xl", gap: "gap-1", tagline: "text-[9px]" },
-  lg: { icon: 64, text: "text-3xl", gap: "gap-1.5", tagline: "text-[10px]" },
-  xl: { icon: 80, text: "text-4xl", gap: "gap-2", tagline: "text-[11px]" },
-  hero: { icon: 112, text: "text-5xl", gap: "gap-2", tagline: "text-xs" },
+  sm: { icon: 36, text: "text-lg", gap: "gap-2.5", tagline: "text-[8px]" },
+  md: { icon: 48, text: "text-xl", gap: "gap-3", tagline: "text-[9px]" },
+  lg: { icon: 64, text: "text-3xl", gap: "gap-3.5", tagline: "text-[10px]" },
+  xl: { icon: 80, text: "text-4xl", gap: "gap-4", tagline: "text-[11px]" },
+  hero: { icon: 112, text: "text-5xl", gap: "gap-5", tagline: "text-xs" },
 } as const;
 
 function LogoMark({ icon }: { icon: number }) {
@@ -99,7 +99,7 @@ export function BrandLogo({
 
   return (
     <div
-      className={`flex ${stacked ? "flex-col items-center justify-center" : "items-center"} ${gap} ${className}`}
+      className={`flex ${stacked ? "flex-col justify-center" : "items-center"} ${gap} ${className}`}
     >
       {showIcon &&
         (variant === "png" ? (
@@ -123,7 +123,7 @@ export function BrandLogo({
           </span>
           {taglineVisible && (
             <span
-              className={`${tagline} mt-1 block font-semibold uppercase tracking-[0.24em] text-cyan-400/75`}
+              className={`${tagline} mt-2 block font-semibold uppercase tracking-[0.24em] text-cyan-400/75`}
             >
               Google Flow Workspace
             </span>

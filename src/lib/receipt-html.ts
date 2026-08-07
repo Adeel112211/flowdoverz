@@ -55,6 +55,7 @@ export function buildThermalReceiptEmailHtml(options?: {
   emailColors?: Partial<EmailThemeColors>;
   style?: EmailTemplateStyle;
   text?: ReceiptTemplateText;
+  logoUrl?: string;
 }) {
   const variant = options?.variant || "payment";
   const baseTheme =
@@ -76,12 +77,16 @@ export function buildThermalReceiptEmailHtml(options?: {
         ${metaRow("Paid on", "{{paymentDate}}", T)}
         ${metaRow("Valid until", "{{expiryDate}}", T)}`;
 
+  const brandingElement = options?.logoUrl
+    ? `<img src="${options.logoUrl}" alt="${text.brandName}" style="display:block;margin:0 auto 16px;max-width:140px;height:auto;border:0;" />`
+    : `<p style="margin:0 0 16px 0;font-family:'Courier New',Courier,monospace;font-size:17px;font-weight:800;letter-spacing:3px;color:${T.accent};">${text.brandName}</p>`;
+
   return `<div style="margin:0;text-align:center;">
   <div style="display:inline-block;max-width:380px;width:100%;filter:drop-shadow(${T.glow});border-radius:16px;overflow:hidden;">
     <div style="background:${T.paper};padding:32px 28px 28px;text-align:center;min-height:420px;">
       <p style="margin:0 0 10px 0;font-family:'Courier New',Courier,monospace;font-size:11px;letter-spacing:4px;color:${T.textMuted};">***</p>
-      <p style="margin:0 0 8px 0;font-family:'Courier New',Courier,monospace;font-size:14px;font-weight:700;letter-spacing:5px;color:${T.text};">${text.receiptLabel}</p>
-      <p style="margin:0 0 16px 0;font-family:'Courier New',Courier,monospace;font-size:17px;font-weight:800;letter-spacing:3px;color:${T.accent};">${text.brandName}</p>
+      <p style="margin:0 0 16px 0;font-family:'Courier New',Courier,monospace;font-size:14px;font-weight:700;letter-spacing:5px;color:${T.text};">${text.receiptLabel}</p>
+      ${brandingElement}
       <div style="height:4px;margin:0 auto 22px;max-width:140px;background:${T.gradient};border-radius:999px;"></div>
       <table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;border-collapse:collapse;text-align:left;margin:0 0 20px;">
         ${metaRow("Name", "{{userName}}", T)}
@@ -109,8 +114,9 @@ export function buildReceiptHtmlForTemplate(
   style: EmailTemplateStyle = "modern",
   text?: ReceiptTemplateText,
   variant: ReceiptVariant = "payment",
+  logoUrl?: string
 ) {
-  return buildThermalReceiptEmailHtml({ emailColors, style, text, variant });
+  return buildThermalReceiptEmailHtml({ emailColors, style, text, variant, logoUrl });
 }
 
 export function receiptTextFromTemplateFields(fields: {

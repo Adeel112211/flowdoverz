@@ -77,8 +77,12 @@ export async function PUT(request: NextRequest) {
     }
 
     if (body.templateId && body.template) {
-      const { saveStoredTemplate } = await import("@/lib/smtp-store");
-      await saveStoredTemplate(String(body.templateId), body.template as StoredEmailTemplate);
+      const stored = await getStoredTemplates();
+      stored[String(body.templateId)] = {
+        ...stored[String(body.templateId)],
+        ...(body.template as StoredEmailTemplate),
+      };
+      await saveStoredTemplates(stored);
     }
 
     await logAdminActivity({ action: "settings_updated", detail: "SMTP settings or templates updated" });
@@ -185,8 +189,9 @@ export async function POST(request: NextRequest) {
     if (!templateId) {
       return NextResponse.json({ success: false, error: "Template ID required." }, { status: 400 });
     }
-    const { deleteStoredTemplate, getMergedTemplate } = await import("@/lib/smtp-store");
-    await deleteStoredTemplate(templateId);
+    const stored = await getStoredTemplates();
+    delete stored[templateId];
+    await saveStoredTemplates(stored);
     const template = await getMergedTemplate(templateId as EmailTemplateId);
     return NextResponse.json({ success: true, template });
   }
