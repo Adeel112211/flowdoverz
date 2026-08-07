@@ -22,6 +22,8 @@ export type PricingPlan = {
 
 export type PricingConfig = {
   trialDays: number;
+  trialMinutes: number;
+  trialOnePerIp: boolean;
   subscriptionDays: number;
   heroEyebrow: string;
   heroTitle: string;
@@ -38,7 +40,7 @@ export const DEFAULT_PRICING_PLANS: PricingPlan[] = [
       "Experience the full power of Google Flow with no commitment. Perfect for testing before you subscribe.",
     priceMonthlyPkr: 0,
     priceAnnualPkr: 0,
-    periodLabel: "1-day trial",
+    periodLabel: "10-minute trial",
     btnLabel: "Start Free Trial",
     featured: false,
     enabled: true,
@@ -103,6 +105,8 @@ export const DEFAULT_PRICING_PLANS: PricingPlan[] = [
 
 export const DEFAULT_PRICING_CONFIG: PricingConfig = {
   trialDays: 14,
+  trialMinutes: 10,
+  trialOnePerIp: true,
   subscriptionDays: 30,
   heroEyebrow: "Transparent pricing · No hidden fees",
   heroTitle: "Pick your plan.",

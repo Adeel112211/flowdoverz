@@ -8,7 +8,8 @@ export type EmailTemplateId =
   | "payment_refund_receipt"
   | "payment_rejected"
   | "subscription_expired"
-  | "admin_new_payment";
+  | "admin_new_payment"
+  | "email_verification";
 
 export type TemplateAudience = "client" | "owner";
 
@@ -241,6 +242,25 @@ Admin panel: {{appUrl}}/admin/payments`,
     htmlBody: `<p style="margin:0 0 16px 0;color:#e2e8f0;">Hello Admin,</p>
 <p style="margin:0 0 4px 0;">A user submitted a manual payment that needs your review.</p>
 <p style="margin:0;">Open the admin panel to verify the transaction ID and screenshot, then approve or reject the payment.</p>`,
+  },
+  {
+    id: "email_verification",
+    name: "Email Verification",
+    audience: "client",
+    description: "Sent with a 6-digit code when a user signs up.",
+    subject: "FlowDoverz - Your verification code",
+    preheader: "Your verification code is {{code}}",
+    badge: "Verification",
+    badgeTone: "info",
+    placeholders: ["{{email}}", "{{code}}", "{{appUrl}}"],
+    textBody: `Your FlowDoverz verification code is: {{code}}
+
+This code expires in 15 minutes.
+
+If you did not request this, you can ignore this email.`,
+    htmlBody: `<p style="margin:0 0 16px 0;color:#e2e8f0;">Your verification code:</p>
+<p style="margin:0;font-size:32px;font-weight:800;letter-spacing:8px;color:#22d3ee;">{{code}}</p>
+<p style="margin:16px 0 0;color:#94a3b8;font-size:14px;">Expires in 15 minutes.</p>`,
   },
 ];
 

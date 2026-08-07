@@ -1,11 +1,4 @@
-export const DEMO_USER = {
-  email: "demo@flowdoverz.app",
-  password: "demo1234",
-  name: "Demo User",
-} as const;
-
 const SESSION_KEY = "flowdoverz_session";
-const SID_COOKIE = "flowdoverz_sid";
 const SESSION_CHANGE = "flowdoverz_session_change";
 
 let cachedSession: Session | null | undefined;
@@ -37,22 +30,15 @@ export type Session = {
   sid: string;
 };
 
-function writeSidCookie(sid: string) {
-  document.cookie = `${SID_COOKIE}=${encodeURIComponent(sid)}; path=/; SameSite=Lax; max-age=2592000`;
-}
-
-function clearSidCookie() {
-  document.cookie = `${SID_COOKIE}=; path=/; max-age=0`;
-}
-
 function persistSession(session: Session) {
   window.localStorage.setItem(SESSION_KEY, JSON.stringify(session));
-  writeSidCookie(session.sid);
   cachedSession = session;
   notifySessionChange();
 }
 
-type AuthResult = { ok: true; session: Session } | { ok: false; error: string };
+type AuthResult =
+  | { ok: true; session: Session; trialGranted?: boolean; notice?: string }
+  | { ok: false; error: string };
 
 async function postAuth(
   path: string,
@@ -69,6 +55,8 @@ async function postAuth(
     const data = (await response.json().catch(() => null)) as {
       success?: boolean;
       error?: string;
+      notice?: string;
+      trialGranted?: boolean;
       user?: { email?: string; name?: string; sid?: string };
     } | null;
 
@@ -87,9 +75,19 @@ async function postAuth(
 
     if (typeof window !== "undefined") {
       persistSession(session);
+      if (data.notice) {
+        window.sessionStorage.setItem("flowdoverz_signup_notice", data.notice);
+      } else {
+        window.sessionStorage.removeItem("flowdoverz_signup_notice");
+      }
     }
 
-    return { ok: true, session };
+    return {
+      ok: true,
+      session,
+      trialGranted: data.trialGranted,
+      notice: data.notice,
+    };
   } catch {
     return { ok: false, error: "Could not reach the server. Is FlowDoverz running?" };
   }
@@ -109,15 +107,20 @@ export async function signUp(
   email: string,
   password: string,
   name: string,
+  verificationCode: string,
 ): Promise<AuthResult> {
   if (password.length < 8) {
     return { ok: false, error: "Password must be at least 8 characters." };
+  }
+  if (verificationCode.replace(/\D/g, "").length !== 6) {
+    return { ok: false, error: "Enter the 6-digit verification code." };
   }
 
   return postAuth("/api/auth/register", {
     email: email.trim(),
     password,
     name: name.trim(),
+    verificationCode: verificationCode.replace(/\D/g, ""),
   });
 }
 
@@ -137,7 +140,6 @@ export function getSession(): Session | null {
       cachedSession = null;
       return null;
     }
-    writeSidCookie(parsed.sid);
     cachedSession = parsed as Session;
     return cachedSession;
   } catch {
@@ -146,12 +148,52 @@ export function getSession(): Session | null {
   }
 }
 
-export function signOut() {
+/** Restore dashboard session from the HttpOnly cookie via /api/auth/me. */
+export async function restoreSessionFromCookie(): Promise<Session | null> {
+  if (typeof window === "undefined") return null;
+
+  const existing = getSession();
+  if (existing) return existing;
+
+  try {
+    const response = await fetch("/api/auth/me", {
+      credentials: "include",
+      headers: { Accept: "application/json" },
+    });
+    const data = (await response.json().catch(() => null)) as {
+      success?: boolean;
+      user?: { email?: string; name?: string; sid?: string };
+    } | null;
+
+    if (!response.ok || !data?.success || !data.user?.email || !data.user?.sid) {
+      return null;
+    }
+
+    const session: Session = {
+      email: data.user.email,
+      name: data.user.name || data.user.email,
+      sid: data.user.sid,
+    };
+    persistSession(session);
+    return session;
+  } catch {
+    return null;
+  }
+}
+
+export async function signOut() {
   if (typeof window !== "undefined") {
     window.localStorage.removeItem(SESSION_KEY);
-    clearSidCookie();
     cachedSession = null;
     notifySessionChange();
+    try {
+      await fetch("/api/auth/logout", {
+        method: "POST",
+        credentials: "include",
+      });
+    } catch {
+      // non-blocking
+    }
   }
 }
 
@@ -160,7 +202,7 @@ export function getSidFromCookie(cookieHeader: string | null): string | null {
   const match = cookieHeader
     .split(";")
     .map((part) => part.trim())
-    .find((part) => part.startsWith(`${SID_COOKIE}=`));
+    .find((part) => part.startsWith("flowdoverz_sid="));
   if (!match) return null;
-  return decodeURIComponent(match.slice(SID_COOKIE.length + 1));
+  return decodeURIComponent(match.slice("flowdoverz_sid=".length));
 }

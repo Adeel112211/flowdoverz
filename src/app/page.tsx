@@ -7,6 +7,7 @@ import { FaApple, FaWindows, FaUbuntu, FaChrome, FaEdge, FaGoogle, FaAndroid } f
 import { SiBrave, SiArc } from "react-icons/si";
 import { useClientSession } from "@/hooks/use-client-session";
 import { UserMenuButton } from "@/components/user-menu-button";
+import { BrandLogo } from "@/components/brand-logo";
 
 const dashboardBtnClass =
   "px-6 py-2.5 text-sm font-bold text-slate-950 bg-gradient-to-r from-cyan-400 to-emerald-400 rounded-full shadow-[0_0_15px_rgba(34,211,238,0.4)] hover:scale-105 hover:shadow-[0_0_25px_rgba(34,211,238,0.6)] transition-all duration-300";
@@ -44,16 +45,9 @@ export default function LandingPage() {
         }`}
       >
         <div className="max-w-7xl mx-auto w-full h-full flex items-center justify-between px-4 sm:px-6 md:px-12">
-          <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-cyan-400 to-emerald-400 p-[2px] shadow-[0_0_20px_rgba(34,211,238,0.3)]">
-              <div className="w-full h-full bg-black rounded-md flex items-center justify-center">
-                <div className="w-2.5 h-2.5 bg-gradient-to-br from-white to-cyan-200 rounded-sm" />
-              </div>
-            </div>
-            <span className="text-xl font-extrabold tracking-tight text-white">
-              FlowDoverz
-            </span>
-          </div>
+          <Link href="/" className="hover:opacity-90 transition-opacity">
+            <BrandLogo size="md" />
+          </Link>
 
           {/* Desktop Nav */}
           <nav className="hidden md:flex items-center gap-8">
@@ -130,6 +124,10 @@ export default function LandingPage() {
         {/* Subtle Background Grid */}
         <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-20 mix-blend-overlay pointer-events-none" />
         <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.02)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.02)_1px,transparent_1px)] bg-[size:40px_40px] [mask-image:radial-gradient(ellipse_60%_50%_at_50%_50%,#000_70%,transparent_100%)] pointer-events-none" />
+
+        <div className="mb-6 animate-[fade-in-down_1s_ease-out]">
+          <BrandLogo size="hero" stacked showIcon={false} className="mx-auto justify-center" />
+        </div>
 
         <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white/5 border border-white/10 text-slate-300 text-xs sm:text-sm font-semibold mb-8 backdrop-blur-md animate-[fade-in-down_1s_ease-out]">
           <Sparkles size={16} className="text-cyan-400" /> Unlock the Power of Veo 3.1
@@ -250,16 +248,11 @@ export default function LandingPage() {
           {/* Main Footer Links */}
           <div className="grid grid-cols-1 md:grid-cols-12 gap-12 mb-16">
             <div className="md:col-span-6 flex flex-col items-center md:items-start text-center md:text-left">
-              <div className="flex items-center gap-3 mb-6 group cursor-pointer">
-                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-cyan-400 to-emerald-400 p-[2px] group-hover:shadow-[0_0_20px_rgba(34,211,238,0.4)] transition-all duration-500">
-                  <div className="w-full h-full bg-black rounded-lg flex items-center justify-center">
-                    <div className="w-3 h-3 bg-gradient-to-br from-white to-cyan-200 rounded-sm" />
-                  </div>
-                </div>
-                <span className="text-2xl font-extrabold tracking-tight text-white group-hover:text-cyan-400 transition-colors duration-300">FlowDoverz</span>
-              </div>
+              <Link href="/" className="mb-6 hover:opacity-90 transition-opacity">
+                <BrandLogo size="lg" stacked />
+              </Link>
               <p className="text-slate-400 text-base max-w-sm leading-relaxed mb-8">
-                The premium gateway to next-generation AI video rendering. Create without limits.
+                Your secure bridge to Google Flow — AI video generation in your browser, without the waitlist.
               </p>
             </div>
             

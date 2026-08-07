@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 220 48" fill="none" role="img" aria-label="FlowDoverz">
+  <path d="M4 29C4 13 16 5 27 8C37 11 43 19 41 28" stroke="url(#fd-flow-a)" stroke-width="3.2" stroke-linecap="round"/>
+  <path d="M16 14L16 34L32 24L16 14Z" fill="url(#fd-play)"/>
+  <circle cx="41" cy="28" r="2.6" fill="url(#fd-node)"/>
+  <text x="56" y="32" fill="url(#fd-text)" font-family="Inter, system-ui, sans-serif" font-size="22" font-weight="900" letter-spacing="-0.5">FlowDoverz</text>
+  <defs>
+    <linearGradient id="fd-flow-a" x1="4" y1="29" x2="41" y2="8" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#22D3EE"/>
+      <stop offset="1" stop-color="#10B981"/>
+    </linearGradient>
+    <linearGradient id="fd-play" x1="16" y1="14" x2="32" y2="34" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#ECFEFF"/>
+      <stop offset="0.35" stop-color="#22D3EE"/>
+      <stop offset="1" stop-color="#10B981"/>
+    </linearGradient>
+    <radialGradient id="fd-node" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(41 28) scale(2.6)">
+      <stop stop-color="#A5F3FC"/>
+      <stop offset="1" stop-color="#10B981"/>
+    </radialGradient>
+    <linearGradient id="fd-text" x1="56" y1="12" x2="210" y2="36" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFFFFF"/>
+      <stop offset="0.5" stop-color="#A5F3FC"/>
+      <stop offset="1" stop-color="#6EE7B7"/>
+    </linearGradient>
+  </defs>
+</svg>

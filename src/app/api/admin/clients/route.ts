@@ -110,6 +110,15 @@ export async function PUT(request: NextRequest) {
       updateData.subscriptionPlan = subscriptionPlan;
       if (PAID_PLANS.includes(subscriptionPlan)) {
         updateData.expirationEmailSent = false;
+      } else {
+        updateData.subscriptionExpiresAt = null;
+        if (subscriptionPlan === "trial" && trialExpiresAt === undefined) {
+          const { getSystemSettings, getTrialDurationMs } = await import("@/lib/admin-settings");
+          const settings = await getSystemSettings();
+          updateData.trialExpiresAt = new Date(
+            Date.now() + getTrialDurationMs(settings),
+          ).toISOString();
+        }
       }
     }
     if (trialExpiresAt !== undefined) updateData.trialExpiresAt = trialExpiresAt;

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { Radio, RefreshCw } from "lucide-react";
 import { AdminPageHeader } from "@/components/admin-page-header";
@@ -9,6 +9,7 @@ import { AdminLoadingState } from "@/components/admin-loading-state";
 import { AdminFilterPills } from "@/components/admin-filter-pills";
 import { AdminDataTable, type AdminTableColumn } from "@/components/admin-data-table";
 import { SyncMobileCard } from "@/components/admin-mobile-cards";
+import { useAdminLiveRefresh } from "@/hooks/use-admin-live-refresh";
 
 type SyncClient = {
   email: string;
@@ -47,20 +48,22 @@ export default function SyncStatusPage() {
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<Filter>("all");
 
-  const load = async () => {
-    setLoading(true);
+  const load = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true);
     try {
       const res = await fetch("/api/admin/sync-status", { credentials: "same-origin" });
       const data = await res.json();
       if (data.success) setClients(data.clients);
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
-    load();
-  }, []);
+    void load(false);
+  }, [load]);
+
+  useAdminLiveRefresh(() => load(true), [load]);
 
   const filtered = clients.filter((c) => filter === "all" || c.syncStatus === filter);
 
@@ -121,7 +124,7 @@ export default function SyncStatusPage() {
           actions={
             <button
               type="button"
-              onClick={load}
+              onClick={() => void load()}
               className="inline-flex items-center gap-2 rounded-xl border border-white/10 px-4 py-2.5 text-sm font-bold text-slate-300 hover:bg-white/5"
             >
               <RefreshCw className="w-4 h-4" /> Refresh

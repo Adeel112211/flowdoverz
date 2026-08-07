@@ -26,9 +26,14 @@ export async function PUT(request: NextRequest) {
       "soloPricePkr",
       "teamPricePkr",
       "trialDays",
+      "trialMinutes",
       "subscriptionDays",
       "adminNotificationEmail",
       "minExtensionVersion",
+      "signupRequireEmailVerification",
+      "signupAllowedDomains",
+      "signupRateLimitPerHour",
+      "trialOnePerIp",
     ];
 
     const partial: Partial<SystemSettings> = {};

@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { AlertTriangle, Clock, CreditCard, Cookie } from "lucide-react";
+import { useAdminLiveRefresh } from "@/hooks/use-admin-live-refresh";
 
 type Alerts = {
   pendingPayments: number;
@@ -14,14 +15,21 @@ type Alerts = {
 export function AdminAlertsBar() {
   const [alerts, setAlerts] = useState<Alerts | null>(null);
 
-  useEffect(() => {
-    fetch("/api/admin/alerts", { credentials: "same-origin" })
-      .then((r) => r.json())
-      .then((d) => {
-        if (d.success) setAlerts(d.alerts);
-      })
-      .catch(() => {});
+  const loadAlerts = useCallback(async () => {
+    try {
+      const res = await fetch("/api/admin/alerts", { credentials: "same-origin" });
+      const d = await res.json();
+      if (d.success) setAlerts(d.alerts);
+    } catch {
+      // ignore background refresh errors
+    }
   }, []);
+
+  useEffect(() => {
+    void loadAlerts();
+  }, [loadAlerts]);
+
+  useAdminLiveRefresh(loadAlerts, [loadAlerts]);
 
   if (!alerts) return null;
 

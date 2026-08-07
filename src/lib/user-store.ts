@@ -1,5 +1,9 @@
 import { randomBytes, scryptSync, timingSafeEqual } from "crypto";
 import { getDb } from "./firebase-admin";
+import { validateSignupEmail } from "./signup-email-policy";
+import { getSignupSecuritySettings } from "./signup-security";
+import { getSystemSettings } from "./admin-settings";
+import { createClientSession } from "./client-session";
 
 export type StoredUser = {
   email: string;
@@ -7,9 +11,14 @@ export type StoredUser = {
   passwordHash: string;
   salt: string;
   createdAt: string;
-  trialExpiresAt: string;
+  trialExpiresAt: string | null;
   subscriptionPlan: string;
   subscriptionExpiresAt: string | null;
+  emailVerified?: boolean;
+  emailVerificationTokenHash?: string | null;
+  emailVerificationExpiresAt?: string | null;
+  emailVerificationSentAt?: string | null;
+  signupIpHash?: string | null;
 };
 
 export function normalizeEmail(email: string) {
@@ -17,31 +26,46 @@ export function normalizeEmail(email: string) {
 }
 
 export function makeSid(email: string) {
-  return Buffer.from(`fb:${email}:${Date.now()}`)
-    .toString("base64")
-    .replace(/=+$/, "");
+  return createClientSession(email);
 }
 
 function hashPassword(password: string, salt: string) {
   return scryptSync(password, salt, 64).toString("hex");
 }
 
-export async function registerUser(
+/** Public client self-signup at /signup — requires email verification code. */
+export async function registerClientUser(
   email: string,
   password: string,
   name: string,
-): Promise<{ ok: true; user: { email: string; name: string; sid: string } } | { ok: false; error: string }> {
+  verificationCode: string,
+  signupIp?: string,
+): Promise<
+  | { ok: true; user: { email: string; name: string; sid: string }; trialGranted: boolean }
+  | { ok: false; error: string }
+> {
   const db = getDb();
   if (!db) {
     return { ok: false, error: "Database not configured." };
   }
 
+  const { consumeSignupVerification } = await import("./signup-verification-code");
+  const codeCheck = await consumeSignupVerification(email, verificationCode);
+  if (!codeCheck.ok) {
+    return { ok: false, error: codeCheck.error };
+  }
+
   const normalized = normalizeEmail(email);
   const trimmedName = name.trim();
+  const security = await getSignupSecuritySettings();
 
-  if (!normalized || !normalized.includes("@")) {
-    return { ok: false, error: "Enter a valid email address." };
+  const emailCheck = await validateSignupEmail(normalized, {
+    allowedDomains: security.allowedDomains,
+  });
+  if (!emailCheck.ok) {
+    return { ok: false, error: emailCheck.error };
   }
+
   if (trimmedName.length < 2) {
     return { ok: false, error: "Enter your full name." };
   }
@@ -50,18 +74,29 @@ export async function registerUser(
   }
 
   const usersRef = db.collection("users");
-  const existingUserDoc = await usersRef.doc(normalized).get();
-  
+  const existingUserDoc = await usersRef.doc(emailCheck.email).get();
+
   if (existingUserDoc.exists) {
     return { ok: false, error: "An account with this email already exists. Sign in instead." };
   }
 
   const salt = randomBytes(16).toString("hex");
   const now = new Date();
-  const trialExpiresAt = new Date(now.getTime() + 10 * 60 * 1000).toISOString(); // 10 minutes from now
+  const settings = await getSystemSettings();
+  const { getTrialDurationMs } = await import("./admin-settings");
+  const { hashSignupIp, isTrialEligibleForIp, recordTrialIpUsage } = await import(
+    "./signup-security"
+  );
+
+  const trialGranted = signupIp
+    ? await isTrialEligibleForIp(signupIp)
+    : true;
+  const trialExpiresAt = trialGranted
+    ? new Date(now.getTime() + getTrialDurationMs(settings)).toISOString()
+    : null;
 
   const newUser: StoredUser = {
-    email: normalized,
+    email: emailCheck.email,
     name: trimmedName,
     salt,
     passwordHash: hashPassword(password, salt),
@@ -69,22 +104,71 @@ export async function registerUser(
     trialExpiresAt,
     subscriptionPlan: "none",
     subscriptionExpiresAt: null,
+    emailVerified: true,
+    signupIpHash: signupIp ? hashSignupIp(signupIp) : null,
   };
 
-  await usersRef.doc(normalized).set(newUser);
+  await usersRef.doc(emailCheck.email).set(newUser);
+
+  if (trialGranted && signupIp) {
+    await recordTrialIpUsage(signupIp, emailCheck.email);
+  }
 
   return {
     ok: true,
+    trialGranted,
     user: {
-      email: normalized,
+      email: emailCheck.email,
       name: trimmedName,
-      sid: makeSid(normalized),
+      sid: makeSid(emailCheck.email),
     },
   };
 }
 
 const PAID_PLANS = ["solo", "studio", "team"];
 
+export function isPaidPlan(plan?: string | null) {
+  return PAID_PLANS.includes(String(plan || ""));
+}
+
+export function planDisplayName(plan?: string | null): string {
+  if (!plan || plan === "none") return "No plan";
+  if (plan === "trial") return "Free Trial";
+  if (plan === "solo" || plan === "studio" || plan === "nano") return "Solo";
+  if (plan === "team" || plan === "ultra") return "Team";
+  if (plan === "pending") return "Pending";
+  return plan.charAt(0).toUpperCase() + plan.slice(1);
+}
+
+export function resolveBillingPresentation(status: {
+  trialActive: boolean;
+  subscriptionActive: boolean;
+  trialExpiresAt: string | null;
+  subscriptionExpiresAt: string | null;
+  subscriptionPlan: string;
+}) {
+  if (status.subscriptionActive && isPaidPlan(status.subscriptionPlan)) {
+    return {
+      expiryAt: status.subscriptionExpiresAt,
+      planName: planDisplayName(status.subscriptionPlan),
+      userType: status.subscriptionPlan,
+    };
+  }
+  if (status.trialActive) {
+    return {
+      expiryAt: status.trialExpiresAt,
+      planName: "Free Trial",
+      userType: "trial",
+    };
+  }
+  return {
+    expiryAt: status.trialExpiresAt || status.subscriptionExpiresAt,
+    planName: planDisplayName(status.subscriptionPlan),
+    userType: status.subscriptionPlan === "trial" ? "trial" : "none",
+  };
+}
+
+/** Admin panel — bypasses public client signup security rules. */
 export async function createUserByAdmin(input: {
   email: string;
   name: string;
@@ -120,7 +204,9 @@ export async function createUserByAdmin(input: {
 
   const salt = randomBytes(16).toString("hex");
   const now = new Date();
-  const defaultTrialExpiry = new Date(now.getTime() + 14 * 24 * 60 * 60 * 1000).toISOString();
+  const { getSystemSettings, getTrialDurationMs } = await import("./admin-settings");
+  const settings = await getSystemSettings();
+  const defaultTrialExpiry = new Date(now.getTime() + getTrialDurationMs(settings)).toISOString();
   const defaultSubExpiry = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000).toISOString();
 
   const trialExpiresAt =
@@ -139,6 +225,7 @@ export async function createUserByAdmin(input: {
     trialExpiresAt,
     subscriptionPlan,
     subscriptionExpiresAt,
+    emailVerified: true,
   };
 
   await usersRef.doc(normalized).set(newUser);
@@ -219,6 +306,7 @@ export async function getUserStatus(email: string): Promise<{
   trialExpiresAt: string | null;
   subscriptionPlan: string;
   subscriptionExpiresAt: string | null;
+  emailVerified: boolean;
 } | null> {
   const db = getDb();
   if (!db) return null;
@@ -230,10 +318,15 @@ export async function getUserStatus(email: string): Promise<{
   
   const user = userDoc.data() as StoredUser;
   const now = new Date();
-  
-  const trialActive = user.trialExpiresAt ? new Date(user.trialExpiresAt) > now : false;
-  const subscriptionActive = user.subscriptionExpiresAt ? new Date(user.subscriptionExpiresAt) > now : false;
-  
+  const emailVerified = user.emailVerified !== false;
+
+  const trialActive =
+    emailVerified && user.trialExpiresAt ? new Date(user.trialExpiresAt) > now : false;
+  const subscriptionActive =
+    isPaidPlan(user.subscriptionPlan) && user.subscriptionExpiresAt
+      ? new Date(user.subscriptionExpiresAt) > now
+      : false;
+
   return {
     active: trialActive || subscriptionActive,
     trialActive,
@@ -241,6 +334,7 @@ export async function getUserStatus(email: string): Promise<{
     trialExpiresAt: user.trialExpiresAt || null,
     subscriptionPlan: user.subscriptionPlan || "none",
     subscriptionExpiresAt: user.subscriptionExpiresAt || null,
+    emailVerified,
   };
 }
 
@@ -249,7 +343,10 @@ export type PlanActivationBlock = {
   error: string;
 };
 
-export async function getPlanActivationBlock(email: string): Promise<PlanActivationBlock | null> {
+export async function getPlanActivationBlock(
+  email: string,
+  options?: { excludePaymentId?: string },
+): Promise<PlanActivationBlock | null> {
   const db = getDb();
   if (!db) return null;
 
@@ -279,10 +376,13 @@ export async function getPlanActivationBlock(email: string): Promise<PlanActivat
     .collection("manual_payments")
     .where("userEmail", "==", normalized)
     .where("status", "==", "pending")
-    .limit(1)
     .get();
 
-  if (!pendingSnap.empty) {
+  const hasOtherPending = pendingSnap.docs.some(
+    (doc) => doc.id !== options?.excludePaymentId,
+  );
+
+  if (hasOtherPending) {
     return {
       code: "PENDING_PAYMENT",
       error:

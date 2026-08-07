@@ -67,7 +67,7 @@ export function LoginPage() {
       <div className="animate-fade-up relative w-full max-w-md">
         <div className="mb-8 flex flex-col items-center text-center max-md:mb-5">
           <Link href={marketingPath("/")}>
-            <BrandLogo size="lg" stacked />
+            <BrandLogo size="xl" stacked />
           </Link>
           <h1 className="mt-8 max-md:mt-5 text-3xl md:text-4xl font-black tracking-tight text-transparent bg-clip-text bg-gradient-to-br from-white via-white to-slate-400">Welcome back</h1>
           <p className="mt-3 text-base text-slate-400 max-w-sm mx-auto">

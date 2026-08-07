@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { Search } from "lucide-react";
+import { useAdminLiveRefresh } from "@/hooks/use-admin-live-refresh";
 
 type ClientHit = { email: string; name?: string };
 
@@ -13,14 +14,21 @@ export function AdminGlobalSearch() {
   const [clients, setClients] = useState<ClientHit[]>([]);
   const ref = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    fetch("/api/admin/clients", { credentials: "same-origin" })
-      .then((r) => r.json())
-      .then((d) => {
-        if (d.success) setClients(d.clients || []);
-      })
-      .catch(() => {});
+  const loadClients = useCallback(async () => {
+    try {
+      const res = await fetch("/api/admin/clients", { credentials: "same-origin" });
+      const d = await res.json();
+      if (d.success) setClients(d.clients || []);
+    } catch {
+      // ignore background refresh errors
+    }
   }, []);
+
+  useEffect(() => {
+    void loadClients();
+  }, [loadClients]);
+
+  useAdminLiveRefresh(loadClients, [loadClients]);
 
   useEffect(() => {
     const q = query.trim().toLowerCase();

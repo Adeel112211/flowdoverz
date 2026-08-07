@@ -257,7 +257,18 @@ export function AdminPricingEditor({ config, onChange }: Props) {
         >
           <div className="grid gap-4 sm:grid-cols-2">
             <div>
-              <label className={labelClass}>Default trial days</label>
+              <label className={labelClass}>Default trial minutes</label>
+              <input
+                type="number"
+                min={1}
+                className={inputClass}
+                value={config.trialMinutes ?? 10}
+                onChange={(e) => onChange({ ...config, trialMinutes: Number(e.target.value) })}
+              />
+              <p className="mt-1 text-xs text-slate-500">Used for new signups and trial resets (default 10 min).</p>
+            </div>
+            <div>
+              <label className={labelClass}>Legacy trial days</label>
               <input
                 type="number"
                 min={0}
@@ -265,6 +276,23 @@ export function AdminPricingEditor({ config, onChange }: Props) {
                 value={config.trialDays}
                 onChange={(e) => onChange({ ...config, trialDays: Number(e.target.value) })}
               />
+              <p className="mt-1 text-xs text-slate-500">Only used if trial minutes is set to 0.</p>
+            </div>
+            <div className="sm:col-span-2">
+              <label className="flex items-start gap-3 rounded-xl border border-white/10 bg-black/20 px-4 py-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  className="mt-1"
+                  checked={config.trialOnePerIp !== false}
+                  onChange={(e) => onChange({ ...config, trialOnePerIp: e.target.checked })}
+                />
+                <span>
+                  <span className="block text-sm font-semibold text-slate-200">One trial per IP address</span>
+                  <span className="mt-1 block text-xs text-slate-500">
+                    Block free trials when another account already signed up from the same network IP.
+                  </span>
+                </span>
+              </label>
             </div>
             <div>
               <label className={labelClass}>Subscription days</label>

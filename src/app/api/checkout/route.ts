@@ -1,26 +1,19 @@
 import { NextRequest, NextResponse } from "next/server";
-import { cookies } from "next/headers";
-import { emailFromSid } from "@/lib/cookie-store";
+import { getClientSessionFromCookies } from "@/lib/client-session";
 import { getDb } from "@/lib/firebase-admin";
 import { getPlanActivationBlock } from "@/lib/user-store";
 
-const SID_COOKIE = "flowdoverz_sid";
-
 export async function POST(request: NextRequest) {
   try {
-    const cookieStore = await cookies();
-    const sid = cookieStore.get(SID_COOKIE)?.value;
-
-    if (!sid) {
+    const session = await getClientSessionFromCookies();
+    if (!session) {
       return NextResponse.json(
         { success: false, code: "NOT_LOGGED_IN", error: "You must be signed in to purchase a plan." },
         { status: 401 }
       );
     }
 
-    const email = emailFromSid(sid).startsWith("sid:")
-      ? emailFromSid(sid).slice(4)
-      : emailFromSid(sid);
+    const email = session.email;
 
     const db = getDb();
     if (!email || !db) {

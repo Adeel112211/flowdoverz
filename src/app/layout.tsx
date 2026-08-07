@@ -8,9 +8,17 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "FlowDoverz — AI video workspace for teams",
+  title: "FlowDoverz — Google Flow AI video workspace",
   description:
-    "FlowDoverz is the control layer for AI video creation — workspaces, seats, usage, and sessions in one place.",
+    "FlowDoverz connects your browser to Google Flow for cinematic AI video creation — secure sessions, team seats, and workspace management in one place.",
+  icons: {
+    icon: [
+      { url: "/favicon.svg", type: "image/svg+xml" },
+      { url: "/icon.png", type: "image/png", sizes: "512x512" },
+    ],
+    shortcut: "/favicon.svg",
+    apple: "/apple-icon.png",
+  },
 };
 
 export default function RootLayout({

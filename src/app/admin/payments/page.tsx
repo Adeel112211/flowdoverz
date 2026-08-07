@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   CheckCircle2,
   XCircle,
@@ -23,6 +23,7 @@ import { PayToMethodBadge } from "@/components/pay-to-method-badge";
 import { PaymentMobileCard } from "@/components/admin-mobile-cards";
 import { senderPaymentLabel } from "@/lib/sender-payment-options";
 import { payToMethodDisplayLabel } from "@/lib/payment-methods-config";
+import { useAdminLiveRefresh } from "@/hooks/use-admin-live-refresh";
 
 type Payment = {
   id: string;
@@ -179,7 +180,7 @@ export default function PaymentsPage() {
     return "Payments";
   };
 
-  const fetchPayments = async () => {
+  const fetchPayments = useCallback(async (silent = false) => {
     try {
       const res = await fetch("/api/admin/payments", { credentials: "same-origin" });
       const raw = await res.text();
@@ -188,28 +189,38 @@ export default function PaymentsPage() {
       try {
         data = raw ? JSON.parse(raw) : {};
       } catch {
-        const looksLikeHtml =
-          raw.includes("__next_error__") || raw.trimStart().startsWith("<!DOCTYPE");
-        setError(
-          looksLikeHtml
-            ? "Server error on Vercel. Check Firebase env vars in Project Settings, then redeploy."
-            : raw.trim().slice(0, 180) || `Failed to fetch payments (HTTP ${res.status}).`,
-        );
+        if (!silent) {
+          const looksLikeHtml =
+            raw.includes("__next_error__") || raw.trimStart().startsWith("<!DOCTYPE");
+          setError(
+            looksLikeHtml
+              ? "Server error on Vercel. Check Firebase env vars in Project Settings, then redeploy."
+              : raw.trim().slice(0, 180) || `Failed to fetch payments (HTTP ${res.status}).`,
+          );
+        }
         return;
       }
 
       if (data.success && data.payments) {
         setPayments(data.payments);
         setError("");
-      } else {
+      } else if (!silent) {
         setError(data.error || `Failed to fetch payments (HTTP ${res.status}).`);
       }
     } catch {
-      setError("Failed to fetch payments. Check your connection and redeploy.");
+      if (!silent) {
+        setError("Failed to fetch payments. Check your connection and redeploy.");
+      }
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    void fetchPayments(false);
+  }, [fetchPayments]);
+
+  useAdminLiveRefresh(() => fetchPayments(true), [fetchPayments]);
 
   const openScreenshot = async (payment: Payment) => {
     if (payment.screenshot) {
@@ -239,10 +250,6 @@ export default function PaymentsPage() {
       setError("Could not load payment screenshot.");
     }
   };
-
-  useEffect(() => {
-    fetchPayments();
-  }, []);
 
   const openActionConfirm = (payment: Payment, action: PaymentAction) => {
     setActionError("");

@@ -35,6 +35,8 @@ export async function savePricingConfig(partial: Partial<PricingConfig>) {
     soloPricePkr: solo?.priceMonthlyPkr ?? 999,
     teamPricePkr: team?.priceMonthlyPkr ?? 1999,
     trialDays: next.trialDays,
+    trialMinutes: next.trialMinutes,
+    trialOnePerIp: next.trialOnePerIp,
     subscriptionDays: next.subscriptionDays,
   });
 

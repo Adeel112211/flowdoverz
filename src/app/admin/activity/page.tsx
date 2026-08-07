@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Activity, AlertCircle, Search } from "lucide-react";
 import {
   AdminActivityFilters,
@@ -13,6 +13,7 @@ import { AdminPageHeader } from "@/components/admin-page-header";
 import { AdminPageLayout } from "@/components/admin-page-layout";
 import { AdminLoadingState } from "@/components/admin-loading-state";
 import { ActivityMobileCard } from "@/components/admin-mobile-cards";
+import { useAdminLiveRefresh } from "@/hooks/use-admin-live-refresh";
 
 type ActivityItem = {
   id: string;
@@ -70,48 +71,42 @@ export default function ActivityPage() {
   const [action, setAction] = useState("all");
   const [searchQuery, setSearchQuery] = useState("");
 
-  useEffect(() => {
-    let cancelled = false;
+  const fetchActivity = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true);
+    try {
+      const res = await fetch("/api/admin/activity?limit=200", {
+        credentials: "same-origin",
+      });
+      const raw = await res.text();
+      let data: { success?: boolean; items?: ActivityItem[]; error?: string } = {};
 
-    async function fetchActivity() {
-      setLoading(true);
       try {
-        const res = await fetch("/api/admin/activity?limit=200", {
-          credentials: "same-origin",
-        });
-        const raw = await res.text();
-        let data: { success?: boolean; items?: ActivityItem[]; error?: string } = {};
-
-        try {
-          data = raw ? JSON.parse(raw) : {};
-        } catch {
-          if (!cancelled) {
-            setError(raw.trim().slice(0, 180) || `Failed to fetch activity (HTTP ${res.status}).`);
-          }
-          return;
-        }
-
-        if (cancelled) return;
-
-        if (data.success && data.items) {
-          setItems(data.items);
-          setError("");
-        } else {
-          setError(data.error || `Failed to fetch activity (HTTP ${res.status}).`);
-        }
+        data = raw ? JSON.parse(raw) : {};
       } catch {
-        if (cancelled) return;
-        setError("Failed to fetch activity log.");
-      } finally {
-        if (!cancelled) setLoading(false);
+        if (!silent) {
+          setError(raw.trim().slice(0, 180) || `Failed to fetch activity (HTTP ${res.status}).`);
+        }
+        return;
       }
-    }
 
-    fetchActivity();
-    return () => {
-      cancelled = true;
-    };
+      if (data.success && data.items) {
+        setItems(data.items);
+        setError("");
+      } else if (!silent) {
+        setError(data.error || `Failed to fetch activity (HTTP ${res.status}).`);
+      }
+    } catch {
+      if (!silent) setError("Failed to fetch activity log.");
+    } finally {
+      if (!silent) setLoading(false);
+    }
   }, []);
+
+  useEffect(() => {
+    void fetchActivity(false);
+  }, [fetchActivity]);
+
+  useAdminLiveRefresh(() => fetchActivity(true), [fetchActivity]);
 
   const filteredItems = items.filter((item) => {
     if (!matchesActivityFilter(item.action, group, action)) return false;

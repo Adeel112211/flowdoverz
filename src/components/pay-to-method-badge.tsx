@@ -19,7 +19,7 @@ export function PayToMethodBadge({ methodId, label }: Props) {
   }
 
   return (
-    <div className="min-w-0">
+    <span className="inline-flex min-w-0 max-w-full">
       <span
         className={`inline-flex max-w-full items-center gap-2 rounded-full border px-2.5 py-1 text-xs font-semibold ${
           method?.theme.badge ?? "border-white/10 bg-white/5 text-slate-300"
@@ -39,6 +39,6 @@ export function PayToMethodBadge({ methodId, label }: Props) {
         ) : null}
         <span className="truncate">{name}</span>
       </span>
-    </div>
+    </span>
   );
 }

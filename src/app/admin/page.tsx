@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import {
   Users,
   CreditCard,
@@ -27,6 +27,7 @@ import {
 import { AdminPageHeader } from "@/components/admin-page-header";
 import { AdminPageLayout } from "@/components/admin-page-layout";
 import { AdminLoadingState } from "@/components/admin-loading-state";
+import { useAdminLiveRefresh } from "@/hooks/use-admin-live-refresh";
 
 function formatPkr(amount: number) {
   return `${amount.toLocaleString("en-PK")} PKR`;
@@ -291,9 +292,9 @@ export default function AdminDashboard() {
   const [loading, setLoading] = useState(true);
   const [timeRange, setTimeRange] = useState("all_time");
 
-  useEffect(() => {
-    const fetchMetrics = async () => {
-      setLoading(true);
+  const fetchMetrics = useCallback(
+    async (silent = false) => {
+      if (!silent) setLoading(true);
       try {
         const res = await fetch(`/api/admin/dashboard?range=${timeRange}`);
         if (res.ok) {
@@ -305,11 +306,17 @@ export default function AdminDashboard() {
       } catch (error) {
         console.error("Failed to load dashboard metrics", error);
       } finally {
-        setLoading(false);
+        if (!silent) setLoading(false);
       }
-    };
-    fetchMetrics();
-  }, [timeRange]);
+    },
+    [timeRange],
+  );
+
+  useEffect(() => {
+    void fetchMetrics(false);
+  }, [fetchMetrics]);
+
+  useAdminLiveRefresh(() => fetchMetrics(true), [fetchMetrics]);
 
   if (loading || !metrics) {
     return <AdminLoadingState />;

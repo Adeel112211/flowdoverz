@@ -304,6 +304,23 @@ export async function sendPaymentRejectedEmail(email: string, planName: string) 
   return sendTemplateEmail("payment_rejected", email, { email, planName });
 }
 
+export async function sendSignupVerificationCodeEmail(email: string, code: string) {
+  return sendTemplateEmail("email_verification", email, { email, code });
+}
+
+export async function sendSignupVerificationEmail(
+  email: string,
+  name: string,
+  verifyUrl: string,
+) {
+  return sendTemplateEmail("email_verification", email, {
+    email,
+    name,
+    verifyUrl,
+    code: "",
+  });
+}
+
 export async function sendAdminPasswordResetEmail(email: string, code: string) {
   const cfg = await resolveMailConfig();
   const brand = cfg.brandName || "FlowDoverz";

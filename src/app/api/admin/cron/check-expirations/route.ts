@@ -14,7 +14,14 @@ function planDisplayName(plan: string) {
 
 export async function GET(request: NextRequest) {
   const cronSecret = process.env.CRON_SECRET;
-  if (cronSecret) {
+  if (!cronSecret) {
+    if (process.env.NODE_ENV === "production") {
+      return NextResponse.json(
+        { success: false, error: "CRON_SECRET is not configured." },
+        { status: 503 },
+      );
+    }
+  } else {
     const auth = request.headers.get("Authorization");
     if (auth !== `Bearer ${cronSecret}`) {
       const { isAdminUiRequest } = await import("@/lib/admin");
@@ -31,7 +38,6 @@ export async function GET(request: NextRequest) {
 
   try {
     const now = new Date();
-    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
 
     const snapshot = await db.collection("users").get();
 
@@ -60,7 +66,7 @@ export async function GET(request: NextRequest) {
         }
       } else if (plan === "trial" && data.trialExpiresAt) {
         const trialExpiry = new Date(data.trialExpiresAt);
-        if (trialExpiry < startOfToday && !data.trialExpiredProcessed) {
+        if (trialExpiry < now && !data.trialExpiredProcessed) {
           batch.update(doc.ref, {
             trialExpiredProcessed: true,
             subscriptionPlan: "none",

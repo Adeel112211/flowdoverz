@@ -71,11 +71,12 @@ export function ReceiptsPage() {
       return;
     }
 
-    const controller = new AbortController();
+    let active = true;
 
-    fetch("/api/user/receipts", { signal: controller.signal })
+    fetch("/api/user/receipts")
       .then((res) => res.json())
       .then((data) => {
+        if (!active) return;
         if (!data.success) {
           signOut();
           router.push("/login");
@@ -85,14 +86,16 @@ export function ReceiptsPage() {
         setPurchases(data.purchases || []);
       })
       .catch((err) => {
-        if (err instanceof Error && err.name === "AbortError") return;
+        if (!active) return;
         console.error(err);
       })
       .finally(() => {
-        if (!controller.signal.aborted) setLoading(false);
+        if (active) setLoading(false);
       });
 
-    return () => controller.abort();
+    return () => {
+      active = false;
+    };
   }, [router, session]);
 
   const filteredPurchases = useMemo(() => {

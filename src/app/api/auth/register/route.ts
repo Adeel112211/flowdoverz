@@ -1,11 +1,30 @@
 import { NextRequest, NextResponse } from "next/server";
-import { registerUser } from "@/lib/user-store";
+import { registerClientUser } from "@/lib/user-store";
+import { CLIENT_SID_COOKIE } from "@/lib/client-session";
 import { sessionCookieOptions } from "@/lib/site-urls";
-
-const SID_COOKIE = "flowdoverz_sid";
+import {
+  checkSignupRateLimit,
+  clientIpFromRequest,
+  getSignupSecuritySettings,
+} from "@/lib/signup-security";
 
 export async function POST(request: NextRequest) {
-  let body: { email?: string; password?: string; name?: string };
+  const security = await getSignupSecuritySettings();
+  const ip = clientIpFromRequest(request);
+  const rateCheck = await checkSignupRateLimit(ip, security.rateLimitPerHour, "register");
+  if (!rateCheck.ok) {
+    return NextResponse.json(
+      { success: false, error: rateCheck.error },
+      {
+        status: 429,
+        headers: rateCheck.retryAfterSeconds
+          ? { "Retry-After": String(rateCheck.retryAfterSeconds) }
+          : undefined,
+      },
+    );
+  }
+
+  let body: { email?: string; password?: string; name?: string; verificationCode?: string };
   try {
     body = await request.json();
   } catch {
@@ -15,10 +34,12 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const result = await registerUser(
+  const result = await registerClientUser(
     String(body.email || ""),
     String(body.password || ""),
     String(body.name || ""),
+    String(body.verificationCode || ""),
+    ip,
   );
 
   if (!result.ok) {
@@ -30,6 +51,10 @@ export async function POST(request: NextRequest) {
 
   const response = NextResponse.json({
     success: true,
+    trialGranted: result.trialGranted,
+    notice: result.trialGranted
+      ? undefined
+      : "A free trial was already used on this network. Upgrade to Solo or Team to activate FlowDoverz.",
     user: {
       email: result.user.email,
       name: result.user.name,
@@ -37,7 +62,7 @@ export async function POST(request: NextRequest) {
     },
   });
 
-  response.cookies.set(SID_COOKIE, result.user.sid, sessionCookieOptions(60 * 60 * 24 * 30));
+  response.cookies.set(CLIENT_SID_COOKIE, result.user.sid, sessionCookieOptions(60 * 60 * 24 * 30));
 
   return response;
 }

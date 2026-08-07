@@ -1,28 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getUserStatus } from "@/lib/user-store";
-import { emailFromSid } from "@/lib/cookie-store";
-import { cookies } from "next/headers";
+import { getClientSessionFromCookies } from "@/lib/client-session";
 
-const SID_COOKIE = "flowdoverz_sid";
-
-export async function GET(request: NextRequest) {
-  const cookieStore = await cookies();
-  const sid = cookieStore.get(SID_COOKIE)?.value;
-
-  if (!sid) {
+export async function GET(_request: NextRequest) {
+  const session = await getClientSessionFromCookies();
+  if (!session) {
     return NextResponse.json({ success: false, error: "Not logged in" }, { status: 401 });
   }
 
-  const email = emailFromSid(sid).startsWith("sid:")
-    ? emailFromSid(sid).slice(4)
-    : emailFromSid(sid);
-
-  if (!email) {
-    return NextResponse.json({ success: false, error: "Invalid session" }, { status: 401 });
-  }
-
-  const status = await getUserStatus(email);
-
+  const status = await getUserStatus(session.email);
   if (!status) {
     return NextResponse.json({ success: false, error: "User not found" }, { status: 404 });
   }

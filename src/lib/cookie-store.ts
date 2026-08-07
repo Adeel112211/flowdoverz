@@ -1,5 +1,6 @@
 import { createHash } from "crypto";
 import { getDb } from "@/lib/firebase-admin";
+import { verifyClientSession } from "@/lib/client-session";
 
 export type FlowCookie = {
   name: string;
@@ -25,6 +26,46 @@ export type SlotRecord = {
 
 export function hashCookies(cookies: FlowCookie[]): string {
   return createHash("sha256").update(JSON.stringify(cookies)).digest("hex").slice(0, 24);
+}
+
+/** Firestore rejects undefined — strip recursively before writes. */
+export function sanitizeForFirestore<T>(value: T): T {
+  if (value === undefined) return value;
+  if (Array.isArray(value)) {
+    return value.map((item) => sanitizeForFirestore(item)) as T;
+  }
+  if (value !== null && typeof value === "object") {
+    const out: Record<string, unknown> = {};
+    for (const [key, entry] of Object.entries(value as Record<string, unknown>)) {
+      if (entry !== undefined) {
+        out[key] = sanitizeForFirestore(entry);
+      }
+    }
+    return out as T;
+  }
+  return value;
+}
+
+function buildCookie(row: Record<string, unknown>): FlowCookie {
+  const cookie: FlowCookie = {
+    name: row.name as string,
+    value: row.value as string,
+    path: typeof row.path === "string" ? row.path : "/",
+    secure: Boolean(row.secure),
+    httpOnly: Boolean(row.httpOnly),
+  };
+
+  if (typeof row.domain === "string") cookie.domain = row.domain;
+  if (typeof row.sameSite === "string") cookie.sameSite = row.sameSite;
+  if (typeof row.expirationDate === "number") cookie.expirationDate = row.expirationDate;
+  if (typeof row.hostOnly === "boolean") cookie.hostOnly = row.hostOnly;
+  if (typeof row.session === "boolean") cookie.session = row.session;
+  if (typeof row.storeId === "string") cookie.storeId = row.storeId;
+  if (row.partitionKey !== undefined && row.partitionKey !== null) {
+    cookie.partitionKey = row.partitionKey;
+  }
+
+  return cookie;
 }
 
 export function parseCookieJson(input: string): FlowCookie[] {
@@ -61,21 +102,7 @@ export function parseCookieJson(input: string): FlowCookie[] {
     if (typeof row.name !== "string" || typeof row.value !== "string") {
       throw new Error("Each cookie needs string name and value fields.");
     }
-    cookies.push({
-      name: row.name,
-      value: row.value,
-      domain: typeof row.domain === "string" ? row.domain : undefined,
-      path: typeof row.path === "string" ? row.path : "/",
-      secure: Boolean(row.secure),
-      httpOnly: Boolean(row.httpOnly),
-      sameSite: typeof row.sameSite === "string" ? row.sameSite : undefined,
-      expirationDate:
-        typeof row.expirationDate === "number" ? row.expirationDate : undefined,
-      hostOnly: typeof row.hostOnly === "boolean" ? row.hostOnly : undefined,
-      session: typeof row.session === "boolean" ? row.session : undefined,
-      storeId: typeof row.storeId === "string" ? row.storeId : undefined,
-      partitionKey: row.partitionKey,
-    });
+    cookies.push(buildCookie(row));
   }
 
   return cookies;
@@ -94,8 +121,10 @@ export async function saveSlotCookies(
     cookies,
     hash: hashCookies(cookies),
     updatedAt: new Date().toISOString(),
-    label,
+    ...(label ? { label } : {}),
   };
+
+  const firestoreRecord = sanitizeForFirestore(record);
   
   const docRef = db.collection("cookies").doc(ownerKey);
   
@@ -103,8 +132,8 @@ export async function saveSlotCookies(
     const doc = await transaction.get(docRef);
     let data = doc.exists ? doc.data() : { slots: {} };
     if (!data!.slots) data!.slots = {};
-    data!.slots[slot] = record;
-    transaction.set(docRef, data!, { merge: true });
+    data!.slots[slot] = firestoreRecord;
+    transaction.set(docRef, sanitizeForFirestore(data!), { merge: true });
   });
 
   return record;
@@ -145,16 +174,5 @@ export async function clearSlotCookies(ownerKey: string, slot: string): Promise<
 }
 
 export function emailFromSid(sid: string): string {
-  try {
-    const padded = sid + "=".repeat((4 - (sid.length % 4)) % 4);
-    const decoded =
-      typeof atob === "function"
-        ? atob(padded)
-        : Buffer.from(padded, "base64").toString("utf8");
-    const parts = decoded.split(":");
-    if (parts[0] === "fb" && parts[1]) return parts[1].toLowerCase();
-  } catch {
-    // fall through
-  }
-  return `sid:${sid}`;
+  return verifyClientSession(sid)?.email ?? "";
 }

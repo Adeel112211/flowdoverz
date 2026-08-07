@@ -186,7 +186,9 @@ export async function POST(request: NextRequest) {
       const planId = paymentData.planId;
 
       const { getPlanActivationBlock } = await import("@/lib/user-store");
-      const activationBlock = await getPlanActivationBlock(String(userEmail));
+      const activationBlock = await getPlanActivationBlock(String(userEmail), {
+        excludePaymentId: paymentId,
+      });
       if (activationBlock) {
         return NextResponse.json({ success: false, error: activationBlock.error }, { status: 400 });
       }

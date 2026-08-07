@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import {
   AlertCircle,
@@ -29,6 +29,7 @@ import { AdminGlassModal, AdminGlassPanel } from "@/components/admin-glass-modal
 import { useAdminToast } from "@/components/admin-toast";
 import { AdminPageLayout } from "@/components/admin-page-layout";
 import { ClientMobileCard } from "@/components/admin-mobile-cards";
+import { useAdminLiveRefresh } from "@/hooks/use-admin-live-refresh";
 
 type Client = {
   email: string;
@@ -77,7 +78,7 @@ function defaultExpiryForPlan(plan: string) {
     };
   }
   return {
-    trialExpiresAt: new Date(now + 14 * 24 * 60 * 60 * 1000).toISOString(),
+    trialExpiresAt: new Date(now + 10 * 60 * 1000).toISOString(),
     subscriptionExpiresAt: "",
   };
 }
@@ -193,11 +194,7 @@ export default function ClientsPage() {
   const [filter, setFilter] = useState<Filter>("all");
   const [searchQuery, setSearchQuery] = useState("");
 
-  useEffect(() => {
-    fetchClients();
-  }, []);
-
-  const fetchClients = async () => {
+  const fetchClients = useCallback(async (silent = false) => {
     try {
       const res = await fetch("/api/admin/clients", { credentials: "same-origin" });
       const raw = await res.text();
@@ -206,22 +203,32 @@ export default function ClientsPage() {
       try {
         data = raw ? JSON.parse(raw) : {};
       } catch {
-        setError(raw.trim().slice(0, 180) || `Failed to fetch clients (HTTP ${res.status}).`);
+        if (!silent) {
+          setError(raw.trim().slice(0, 180) || `Failed to fetch clients (HTTP ${res.status}).`);
+        }
         return;
       }
 
       if (data.success && data.clients) {
         setClients(data.clients);
         setError("");
-      } else {
+      } else if (!silent) {
         setError(data.error || `Failed to fetch clients (HTTP ${res.status}).`);
       }
     } catch {
-      setError("Failed to fetch clients. Check Firebase env vars on Vercel.");
+      if (!silent) {
+        setError("Failed to fetch clients. Check Firebase env vars on Vercel.");
+      }
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    void fetchClients(false);
+  }, [fetchClients]);
+
+  useAdminLiveRefresh(() => fetchClients(true), [fetchClients]);
 
   const handleUpdate = async (e: React.FormEvent) => {
     e.preventDefault();

@@ -6,6 +6,7 @@ import { Check, Zap, Shield, Users, Sparkles, ArrowRight, Menu, X, Star } from "
 import { DEFAULT_PRICING_CONFIG, formatPkr, type PricingConfig, type PricingPlan } from "@/lib/pricing-config";
 import { useClientSession } from "@/hooks/use-client-session";
 import { UserMenuButton } from "@/components/user-menu-button";
+import { BrandLogo } from "@/components/brand-logo";
 
 function planVisuals(planId: PricingPlan["id"]) {
   if (planId === "solo") {
@@ -42,7 +43,7 @@ function planVisuals(planId: PricingPlan["id"]) {
 }
 
 const FAQS = [
-  { q: "What happens after the free trial?", a: "After your 1-day trial, the extension is paused. Upgrade to Solo or Team to instantly re-activate it — no setup required." },
+  { q: "What happens after the free trial?", a: "After your 10-minute trial, cookies are removed and the extension pauses. Upgrade to Solo or Team to instantly re-activate — no setup required." },
   { q: "Is there an annual discount?", a: "Yes! Switch to annual billing and save over 20% compared to monthly pricing. The discount is applied automatically at checkout." },
   { q: "Can I switch plans later?", a: "Absolutely. Upgrade or downgrade at any time. Upgrades apply immediately; downgrades take effect at the next billing cycle." },
   { q: "Is the extension safe to install?", a: "Yes. Our extension is strictly scoped to labs.google.com only. It never accesses, modifies, or tracks any other site or personal data." },
@@ -54,34 +55,46 @@ export default function PricingPage() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [pricing, setPricing] = useState<PricingConfig>(DEFAULT_PRICING_CONFIG);
   const [activationBlock, setActivationBlock] = useState<{ code: string; error: string } | null>(null);
+  const [noTrialNotice, setNoTrialNotice] = useState(false);
   const session = useClientSession();
 
   useEffect(() => {
-    const controller = new AbortController();
+    const params = new URLSearchParams(window.location.search);
+    setNoTrialNotice(params.get("reason") === "no_trial");
+  }, []);
 
-    fetch("/api/pricing", { signal: controller.signal })
+  useEffect(() => {
+    let active = true;
+
+    fetch("/api/pricing")
       .then((r) => r.json())
       .then((d) => {
+        if (!active) return;
         if (d.success) setPricing(d.config);
       })
       .catch((err) => {
-        if (err instanceof Error && err.name === "AbortError") return;
+        if (!active) return;
+        console.error(err);
       });
 
     if (session) {
-      fetch("/api/user/status", { signal: controller.signal })
+      fetch("/api/user/status")
         .then((r) => r.json())
         .then((d) => {
+          if (!active) return;
           if (d.success && d.activationBlock) {
             setActivationBlock(d.activationBlock);
           }
         })
         .catch((err) => {
-          if (err instanceof Error && err.name === "AbortError") return;
+          if (!active) return;
+          console.error(err);
         });
     }
 
-    return () => controller.abort();
+    return () => {
+      active = false;
+    };
   }, [session]);
 
   const plans = pricing.plans.filter((p) => p.enabled);
@@ -100,13 +113,8 @@ export default function PricingPage() {
       {/* Header */}
       <header className="fixed top-0 left-0 right-0 z-50 h-20 bg-[#030308]/80 backdrop-blur-2xl border-b border-white/[0.06]">
         <div className="max-w-7xl mx-auto w-full h-full flex items-center justify-between px-4 sm:px-6 md:px-12">
-          <Link href="/" className="flex items-center gap-3 hover:opacity-80 transition-opacity">
-            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-cyan-400 to-emerald-400 p-[2px] shadow-[0_0_20px_rgba(34,211,238,0.35)]">
-              <div className="w-full h-full bg-black rounded-md flex items-center justify-center">
-                <div className="w-2.5 h-2.5 bg-gradient-to-br from-white to-cyan-200 rounded-sm" />
-              </div>
-            </div>
-            <span className="text-xl font-extrabold tracking-tight text-white">FlowDoverz</span>
+          <Link href="/" className="hover:opacity-90 transition-opacity">
+            <BrandLogo size="md" />
           </Link>
 
           <nav className="hidden md:flex items-center gap-8">
@@ -171,6 +179,12 @@ export default function PricingPage() {
       )}
 
       <main className="relative z-10 pt-20 sm:pt-24 pb-12 px-4 sm:px-6 w-full max-w-full min-w-0">
+
+        {noTrialNotice && (
+          <div className="max-w-3xl mx-auto mb-6 rounded-2xl border border-amber-500/30 bg-amber-500/10 px-5 py-4 text-sm text-amber-100">
+            A free trial was already used on this network. Choose Solo or Team below to activate your account.
+          </div>
+        )}
 
         {/* ─── HERO ─── */}
         <div className="text-center max-w-4xl mx-auto mb-8">
@@ -434,16 +448,11 @@ export default function PricingPage() {
         <div className="max-w-7xl mx-auto relative z-10">
           <div className="grid grid-cols-1 md:grid-cols-12 gap-12 mb-16">
             <div className="md:col-span-5">
-              <Link href="/" className="flex items-center gap-3 mb-5 w-fit group">
-                <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-cyan-400 to-emerald-400 p-[2px] group-hover:shadow-[0_0_20px_rgba(34,211,238,0.4)] transition-all">
-                  <div className="w-full h-full bg-black rounded-lg flex items-center justify-center">
-                    <div className="w-3 h-3 bg-gradient-to-br from-white to-cyan-200 rounded-sm" />
-                  </div>
-                </div>
-                <span className="text-xl font-extrabold text-white group-hover:text-cyan-400 transition-colors">FlowDoverz</span>
+              <Link href="/" className="mb-5 w-fit block hover:opacity-90 transition-opacity">
+                <BrandLogo size="md" stacked showTagline />
               </Link>
               <p className="text-slate-500 text-sm leading-relaxed max-w-xs">
-                The premium bridge to next-generation AI video. Create without limits, render without waiting.
+                Your secure bridge to Google Flow — AI video generation without the waitlist.
               </p>
             </div>
             <div className="md:col-span-3 md:col-start-8">

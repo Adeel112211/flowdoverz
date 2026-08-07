@@ -1,25 +1,12 @@
 import { cookies } from "next/headers";
 import { NextRequest, NextResponse } from "next/server";
 import { WORKSPACE_OWNER } from "@/lib/admin";
-import { emailFromSid, getSlotCookies, listSlots } from "@/lib/cookie-store";
+import { CLIENT_SID_COOKIE, verifyClientSession } from "@/lib/client-session";
+import { getSlotCookies, listSlots } from "@/lib/cookie-store";
 
-const SID_COOKIE = "flowdoverz_sid";
-const ALL_SLOTS = ["C1", "C2", "C3", "C4", "C5"] as const;
-
-function resolveSid(request: NextRequest, cookieSid: string | undefined) {
-  return (
-    cookieSid ||
-    request.headers.get("x-session-id") ||
-    request.nextUrl.searchParams.get("sid") ||
-    ""
-  ).trim();
-}
-
-function isValidUserSid(sid: string) {
-  // Must be a real client session — not empty, not the admin page placeholder
-  if (!sid || sid.length < 8) return false;
-  if (sid === "admin-local") return false;
-  return true;
+function resolveSessionEmail(cookieSid: string | undefined) {
+  const verified = verifyClientSession(cookieSid);
+  return verified?.email ?? null;
 }
 
 /**
@@ -42,10 +29,9 @@ export async function GET(request: NextRequest) {
   }
 
   const cookieStore = await cookies();
-  const sid = resolveSid(request, cookieStore.get(SID_COOKIE)?.value);
-  const loggedIn = isValidUserSid(sid);
+  const email = resolveSessionEmail(cookieStore.get(CLIENT_SID_COOKIE)?.value);
 
-  if (!loggedIn) {
+  if (!email) {
     return NextResponse.json(
       {
         success: false,
@@ -56,11 +42,7 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  const email = emailFromSid(sid).startsWith("sid:")
-    ? emailFromSid(sid).slice(4)
-    : emailFromSid(sid);
-
-  const { getUserStatus } = await import("@/lib/user-store");
+  const { getUserStatus, resolveBillingPresentation } = await import("@/lib/user-store");
   const status = await getUserStatus(email);
 
   if (!status) {
@@ -93,21 +75,48 @@ export async function GET(request: NextRequest) {
   const ownerSlots = await listSlots(WORKSPACE_OWNER);
   const record = await getSlotCookies(WORKSPACE_OWNER, slot);
 
-  const availableSlots = ALL_SLOTS.map((key) => {
-    const saved = ownerSlots.find((s) => s.key === key);
-    return {
-      key,
-      name: `Session ${key.slice(1)}`,
-      health: saved ? "live" : "unknown",
-      has_cookies: Boolean(saved),
-    };
-  });
+  const availableSlots = ownerSlots
+    .filter(({ record }) => Array.isArray(record.cookies) && record.cookies.length > 0)
+    .map(({ key, record }) => ({
+      key: key.toUpperCase(),
+      name: record.label?.trim() || `Session ${key.slice(1)}`,
+      health: "live" as const,
+      has_cookies: true,
+      cookie_count: record.cookies.length,
+    }))
+    .sort((a, b) => a.key.localeCompare(b.key));
 
   const now = new Date();
-  const expiryDate = status.subscriptionActive && status.subscriptionExpiresAt 
-    ? new Date(status.subscriptionExpiresAt) 
-    : (status.trialExpiresAt ? new Date(status.trialExpiresAt) : now);
-  const daysRemaining = Math.max(0, Math.ceil((expiryDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)));
+  const billing = resolveBillingPresentation(status);
+  const expiryDate = billing.expiryAt ? new Date(billing.expiryAt) : now;
+  const daysRemaining = Math.max(
+    0,
+    Math.ceil((expiryDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)),
+  );
+
+  let userName = email.split("@")[0] || "Member";
+  if (dbCheck) {
+    const profileDoc = await dbCheck.collection("users").doc(email).get();
+    if (profileDoc.exists && profileDoc.data()?.name) {
+      userName = String(profileDoc.data()?.name);
+    }
+  }
+
+  const planName = billing.planName;
+
+  function formatTimeDisplay(expiry: Date) {
+    const ms = expiry.getTime() - Date.now();
+    if (ms <= 0) return "Expired";
+    const totalSeconds = Math.floor(ms / 1000);
+    const days = Math.floor(totalSeconds / 86400);
+    const hours = Math.floor((totalSeconds % 86400) / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const seconds = totalSeconds % 60;
+    if (days > 0) return `${days}d ${hours}h left`;
+    if (hours > 0) return `${hours}h ${minutes}m left`;
+    if (minutes > 0) return `${minutes}m ${seconds}s left`;
+    return `${seconds}s left`;
+  }
 
   const extensionVersion = request.headers.get("x-extension-version") || searchParams.get("extension_version");
   try {
@@ -143,9 +152,12 @@ export async function GET(request: NextRequest) {
     latest_extension_version: latestVersion,
     user: {
       email,
+      name: userName,
       days_remaining: daysRemaining,
-      time_display: `${daysRemaining} days left`,
-      user_type: status.subscriptionActive ? status.subscriptionPlan : "trial",
+      time_display: formatTimeDisplay(expiryDate),
+      expiry_at: expiryDate.toISOString(),
+      plan_name: planName,
+      user_type: billing.userType,
     },
     branding: {
       site_name: "FlowDoverz",

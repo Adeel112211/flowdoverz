@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { AuthBridge } from "@/components/auth-bridge";
 import { BrandLogo } from "@/components/brand-logo";
 import { useClientSession } from "@/hooks/use-client-session";
-import { signOut } from "@/lib/auth";
+import { signOut, restoreSessionFromCookie } from "@/lib/auth";
 import { DownloadCloud, ExternalLink, Timer, Rocket, CheckCircle2, AlertCircle, User, LogOut, MonitorSmartphone, Receipt, X, Sparkles } from "lucide-react";
 
 type UserStatus = {
@@ -16,6 +16,7 @@ type UserStatus = {
   trialExpiresAt: string | null;
   subscriptionPlan: string;
   subscriptionExpiresAt: string | null;
+  emailVerified: boolean;
 };
 
 type ClientReceipt = {
@@ -34,6 +35,22 @@ type ClientReceipt = {
   status?: "paid" | "refunded";
 };
 
+function getExpiryTimestamp(status: UserStatus) {
+  const expiryDateStr =
+    status.subscriptionActive &&
+    status.subscriptionPlan &&
+    !["none", "trial", "pending"].includes(status.subscriptionPlan)
+      ? status.subscriptionExpiresAt
+      : status.trialExpiresAt;
+  if (!expiryDateStr) return null;
+  return new Date(expiryDateStr).getTime();
+}
+
+function isLiveExpired(status: UserStatus, currentNow: number) {
+  const expiry = getExpiryTimestamp(status);
+  return expiry !== null && currentNow >= expiry;
+}
+
 export function DashboardPage() {
   const router = useRouter();
   const session = useClientSession();
@@ -47,100 +64,134 @@ export function DashboardPage() {
   const [installView, setInstallView] = useState<"desktop" | "mobile">("desktop");
   const [receipts, setReceipts] = useState<ClientReceipt[]>([]);
   const [showExpiredModal, setShowExpiredModal] = useState(false);
+  const [resendStatus, setResendStatus] = useState<string | null>(null);
+  const [resending, setResending] = useState(false);
+  const [now, setNow] = useState(() => Date.now());
+  const [sessionReady, setSessionReady] = useState(false);
 
   useEffect(() => {
+    let active = true;
+    restoreSessionFromCookie().finally(() => {
+      if (active) setSessionReady(true);
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!sessionReady) return;
     if (!session) {
       router.replace("/login");
       return;
     }
 
-    const controller = new AbortController();
-    const { signal } = controller;
+    let active = true;
 
-    fetch("/api/user/status", { signal })
-      .then((res) => res.json())
-      .then((data) => {
+    async function loadStatus() {
+      try {
+        const res = await fetch("/api/user/status");
+        if (!active) return;
+        const data = await res.json();
+        if (!active) return;
         if (data.success) {
           setStatus(data.status);
         } else {
           signOut();
           router.push("/login");
         }
-      })
-      .catch((err) => {
-        if (err instanceof Error && err.name === "AbortError") return;
+      } catch (err) {
+        if (!active) return;
         console.error(err);
-      })
-      .finally(() => {
-        if (!signal.aborted) setLoading(false);
-      });
+      } finally {
+        if (active) setLoading(false);
+      }
+    }
 
-    fetch("/api/extension", { signal })
-      .then((res) => res.json())
-      .then((data) => {
+    async function loadExtension() {
+      try {
+        const res = await fetch("/api/extension");
+        if (!active) return;
+        const data = await res.json();
+        if (!active) return;
         if (data.success) {
           setExtensionDownloadUrl(data.extension.downloadUrl);
           setExtensionVersion(data.extension.activeVersion);
           setInstallSteps(data.extension.installSteps || []);
           setMobileInstallSteps(data.extension.mobileInstallSteps || []);
         }
-      })
-      .catch((err) => {
-        if (err instanceof Error && err.name === "AbortError") return;
+      } catch (err) {
+        if (!active) return;
         console.error(err);
-      });
+      }
+    }
 
-    fetch("/api/user/receipts", { signal })
-      .then((res) => res.json())
-      .then((data) => {
+    async function loadReceipts() {
+      try {
+        const res = await fetch("/api/user/receipts");
+        if (!active) return;
+        const data = await res.json();
+        if (!active) return;
         if (data.success && Array.isArray(data.receipts)) {
           setReceipts(data.receipts);
         }
-      })
-      .catch((err) => {
-        if (err instanceof Error && err.name === "AbortError") return;
+      } catch (err) {
+        if (!active) return;
         console.error(err);
-      });
+      }
+    }
 
-    return () => controller.abort();
-  }, [router, session]);
+    void loadStatus();
+    void loadExtension();
+    void loadReceipts();
+
+    return () => {
+      active = false;
+    };
+  }, [router, session, sessionReady]);
 
   useEffect(() => {
-    if (!loading && status && !status.active) {
+    if (!status?.active) return;
+    const expiry = getExpiryTimestamp(status);
+    if (!expiry) return;
+
+    setNow(Date.now());
+    const id = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(id);
+  }, [status?.active, status?.trialExpiresAt, status?.subscriptionExpiresAt, status?.subscriptionActive]);
+
+  useEffect(() => {
+    if (!loading && status && (!status.active || isLiveExpired(status, now))) {
       setShowExpiredModal(true);
     }
-  }, [loading, status]);
+  }, [loading, status, now]);
 
   function handleSignOut() {
     signOut();
     router.push("/login");
   }
 
-  function getRemainingText() {
+  function getRemainingText(currentNow = now) {
     if (!status) return "Calculating...";
-    
-    const expiryDateStr = status.subscriptionActive && status.subscriptionExpiresAt 
-      ? status.subscriptionExpiresAt 
-      : status.trialExpiresAt;
 
-    if (!expiryDateStr) return "Expired";
+    const expiry = getExpiryTimestamp(status);
+    if (!expiry) return "Expired";
 
-    const expiry = new Date(expiryDateStr).getTime();
-    const now = new Date().getTime();
-    const diff = expiry - now;
-
+    const diff = expiry - currentNow;
     if (diff <= 0) return "Expired";
 
     const days = Math.floor(diff / (1000 * 60 * 60 * 24));
     const hours = Math.floor((diff / (1000 * 60 * 60)) % 24);
     const minutes = Math.floor((diff / (1000 * 60)) % 60);
+    const seconds = Math.floor((diff / 1000) % 60);
 
-    if (days > 0) return `${days}d ${hours}h left`;
-    if (hours > 0) return `${hours}h ${minutes}m left`;
-    return `${minutes} minutes left`;
+    if (days > 0) return `${days}d ${hours}h ${minutes}m left`;
+    if (hours > 0) return `${hours}h ${minutes}m ${seconds}s left`;
+    if (minutes > 0) return `${minutes}m ${seconds}s left`;
+    return `${seconds}s left`;
   }
 
-  if (!session || loading) {
+  if (!sessionReady || !session || loading) {
     return (
       <div className="flex min-h-screen items-center justify-center text-slate-400 bg-[#080810]">
         <div className="flex flex-col items-center gap-4">
@@ -152,7 +203,23 @@ export function DashboardPage() {
   }
 
   const isTrial = status?.trialActive && !status?.subscriptionActive;
-  const isExpired = !status?.active;
+  const liveExpired = status ? isLiveExpired(status, now) : false;
+  const isExpired = !status?.active || liveExpired;
+  const needsEmailVerification = status?.emailVerified === false;
+
+  async function resendVerification() {
+    setResending(true);
+    setResendStatus(null);
+    try {
+      const res = await fetch("/api/auth/resend-verification", { method: "POST", credentials: "include" });
+      const data = await res.json();
+      setResendStatus(data.message || data.error || (data.success ? "Email sent." : "Could not resend."));
+    } catch {
+      setResendStatus("Could not resend verification email.");
+    } finally {
+      setResending(false);
+    }
+  }
   const maxDevices = isTrial ? 1 : status?.subscriptionPlan?.toLowerCase() === "team" ? 3 : 1;
 
   return (
@@ -167,7 +234,7 @@ export function DashboardPage() {
       <header className="relative z-50 border-b border-white/5 bg-[#080810]/80 backdrop-blur-md sticky top-0">
         <div className="mx-auto flex h-16 sm:h-20 w-full items-center justify-between px-4 sm:px-8 lg:px-24 xl:px-32 2xl:px-64">
           <Link href="/" className="hover:opacity-80 transition-opacity">
-            <BrandLogo size="md" />
+            <BrandLogo size="lg" />
           </Link>
           <div className="relative">
             <button
@@ -215,7 +282,29 @@ export function DashboardPage() {
       </header>
 
       <main className="relative z-10 mx-auto w-full px-4 sm:px-8 lg:px-24 xl:px-32 2xl:px-64 pt-6 sm:pt-8 pb-6 sm:pb-8 flex-1 flex flex-col min-w-0">
-        {isExpired && (
+        {needsEmailVerification && (
+          <div className="mb-6 sm:mb-8 rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4 sm:p-6 flex flex-col sm:flex-row items-start gap-4 backdrop-blur-xl">
+            <AlertCircle className="text-amber-300 shrink-0 mt-0.5" />
+            <div className="flex-1">
+              <h3 className="font-bold text-amber-100 text-lg mb-1">Verify your email</h3>
+              <p className="text-amber-100/80 text-sm">
+                Your trial starts after you confirm <span className="font-semibold">{session.email}</span>.
+                Check your inbox for the verification link.
+              </p>
+              {resendStatus && <p className="mt-2 text-xs text-amber-200/90">{resendStatus}</p>}
+            </div>
+            <button
+              type="button"
+              onClick={resendVerification}
+              disabled={resending}
+              className="shrink-0 rounded-xl border border-amber-400/40 bg-amber-400/10 px-5 py-2.5 text-sm font-bold text-amber-200 hover:bg-amber-400/20 disabled:opacity-50"
+            >
+              {resending ? "Sending..." : "Resend email"}
+            </button>
+          </div>
+        )}
+
+        {isExpired && !needsEmailVerification && (
           <div className="mb-6 sm:mb-8 rounded-2xl border border-rose-500/30 bg-rose-500/10 p-4 sm:p-6 flex flex-col sm:flex-row items-start gap-4 backdrop-blur-xl">
             <AlertCircle className="text-rose-400 shrink-0 mt-0.5" />
             <div className="flex-1">
@@ -244,7 +333,15 @@ export function DashboardPage() {
               <div className="relative z-10">
                 <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-cyan-500/10 border border-cyan-500/20 text-cyan-400 text-xs font-bold mb-6">
                   <Rocket size={14} />
-                  <span>{status?.subscriptionActive ? status.subscriptionPlan : isTrial ? "Free Trial" : "No Active Plan"}</span>
+                  <span>
+                    {status?.subscriptionActive &&
+                    status.subscriptionPlan &&
+                    !["none", "trial", "pending"].includes(status.subscriptionPlan)
+                      ? status.subscriptionPlan.charAt(0).toUpperCase() + status.subscriptionPlan.slice(1)
+                      : isTrial
+                        ? "Free Trial"
+                        : "No Active Plan"}
+                  </span>
                 </div>
                 
                 <h1 className="text-3xl sm:text-4xl md:text-5xl font-black tracking-tight text-transparent bg-clip-text bg-gradient-to-br from-white via-white to-slate-400 mb-2 leading-tight break-words">
@@ -469,7 +566,7 @@ export function DashboardPage() {
                   : "Your trial has ended"}
               </h2>
               <p className="text-center text-sm text-slate-400 mb-6 leading-relaxed">
-                Activate a plan to restore access and keep using FlowBridge with Google Flow.
+                Activate a plan to restore access and keep using FlowDoverz with Google Flow.
               </p>
 
               <div className="flex flex-col gap-3">
