@@ -29,6 +29,25 @@ html {
   overflow-x: hidden;
 }
 
+/* Installed PWA / WebView: keep admin chrome from scrolling with the document */
+html.admin-app-active,
+html.admin-app-active body {
+  overflow: hidden !important;
+  overscroll-behavior: none;
+  touch-action: manipulation;
+}
+
+.admin-app-active {
+  /* admin header logo row + padding + notch inset */
+  --admin-mobile-topbar-height: calc(4.25rem + env(safe-area-inset-top, 0px));
+}
+
+.admin-panel-scroll {
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  touch-action: pan-y;
+}
+
 @keyframes mesh-drift {
   0%, 100% { transform: translate(0, 0) scale(1); }
   33% { transform: translate(2%, -1%) scale(1.02); }

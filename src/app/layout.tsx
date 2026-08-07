@@ -14,11 +14,12 @@ export const metadata: Metadata = {
     "FlowDoverz connects your browser to Google Flow for cinematic AI video creation — secure sessions, team seats, and workspace management in one place.",
   icons: {
     icon: [
-      { url: "/favicon.svg", type: "image/svg+xml" },
+      { url: "/favicon.png", type: "image/png", sizes: "48x48" },
       { url: "/icon.png", type: "image/png", sizes: "512x512" },
+      { url: "/logo.png", type: "image/png", sizes: "512x512" },
     ],
-    shortcut: "/favicon.svg",
-    apple: "/apple-icon.png",
+    shortcut: "/favicon.png",
+    apple: [{ url: "/apple-icon.png", sizes: "180x180", type: "image/png" }],
   },
 };
 

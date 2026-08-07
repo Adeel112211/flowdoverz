@@ -114,7 +114,7 @@ export default function PricingPage() {
       <header className="fixed top-0 left-0 right-0 z-50 h-20 bg-[#030308]/80 backdrop-blur-2xl border-b border-white/[0.06]">
         <div className="max-w-7xl mx-auto w-full h-full flex items-center justify-between px-4 sm:px-6 md:px-12">
           <Link href="/" className="hover:opacity-90 transition-opacity">
-            <BrandLogo size="md" />
+            <BrandLogo size="lg" />
           </Link>
 
           <nav className="hidden md:flex items-center gap-8">

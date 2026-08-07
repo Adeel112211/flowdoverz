@@ -16,10 +16,10 @@ export function SiteHeader() {
   const session = useClientSession();
 
   return (
-    <header className="fixed top-0 inset-x-0 z-50 h-16 border-b border-white/5 bg-[#080810]/80 backdrop-blur-xl">
+    <header className="fixed top-0 inset-x-0 z-50 h-20 border-b border-white/5 bg-[#080810]/80 backdrop-blur-xl">
       <div className="mx-auto flex h-full max-w-6xl items-center justify-between px-4 sm:px-6">
         <Link href="/" aria-label="FlowDoverz home">
-          <BrandLogo size="md" />
+          <BrandLogo size="lg" />
         </Link>
 
         <nav className="hidden items-center gap-8 md:flex">

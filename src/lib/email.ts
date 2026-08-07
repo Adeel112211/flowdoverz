@@ -20,7 +20,7 @@ async function resolveMailConfig() {
     adminEmail: stored.adminEmail || stored.user || process.env.SMTP_USER || "",
     enabled: stored.enabled !== false,
     brandName: stored.brandName || "FlowDoverz",
-    logoUrl: stored.logoUrl,
+    logoUrl: stored.logoUrl || "/logo.png",
     defaultStyle: stored.defaultStyle,
     defaultColors: stored.defaultColors,
   };
@@ -151,7 +151,10 @@ export async function sendTemplateEmail(
     contentDisposition: "inline" | "attachment";
   }> = [];
 
-  let finalLogoUrl = template.logoUrl || cfg.logoUrl;
+  let finalLogoUrl = template.logoUrl || cfg.logoUrl || "/logo.png";
+  if (finalLogoUrl.startsWith("/")) {
+    finalLogoUrl = `${APP_URL.replace(/\/$/, "")}${finalLogoUrl}`;
+  }
 
   if (finalLogoUrl && finalLogoUrl.startsWith("data:image/")) {
     const match = finalLogoUrl.match(/^data:image\/([\w\+\-\.]+);.*base64,(.+)$/);

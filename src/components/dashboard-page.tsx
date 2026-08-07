@@ -256,7 +256,7 @@ export function DashboardPage() {
       </div>
 
       <header className="relative z-50 sticky top-0 shrink-0 border-b border-white/5 bg-[#080810]/80 backdrop-blur-md">
-        <div className="mx-auto flex h-16 sm:h-20 w-full items-center justify-between px-4 sm:px-8 lg:px-24 xl:px-32 2xl:px-64">
+        <div className="mx-auto flex h-20 sm:h-24 w-full items-center justify-between px-4 sm:px-8 lg:px-24 xl:px-32 2xl:px-64">
           <Link href="/" className="hover:opacity-80 transition-opacity">
             <BrandLogo size="lg" />
           </Link>

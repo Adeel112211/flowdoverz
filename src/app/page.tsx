@@ -46,7 +46,7 @@ export default function LandingPage() {
       >
         <div className="max-w-7xl mx-auto w-full h-full flex items-center justify-between px-4 sm:px-6 md:px-12">
           <Link href="/" className="hover:opacity-90 transition-opacity">
-            <BrandLogo size="md" />
+            <BrandLogo size="lg" />
           </Link>
 
           {/* Desktop Nav */}

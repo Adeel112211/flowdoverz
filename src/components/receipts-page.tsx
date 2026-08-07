@@ -129,9 +129,9 @@ export function ReceiptsPage() {
       </div>
 
       <header className="relative z-10 border-b border-white/5 bg-[#080810]/80 backdrop-blur-md">
-        <div className="mx-auto flex h-16 max-w-5xl items-center justify-between px-4 sm:px-6">
+        <div className="mx-auto flex h-20 max-w-5xl items-center justify-between px-4 sm:px-6">
           <Link href="/dashboard" className="hover:opacity-80 transition-opacity">
-            <BrandLogo size="md" />
+            <BrandLogo size="lg" />
           </Link>
           <div className="flex items-center gap-2">
             <Link

@@ -50,10 +50,13 @@ export function AdminSidebar() {
 
   return (
     <>
-      {/* Mobile Top Header — fixed above page scroll */}
-      <div className="md:hidden flex shrink-0 items-center justify-between p-4 border-b border-white/5 bg-[#0F172A] z-50">
-        <Link href="/admin">
-          <BrandLogo size="md" />
+      {/* Mobile Top Header — stays in fixed admin shell (works in installed PWA too) */}
+      <div className="admin-mobile-topbar md:hidden z-50 flex shrink-0 items-center justify-between border-b border-white/5 bg-[#0F172A] px-4 pb-3 pt-[max(0.75rem,env(safe-area-inset-top))]">
+        <Link href="/admin" className="min-w-0">
+          <BrandLogo
+            size="md"
+            className="gap-2 [&_img]:!h-10 [&_img]:!w-10 [&_img]:!max-h-10 sm:[&_img]:!h-11 sm:[&_img]:!w-11"
+          />
         </Link>
         <button
           type="button"
@@ -70,7 +73,7 @@ export function AdminSidebar() {
       {/* Mobile Sidebar Overlay */}
       {mobileMenuOpen && (
         <div
-          className="fixed inset-0 top-[73px] z-30 bg-black/60 backdrop-blur-sm md:hidden animate-in fade-in duration-200"
+          className="fixed inset-0 top-[var(--admin-mobile-topbar-height,4.5rem)] z-30 bg-black/60 backdrop-blur-sm md:hidden animate-in fade-in duration-200"
           onClick={() => setMobileMenuOpen(false)}
           aria-hidden="true"
         />
@@ -78,13 +81,16 @@ export function AdminSidebar() {
 
       <aside
         id="admin-mobile-nav"
-        className={`fixed md:relative top-[73px] md:top-0 z-40 w-[min(16rem,85vw)] md:w-64 shrink-0 border-r border-white/5 bg-[#0F172A]/95 md:bg-[#0F172A]/80 backdrop-blur-xl flex flex-col h-[calc(100dvh-73px)] md:h-dvh transition-transform duration-300 md:translate-x-0 ${
+        className={`fixed md:relative top-[var(--admin-mobile-topbar-height,4.5rem)] md:top-0 z-40 w-[min(16rem,85vw)] md:w-64 shrink-0 border-r border-white/5 bg-[#0F172A]/95 md:bg-[#0F172A]/80 backdrop-blur-xl flex flex-col h-[calc(100dvh-var(--admin-mobile-topbar-height,4.5rem))] md:h-full transition-transform duration-300 md:translate-x-0 ${
           mobileMenuOpen ? "translate-x-0" : "-translate-x-full"
         }`}
       >
         <div className="hidden md:block p-6 border-b border-white/5">
-          <Link href="/admin">
-          <BrandLogo size="md" />
+          <Link href="/admin" className="min-w-0">
+            <BrandLogo
+              size="md"
+              className="gap-2 [&_img]:!h-11 [&_img]:!w-11 [&_img]:!max-h-11"
+            />
           </Link>
         </div>
 

@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { WORKSPACE_OWNER } from "@/lib/admin";
 import { CLIENT_SID_COOKIE, verifyClientSession } from "@/lib/client-session";
 import { getSlotCookies, listSlots } from "@/lib/cookie-store";
+import { getAppUrl } from "@/lib/site-urls";
 
 function resolveSessionEmail(cookieSid: string | undefined) {
   const verified = verifyClientSession(cookieSid);
@@ -163,7 +164,7 @@ export async function GET(request: NextRequest) {
       site_name: "FlowDoverz",
       primary_color: "#06b6d4",
       accent_color: "#14b8a6",
-      logo_url: "",
+      logo_url: `${getAppUrl().replace(/\/$/, "")}/logo.png`,
     },
   });
 }

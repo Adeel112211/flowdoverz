@@ -46,6 +46,7 @@ export const DEFAULT_SMTP_CONFIG: SmtpConfig = {
   adminEmail: process.env.SMTP_USER || "",
   enabled: true,
   brandName: "FlowDoverz",
+  logoUrl: "/logo.png",
   defaultStyle: "modern",
 };
 
