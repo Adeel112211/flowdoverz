@@ -64,13 +64,13 @@ export function LoginPage() {
       )}
       <AuthBridge session={session} daysRemaining={14} />
 
-      <div className="animate-fade-up relative w-full max-w-md">
+      <div className="animate-fade-up relative w-full max-w-xl">
         <div className="mb-8 flex flex-col items-center text-center max-md:mb-5">
           <Link href={marketingPath("/")}>
             <BrandLogo size="xl" stacked />
           </Link>
-          <h1 className="mt-3 max-md:mt-2 text-3xl md:text-4xl font-black tracking-tight text-transparent bg-clip-text bg-gradient-to-br from-white via-white to-slate-400">Welcome back</h1>
-          <p className="mt-3 text-base text-slate-400 max-w-sm mx-auto">
+          <h1 className="text-3xl md:text-4xl font-black tracking-tight text-transparent bg-clip-text bg-gradient-to-br from-white via-white to-slate-400">Welcome back</h1>
+          <p className="mt-3 text-base text-slate-400 whitespace-nowrap mx-auto">
             Enter your FlowDoverz workspace credentials to continue generating.
           </p>
         </div>

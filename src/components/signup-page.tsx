@@ -149,12 +149,12 @@ export function SignupPage() {
           </div>
         </div>
       )}
-      <div className="animate-fade-up relative z-10 mx-auto w-full max-w-md py-4">
+      <div className="animate-fade-up relative z-10 mx-auto w-full max-w-lg py-4">
         <div className="mb-6 flex flex-col items-center text-center sm:mb-8">
           <Link href={marketingPath("/")}>
             <BrandLogo size="xl" stacked />
           </Link>
-          <h1 className="mt-3 text-3xl font-black tracking-tight text-transparent bg-clip-text bg-gradient-to-br from-white via-white to-slate-400 sm:mt-4 md:text-4xl">
+          <h1 className="text-3xl font-black tracking-tight text-transparent bg-clip-text bg-gradient-to-br from-white via-white to-slate-400 md:text-4xl">
             Create workspace
           </h1>
           <p className="mt-2 text-sm text-slate-400 whitespace-nowrap mx-auto sm:mt-3 sm:text-base">

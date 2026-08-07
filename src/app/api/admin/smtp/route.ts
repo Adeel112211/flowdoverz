@@ -53,6 +53,10 @@ export async function GET() {
     smtp: maskSmtpForClient(config),
     status,
     templates,
+  }, {
+    headers: {
+      "Cache-Control": "no-store, max-age=0",
+    },
   });
 }
 

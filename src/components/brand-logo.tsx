@@ -109,10 +109,12 @@ export function BrandLogo({
             alt=""
             width={icon}
             height={icon}
-            className="shrink-0 drop-shadow-[0_0_20px_rgba(34,211,238,0.22)]"
+            className={`shrink-0 drop-shadow-[0_0_20px_rgba(34,211,238,0.22)] ${stacked ? "ml-2.5" : ""}`}
           />
         ) : (
-          <LogoMark icon={icon} />
+          <div className={stacked ? "ml-2.5" : ""}>
+            <LogoMark icon={icon} />
+          </div>
         ))}
       {showText && (
         <div className={`${stacked ? "text-center" : ""} leading-none`}>
