@@ -29,6 +29,7 @@ export const CHECKOUT_PAYMENT_METHODS: CheckoutPaymentMethod[] = [
     logoUrl: "/payment-logos/jazzcash.png",
     accountName: "Muhammad Adeel",
     accountNumber: "0300-0000000",
+    qrImageUrl: "/jazzcash-qr.png",
     useTempQr: true,
     theme: {
       iconBg: "bg-red-500/15",
