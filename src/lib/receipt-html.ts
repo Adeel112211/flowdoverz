@@ -79,8 +79,7 @@ export function buildThermalReceiptEmailHtml(options?: {
 
   const brandingElement = options?.logoUrl
     ? `<img src="${options.logoUrl}" alt="${text.brandName}" style="display:block;margin:0 auto 16px;max-width:140px;height:auto;border:0;" />`
-    : `<p style="margin:0 0 16px 0;font-family:'Courier New',Courier,monospace;font-size:17px;font-weight:800;letter-spacing:3px;color:${T.accent};">${text.brandName}</p>`;
-
+    : ``;
   return `<div style="margin:0;text-align:center;">
   <div style="display:inline-block;max-width:380px;width:100%;filter:drop-shadow(${T.glow});border-radius:16px;overflow:hidden;">
     <div style="background:${T.paper};padding:32px 28px 28px;text-align:center;min-height:420px;">

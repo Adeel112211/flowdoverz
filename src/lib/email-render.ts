@@ -94,8 +94,9 @@ function defaultLogo(brandName: string, colors: EmailThemeColors) {
 }
 
 function logoBlock(logoUrl: string | undefined, brandName: string, colors: EmailThemeColors) {
-  if (logoUrl) {
-    return `
+  if (!logoUrl) return "";
+  
+  return `
     <table role="presentation" cellspacing="0" cellpadding="0" style="margin:0 auto;">
       <tr>
         <td align="center">
@@ -103,8 +104,6 @@ function logoBlock(logoUrl: string | undefined, brandName: string, colors: Email
         </td>
       </tr>
     </table>`;
-  }
-  return defaultLogo(brandName, colors);
 }
 
 function headerHero(headerImageUrl: string | undefined, style: EmailTemplateStyle) {
