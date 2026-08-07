@@ -68,6 +68,7 @@ export function DashboardPage() {
   const [resending, setResending] = useState(false);
   const [now, setNow] = useState(() => Date.now());
   const [sessionReady, setSessionReady] = useState(false);
+  const [isDownloading, setIsDownloading] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -222,6 +223,29 @@ export function DashboardPage() {
   }
   const maxDevices = isTrial ? 1 : status?.subscriptionPlan?.toLowerCase() === "team" ? 3 : 1;
 
+  async function handleDownload(e: React.MouseEvent) {
+    e.preventDefault();
+    if (!extensionDownloadUrl || isDownloading) return;
+    
+    setIsDownloading(true);
+    try {
+      const res = await fetch(extensionDownloadUrl);
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = extensionDownloadUrl.split("/").pop() || "flowdoverz-extension.zip";
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+    } catch (err) {
+      console.error("Download failed", err);
+    } finally {
+      setIsDownloading(false);
+    }
+  }
+
   return (
     <div className="min-h-dvh w-full max-w-full overflow-x-hidden bg-[#080810] text-slate-100 font-sans selection:bg-cyan-500/30 flex flex-col">
       <AuthBridge session={session} daysRemaining={14} />
@@ -356,9 +380,15 @@ export function DashboardPage() {
                 <a
                   href={extensionDownloadUrl || "#"}
                   download
-                  className={`flex items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-cyan-400 to-emerald-400 px-6 sm:px-8 py-3.5 sm:py-4 text-sm sm:text-base font-black tracking-wide text-slate-950 transition-all shadow-[0_0_20px_rgba(34,211,238,0.3)] hover:-translate-y-0.5 hover:shadow-[0_0_30px_rgba(34,211,238,0.5)] w-full sm:w-auto ${!extensionDownloadUrl ? "pointer-events-none opacity-50" : ""}`}
+                  onClick={handleDownload}
+                  className={`flex items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-cyan-400 to-emerald-400 px-6 sm:px-8 py-3.5 sm:py-4 text-sm sm:text-base font-black tracking-wide text-slate-950 transition-all shadow-[0_0_20px_rgba(34,211,238,0.3)] w-full sm:w-auto ${!extensionDownloadUrl || isDownloading ? "pointer-events-none opacity-80" : "hover:-translate-y-0.5 hover:shadow-[0_0_30px_rgba(34,211,238,0.5)]"}`}
                 >
-                  <DownloadCloud size={20} /> Download Extension{extensionVersion ? ` v${extensionVersion}` : ""}
+                  {isDownloading ? (
+                    <div className="w-5 h-5 rounded-full border-2 border-slate-950 border-t-transparent animate-spin" />
+                  ) : (
+                    <DownloadCloud size={20} />
+                  )}
+                  {isDownloading ? "Starting Download..." : `Download Extension${extensionVersion ? ` v${extensionVersion}` : ""}`}
                 </a>
                 <a
                   href="https://labs.google/fx/tools/flow"
