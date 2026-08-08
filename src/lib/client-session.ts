@@ -9,14 +9,14 @@ function sessionSecret(): string {
   const configured = process.env.FLOWBRIDGE_SESSION_SECRET?.trim();
   if (configured) return configured;
 
-  const adminSecret = process.env.FLOWBRIDGE_ADMIN_SECRET?.trim();
-  if (adminSecret) {
-    return createHmac("sha256", "flowdoverz-client-session").update(adminSecret).digest("hex");
+  const adminPassword = process.env.FLOWBRIDGE_ADMIN_PASSWORD?.trim();
+  if (adminPassword) {
+    return createHmac("sha256", "flowdoverz-client-session").update(adminPassword).digest("hex");
   }
 
   if (process.env.NODE_ENV === "production") {
     throw new Error(
-      "Set FLOWBRIDGE_SESSION_SECRET or FLOWBRIDGE_ADMIN_SECRET for client sessions.",
+      "Set FLOWBRIDGE_SESSION_SECRET or FLOWBRIDGE_ADMIN_PASSWORD for client sessions.",
     );
   }
 

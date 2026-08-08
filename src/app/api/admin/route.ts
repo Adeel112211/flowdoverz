@@ -10,6 +10,7 @@ import {
   ADMIN_COOKIE,
 } from "@/lib/admin";
 import { logAdminActivity } from "@/lib/admin-activity";
+import { checkAuthRateLimit, clientIpFromRequest } from "@/lib/auth-rate-limit";
 
 export async function GET() {
   const ok = await isAdminUiRequest();
@@ -18,6 +19,20 @@ export async function GET() {
 
 export async function POST(request: NextRequest) {
   try {
+    const ip = clientIpFromRequest(request);
+    const rate = await checkAuthRateLimit("admin_login", ip);
+    if (!rate.ok) {
+      return NextResponse.json(
+        { success: false, error: rate.error },
+        {
+          status: 429,
+          headers: rate.retryAfterSeconds
+            ? { "Retry-After": String(rate.retryAfterSeconds) }
+            : undefined,
+        },
+      );
+    }
+
     let body: { password?: string };
     try {
       body = await request.json();
@@ -66,8 +81,12 @@ export async function POST(request: NextRequest) {
 
 export async function DELETE() {
   try {
-    await revokeAdminSyncKey();
-    await logAdminActivity({ action: "admin_logout" });
+    const authed = await isAdminUiRequest();
+    if (authed) {
+      await revokeAdminSyncKey();
+      await logAdminActivity({ action: "admin_logout" });
+    }
+
     const response = NextResponse.json({ success: true });
     response.cookies.set({
       name: ADMIN_COOKIE,
@@ -76,6 +95,7 @@ export async function DELETE() {
       path: "/",
       maxAge: 0,
       sameSite: "strict",
+      secure: process.env.NODE_ENV === "production",
     });
     return response;
   } catch (error) {

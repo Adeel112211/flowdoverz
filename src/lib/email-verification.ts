@@ -20,7 +20,7 @@ const RESEND_COOLDOWN_MS = 2 * 60 * 1000;
 
 function hashVerificationToken(token: string) {
   const secret =
-    process.env.FLOWBRIDGE_ADMIN_SECRET?.trim() ||
+    process.env.FLOWBRIDGE_ADMIN_PASSWORD?.trim() ||
     process.env.CRON_SECRET?.trim() ||
     "flowdoverz-email-verify";
   return createHash("sha256").update(`${token}:${secret}`).digest("hex");

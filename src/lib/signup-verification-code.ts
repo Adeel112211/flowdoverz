@@ -16,11 +16,11 @@ type SignupVerificationDoc = {
 };
 
 function hashSignupCode(code: string) {
-  const secret =
-    process.env.FLOWBRIDGE_ADMIN_SECRET?.trim() ||
+  const pepper =
+    process.env.FLOWBRIDGE_ADMIN_PASSWORD?.trim() ||
     process.env.CRON_SECRET?.trim() ||
     "flowdoverz-signup-code";
-  return createHash("sha256").update(`${code.trim()}:${secret}`).digest("hex");
+  return createHash("sha256").update(`${code.trim()}:${pepper}`).digest("hex");
 }
 
 export function generateSignupCode() {

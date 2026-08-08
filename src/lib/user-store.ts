@@ -8,6 +8,8 @@ import { createClientSession } from "./client-session";
 export type StoredUser = {
   email: string;
   name: string;
+  /** Lowercased / normalized name for uniqueness checks. */
+  nameLower?: string;
   passwordHash: string;
   salt: string;
   createdAt: string;
@@ -23,6 +25,50 @@ export type StoredUser = {
 
 export function normalizeEmail(email: string) {
   return email.trim().toLowerCase();
+}
+
+/** Case-insensitive name key used to prevent duplicate display names. */
+export function normalizeClientNameKey(name: string) {
+  return name.trim().replace(/\s+/g, " ").toLowerCase();
+}
+
+/**
+ * Returns true if another client already uses this display name.
+ * Checks `nameLower` (preferred) and exact `name` for older documents.
+ */
+export async function isClientNameTaken(
+  name: string,
+  excludeEmail?: string,
+): Promise<boolean> {
+  const db = getDb();
+  if (!db) return false;
+
+  const nameKey = normalizeClientNameKey(name);
+  if (!nameKey) return false;
+
+  const exclude = excludeEmail ? normalizeEmail(excludeEmail) : "";
+  const usersRef = db.collection("users");
+
+  const byLower = await usersRef.where("nameLower", "==", nameKey).limit(5).get();
+  for (const doc of byLower.docs) {
+    if (exclude && doc.id === exclude) continue;
+    return true;
+  }
+
+  // Legacy docs without nameLower: exact trimmed match only.
+  const trimmed = name.trim().replace(/\s+/g, " ");
+  const byExact = await usersRef.where("name", "==", trimmed).limit(5).get();
+  for (const doc of byExact.docs) {
+    if (exclude && doc.id === exclude) continue;
+    const data = doc.data();
+    const existingKey =
+      typeof data.nameLower === "string"
+        ? data.nameLower
+        : normalizeClientNameKey(String(data.name || ""));
+    if (existingKey === nameKey) return true;
+  }
+
+  return false;
 }
 
 export function makeSid(email: string) {
@@ -66,7 +112,8 @@ export async function registerClientUser(
     return { ok: false, error: emailCheck.error };
   }
 
-  if (trimmedName.length < 2) {
+  const displayName = trimmedName.replace(/\s+/g, " ");
+  if (displayName.length < 2) {
     return { ok: false, error: "Enter your full name." };
   }
   if (password.length < 8) {
@@ -78,6 +125,10 @@ export async function registerClientUser(
 
   if (existingUserDoc.exists) {
     return { ok: false, error: "An account with this email already exists. Sign in instead." };
+  }
+
+  if (await isClientNameTaken(displayName)) {
+    return { ok: false, error: "This name is already used. Choose a different name." };
   }
 
   const salt = randomBytes(16).toString("hex");
@@ -95,7 +146,8 @@ export async function registerClientUser(
 
   const newUser: StoredUser = {
     email: emailCheck.email,
-    name: trimmedName,
+    name: displayName,
+    nameLower: normalizeClientNameKey(displayName),
     salt,
     passwordHash: hashPassword(password, salt),
     createdAt: now.toISOString(),
@@ -117,7 +169,7 @@ export async function registerClientUser(
     trialGranted,
     user: {
       email: emailCheck.email,
-      name: trimmedName,
+      name: displayName,
       sid: makeSid(emailCheck.email),
     },
   };
@@ -181,13 +233,13 @@ export async function createUserByAdmin(input: {
   }
 
   const normalized = normalizeEmail(input.email);
-  const trimmedName = input.name.trim();
+  const displayName = input.name.trim().replace(/\s+/g, " ");
   const subscriptionPlan = input.subscriptionPlan || "trial";
 
   if (!normalized || !normalized.includes("@")) {
     return { ok: false, error: "Enter a valid email address." };
   }
-  if (trimmedName.length < 2) {
+  if (displayName.length < 2) {
     return { ok: false, error: "Enter the client's name." };
   }
   if (input.password.length < 8) {
@@ -198,6 +250,10 @@ export async function createUserByAdmin(input: {
   const existingUserDoc = await usersRef.doc(normalized).get();
   if (existingUserDoc.exists) {
     return { ok: false, error: "A client with this email already exists." };
+  }
+
+  if (await isClientNameTaken(displayName)) {
+    return { ok: false, error: "This name is already used. Choose a different name." };
   }
 
   const salt = randomBytes(16).toString("hex");
@@ -216,7 +272,8 @@ export async function createUserByAdmin(input: {
 
   const newUser: StoredUser = {
     email: normalized,
-    name: trimmedName,
+    name: displayName,
+    nameLower: normalizeClientNameKey(displayName),
     salt,
     passwordHash: hashPassword(input.password, salt),
     createdAt: now.toISOString(),

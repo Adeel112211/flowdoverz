@@ -39,11 +39,11 @@ export async function getSignupSecuritySettings(): Promise<SignupSecuritySetting
 }
 
 function hashIp(key: string) {
-  const secret =
-    process.env.FLOWBRIDGE_ADMIN_SECRET?.trim() ||
+  const pepper =
+    process.env.FLOWBRIDGE_ADMIN_PASSWORD?.trim() ||
     process.env.CRON_SECRET?.trim() ||
     "flowdoverz-signup-rate";
-  return createHash("sha256").update(`${key}:${secret}`).digest("hex");
+  return createHash("sha256").update(`${key}:${pepper}`).digest("hex");
 }
 
 export function clientIpFromRequest(request: Request): string {

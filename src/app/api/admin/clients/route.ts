@@ -3,7 +3,7 @@ import { isAdminUiRequest } from "@/lib/admin";
 import { logAdminActivity } from "@/lib/admin-activity";
 import { getDb, getAdminAuth, getFirebaseInitError, isFirebaseConfigured } from "@/lib/firebase-admin";
 import { sendAccountActivatedEmail } from "@/lib/email";
-import { createUserByAdmin, updateUserPasswordByAdmin } from "@/lib/user-store";
+import { createUserByAdmin, isClientNameTaken, normalizeClientNameKey, updateUserPasswordByAdmin } from "@/lib/user-store";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -105,7 +105,23 @@ export async function PUT(request: NextRequest) {
     }
 
     const updateData: Record<string, unknown> = {};
-    if (name !== undefined) updateData.name = String(name).trim();
+    if (name !== undefined) {
+      const displayName = String(name).trim().replace(/\s+/g, " ");
+      if (displayName.length < 2) {
+        return NextResponse.json(
+          { success: false, error: "Enter the client's name." },
+          { status: 400 },
+        );
+      }
+      if (await isClientNameTaken(displayName, email)) {
+        return NextResponse.json(
+          { success: false, error: "This name is already used. Choose a different name." },
+          { status: 400 },
+        );
+      }
+      updateData.name = displayName;
+      updateData.nameLower = normalizeClientNameKey(displayName);
+    }
     if (subscriptionPlan !== undefined) {
       updateData.subscriptionPlan = subscriptionPlan;
       if (PAID_PLANS.includes(subscriptionPlan)) {

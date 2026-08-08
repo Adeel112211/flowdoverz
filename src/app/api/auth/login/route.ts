@@ -2,8 +2,23 @@ import { NextRequest, NextResponse } from "next/server";
 import { authenticateUser } from "@/lib/user-store";
 import { CLIENT_SID_COOKIE } from "@/lib/client-session";
 import { sessionCookieOptions } from "@/lib/site-urls";
+import { checkAuthRateLimit, clientIpFromRequest } from "@/lib/auth-rate-limit";
 
 export async function POST(request: NextRequest) {
+  const ip = clientIpFromRequest(request);
+  const rate = await checkAuthRateLimit("client_login", ip);
+  if (!rate.ok) {
+    return NextResponse.json(
+      { success: false, error: rate.error },
+      {
+        status: 429,
+        headers: rate.retryAfterSeconds
+          ? { "Retry-After": String(rate.retryAfterSeconds) }
+          : undefined,
+      },
+    );
+  }
+
   let body: { email?: string; password?: string };
   try {
     body = await request.json();

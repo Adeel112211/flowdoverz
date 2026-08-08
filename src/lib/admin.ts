@@ -2,6 +2,11 @@ import { createHash, createHmac, randomBytes, timingSafeEqual } from "crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import path from "path";
 import { cookies } from "next/headers";
+import {
+  getAdminPasswordMaterial,
+  getAdminSessionVersion,
+  matchAdminPassword,
+} from "@/lib/admin-password-reset";
 
 export const ADMIN_COOKIE = "flowdoverz_admin";
 export const WORKSPACE_OWNER = "workspace";
@@ -9,51 +14,33 @@ export const WORKSPACE_OWNER = "workspace";
 const DATA_DIR = path.join(process.cwd(), ".data");
 const SYNC_KEY_PATH = path.join(DATA_DIR, "admin-sync.json");
 
-async function adminPassword(): Promise<string | null> {
-  try {
-    const { getDb } = await import("@/lib/firebase-admin");
-    const db = getDb();
-    if (db) {
-      const doc = await db.collection("settings").doc("admin").get();
-      if (doc.exists) {
-        const data = doc.data();
-        if (data?.password) {
-          return String(data.password);
-        }
-      }
-    }
-  } catch (err) {
-    console.error("Error reading admin password from Firestore:", err);
-  }
-
-  const fromEnv = process.env.FLOWBRIDGE_ADMIN_PASSWORD?.trim();
-  return fromEnv || null;
-}
-
 async function signingSecret(): Promise<string | null> {
-  const configured = process.env.FLOWBRIDGE_ADMIN_SECRET?.trim();
-  if (configured) return configured;
+  const material = await getAdminPasswordMaterial();
+  if (!material.configured) return null;
 
-  const pwd = await adminPassword();
-  if (!pwd) return null;
+  const basis =
+    material.passwordHash ||
+    material.legacyPlaintext ||
+    material.envPlaintext ||
+    "";
+  if (!basis) return null;
 
-  return createHmac("sha256", "flowdoverz-admin-token").update(pwd).digest("hex");
+  return createHmac("sha256", "flowdoverz-admin-token")
+    .update(`${basis}:v${material.sessionVersion}`)
+    .digest("hex");
 }
 
 export async function isAdminPasswordConfigured() {
-  return Boolean(await adminPassword());
+  const material = await getAdminPasswordMaterial();
+  return material.configured;
 }
 
 export async function verifyAdminPassword(password: string) {
-  const expected = await adminPassword();
-  if (!expected) {
+  const ok = await matchAdminPassword(password);
+  if (!ok && !(await isAdminPasswordConfigured())) {
     console.error("Admin password is not configured. Set FLOWBRIDGE_ADMIN_PASSWORD in Vercel.");
-    return false;
   }
-  const a = Buffer.from(password);
-  const b = Buffer.from(expected);
-  if (a.length !== b.length) return false;
-  return timingSafeEqual(a, b);
+  return ok;
 }
 
 export async function createAdminToken() {
@@ -61,16 +48,22 @@ export async function createAdminToken() {
   if (!secret) {
     throw new Error("Admin signing secret is not configured.");
   }
+  const version = await getAdminSessionVersion();
   const issuedAt = Date.now().toString();
   const sig = createHmac("sha256", secret)
-    .update(`admin:${issuedAt}`)
+    .update(`admin:${issuedAt}:${version}`)
     .digest("hex");
-  return `${issuedAt}.${sig}`;
+  return `${issuedAt}.${version}.${sig}`;
 }
 
 export async function verifyAdminToken(token: string | undefined | null) {
   if (!token) return false;
-  const [issuedAt, sig] = token.split(".");
+
+  const parts = token.split(".");
+  // Support legacy tokens: issuedAt.sig
+  const issuedAt = parts[0];
+  const versionPart = parts.length === 3 ? parts[1] : null;
+  const sig = parts.length === 3 ? parts[2] : parts[1];
   if (!issuedAt || !sig) return false;
 
   const age = Date.now() - Number(issuedAt);
@@ -78,11 +71,17 @@ export async function verifyAdminToken(token: string | undefined | null) {
     return false;
   }
 
+  const currentVersion = await getAdminSessionVersion();
+  const tokenVersion = versionPart != null ? Number(versionPart) : 1;
+  if (!Number.isFinite(tokenVersion) || tokenVersion !== currentVersion) {
+    return false;
+  }
+
   const secret = await signingSecret();
   if (!secret) return false;
 
   const expected = createHmac("sha256", secret)
-    .update(`admin:${issuedAt}`)
+    .update(`admin:${issuedAt}:${tokenVersion}`)
     .digest("hex");
 
   try {
