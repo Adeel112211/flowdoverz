@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { registerClientUser } from "@/lib/user-store";
 import { CLIENT_SID_COOKIE } from "@/lib/client-session";
-import { sessionCookieOptions } from "@/lib/site-urls";
+import { clientSessionCookieOptions } from "@/lib/site-urls";
 import {
   checkSignupRateLimit,
   clientIpFromRequest,
@@ -62,7 +62,7 @@ export async function POST(request: NextRequest) {
     },
   });
 
-  response.cookies.set(CLIENT_SID_COOKIE, result.user.sid, sessionCookieOptions(60 * 60 * 24));
+  response.cookies.set(CLIENT_SID_COOKIE, result.user.sid, clientSessionCookieOptions());
 
   return response;
 }

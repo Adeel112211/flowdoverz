@@ -55,6 +55,7 @@ async function postAuth(
     const data = (await response.json().catch(() => null)) as {
       success?: boolean;
       error?: string;
+      code?: string;
       notice?: string;
       trialGranted?: boolean;
       user?: { email?: string; name?: string; sid?: string };
@@ -63,7 +64,11 @@ async function postAuth(
     if (!response.ok || !data?.success || !data.user?.email || !data.user?.sid) {
       return {
         ok: false,
-        error: data?.error || "Something went wrong. Please try again.",
+        error:
+          data?.error ||
+          (data?.code === "MULTI_DEVICE_BLOCKED"
+            ? "This email has an active Solo plan and cannot be used on multiple devices."
+            : "Something went wrong. Please try again."),
       };
     }
 
@@ -152,9 +157,6 @@ export function getSession(): Session | null {
 export async function restoreSessionFromCookie(): Promise<Session | null> {
   if (typeof window === "undefined") return null;
 
-  const existing = getSession();
-  if (existing) return existing;
-
   try {
     const response = await fetch("/api/auth/me", {
       credentials: "include",
@@ -162,11 +164,24 @@ export async function restoreSessionFromCookie(): Promise<Session | null> {
     });
     const data = (await response.json().catch(() => null)) as {
       success?: boolean;
+      code?: string;
+      error?: string;
       user?: { email?: string; name?: string; sid?: string };
     } | null;
 
-    if (!response.ok || !data?.success || !data.user?.email || !data.user?.sid) {
+    if (response.status === 401) {
+      // Solo kicked this browser out — clear local session.
+      window.localStorage.removeItem(SESSION_KEY);
+      cachedSession = null;
+      notifySessionChange();
+      if (data?.code === "SESSION_REPLACED" && data.error) {
+        window.sessionStorage.setItem("flowdoverz_session_notice", data.error);
+      }
       return null;
+    }
+
+    if (!response.ok || !data?.success || !data.user?.email || !data.user?.sid) {
+      return getSession();
     }
 
     const session: Session = {
@@ -177,7 +192,7 @@ export async function restoreSessionFromCookie(): Promise<Session | null> {
     persistSession(session);
     return session;
   } catch {
-    return null;
+    return getSession();
   }
 }
 

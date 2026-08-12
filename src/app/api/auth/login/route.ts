@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { authenticateUser } from "@/lib/user-store";
 import { CLIENT_SID_COOKIE } from "@/lib/client-session";
-import { sessionCookieOptions } from "@/lib/site-urls";
+import { clientSessionCookieOptions } from "@/lib/site-urls";
 import { checkAuthRateLimit, clientIpFromRequest } from "@/lib/auth-rate-limit";
 
 export async function POST(request: NextRequest) {
@@ -35,9 +35,10 @@ export async function POST(request: NextRequest) {
   );
 
   if (!result.ok) {
+    const status = result.code === "MULTI_DEVICE_BLOCKED" ? 403 : 401;
     return NextResponse.json(
-      { success: false, error: result.error },
-      { status: 401 },
+      { success: false, error: result.error, code: result.code || "AUTH_FAILED" },
+      { status },
     );
   }
 
@@ -50,7 +51,7 @@ export async function POST(request: NextRequest) {
     },
   });
 
-  response.cookies.set(CLIENT_SID_COOKIE, result.user.sid, sessionCookieOptions(60 * 60 * 24));
+  response.cookies.set(CLIENT_SID_COOKIE, result.user.sid, clientSessionCookieOptions());
 
   return response;
 }

@@ -1,14 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getClientPurchasesPayload } from "@/lib/client-receipts";
-import { getClientSessionFromRequest } from "@/lib/client-session";
+import { requireActiveClientSession } from "@/lib/require-client-session";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(request: NextRequest) {
-  const session = getClientSessionFromRequest(request);
-  if (!session) {
-    return NextResponse.json({ success: false, error: "Not logged in" }, { status: 401 });
-  }
+  const gate = await requireActiveClientSession(request);
+  if (!gate.ok) return gate.response;
 
   const { getDb } = await import("@/lib/firebase-admin");
   const db = getDb();
@@ -17,7 +15,7 @@ export async function GET(request: NextRequest) {
   }
 
   const { getReceiptWebsiteUrl } = await import("@/lib/receipt-barcode");
-  const payload = await getClientPurchasesPayload(db, session.email, getReceiptWebsiteUrl());
+  const payload = await getClientPurchasesPayload(db, gate.email, getReceiptWebsiteUrl());
 
   return NextResponse.json({ success: true, ...payload });
 }

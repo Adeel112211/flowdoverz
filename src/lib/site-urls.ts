@@ -77,6 +77,17 @@ export function getCookieDomain(): string | undefined {
   return domain || undefined;
 }
 
+/** Browser session cookie — cleared when the browser is closed. */
+export function clientSessionCookieOptions() {
+  return {
+    path: "/",
+    sameSite: "lax" as const,
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    ...(getCookieDomain() ? { domain: getCookieDomain() } : {}),
+  };
+}
+
 export function sessionCookieOptions(maxAge: number) {
   return {
     path: "/",

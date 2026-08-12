@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AuthBridge } from "@/components/auth-bridge";
 import { AuthPageBackground } from "@/components/auth-page-background";
@@ -17,6 +17,13 @@ export function LoginPage() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const session = useClientSession();
+
+  useEffect(() => {
+    const notice = window.sessionStorage.getItem("flowdoverz_session_notice");
+    if (!notice) return;
+    window.sessionStorage.removeItem("flowdoverz_session_notice");
+    setError(notice);
+  }, []);
 
   async function handleSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();

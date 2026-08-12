@@ -1,19 +1,17 @@
 import { NextResponse } from "next/server";
-import { getClientSessionFromCookies } from "@/lib/client-session";
 import { getDb } from "@/lib/firebase-admin";
+import { requireActiveClientSession } from "@/lib/require-client-session";
 
 export async function GET() {
-  const session = await getClientSessionFromCookies();
-  if (!session) {
-    return NextResponse.json({ success: false, error: "Not logged in" }, { status: 401 });
-  }
+  const gate = await requireActiveClientSession();
+  if (!gate.ok) return gate.response;
 
   const db = getDb();
   if (!db) {
     return NextResponse.json({ success: false, error: "Database not configured." }, { status: 503 });
   }
 
-  const userDoc = await db.collection("users").doc(session.email).get();
+  const userDoc = await db.collection("users").doc(gate.email).get();
   if (!userDoc.exists) {
     return NextResponse.json({ success: false, error: "User not found" }, { status: 404 });
   }
@@ -22,9 +20,9 @@ export async function GET() {
   return NextResponse.json({
     success: true,
     user: {
-      email: session.email,
-      name: String(user.name || session.email.split("@")[0] || "Member"),
-      sid: session.sid,
+      email: gate.email,
+      name: String(user.name || gate.email.split("@")[0] || "Member"),
+      sid: gate.sid,
     },
   });
 }

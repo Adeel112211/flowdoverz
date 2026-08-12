@@ -3,7 +3,7 @@ import { getDb } from "./firebase-admin";
 import { validateSignupEmail } from "./signup-email-policy";
 import { getSignupSecuritySettings } from "./signup-security";
 import { getSystemSettings } from "./admin-settings";
-import { createClientSession } from "./client-session";
+import { createClientSession, maxClientSessionsForPlan } from "./client-session";
 
 export type StoredUser = {
   email: string;
@@ -72,8 +72,159 @@ export async function isClientNameTaken(
 }
 
 export function makeSid(email: string) {
-  return createClientSession(email);
+  return createClientSession(email).sid;
 }
+
+/** Solo / trial stay locked to one live browser. Abandoned sessions free after this. */
+const SINGLE_DEVICE_STALE_MS = 45 * 60 * 1000;
+
+function singleDeviceBlockedMessage(plan: string) {
+  const normalized = String(plan || "").toLowerCase();
+  if (normalized === "solo" || normalized === "studio" || normalized === "nano") {
+    return "This email has an active Solo plan and cannot be used on multiple devices. Sign out on the other device, browser, or profile first.";
+  }
+  return "This email has an active trial and cannot be used on multiple devices. Sign out on the other device, browser, or profile first.";
+}
+
+function isSingleDeviceAccount(data: Record<string, unknown>) {
+  const plan = String(data.subscriptionPlan || "none").toLowerCase();
+  if (plan === "team") return false;
+  if (plan === "solo" || plan === "studio" || plan === "nano" || plan === "trial") return true;
+  const trialExpiresAt = data.trialExpiresAt ? new Date(String(data.trialExpiresAt)).getTime() : 0;
+  return Number.isFinite(trialExpiresAt) && trialExpiresAt > Date.now();
+}
+
+function sessionLooksLive(data: Record<string, unknown>) {
+  const stamp = String(data.lastClientSeenAt || data.activeClientSessionAt || "");
+  const at = Date.parse(stamp);
+  if (!Number.isFinite(at)) return true;
+  return Date.now() - at < SINGLE_DEVICE_STALE_MS;
+}
+
+/**
+ * Claim a browser seat.
+ * Solo/trial: reject if another device is already signed in.
+ * Team: up to 3 browsers.
+ */
+export async function claimClientSession(
+  email: string,
+  sessionId: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const db = getDb();
+  if (!db || !sessionId) return { ok: false, error: "Database not configured." };
+
+  const normalized = normalizeEmail(email);
+  const userRef = db.collection("users").doc(normalized);
+  const snap = await userRef.get();
+  if (!snap.exists) return { ok: false, error: "User not found." };
+
+  const data = (snap.data() || {}) as Record<string, unknown>;
+  const plan = String(data.subscriptionPlan || "none");
+  const nowIso = new Date().toISOString();
+  const singleDevice = isSingleDeviceAccount(data);
+
+  const previous = Array.isArray(data.activeClientSessionIds)
+    ? data.activeClientSessionIds.map(String).filter(Boolean)
+    : data.activeClientSessionId
+      ? [String(data.activeClientSessionId)]
+      : [];
+
+  if (singleDevice) {
+    const currentId = previous[0] || (data.activeClientSessionId ? String(data.activeClientSessionId) : "");
+    if (currentId && currentId !== sessionId && sessionLooksLive(data)) {
+      return { ok: false, error: singleDeviceBlockedMessage(plan) };
+    }
+
+    await userRef.set(
+      {
+        activeClientSessionId: sessionId,
+        activeClientSessionIds: [sessionId],
+        activeClientSessionAt: nowIso,
+        lastClientSeenAt: nowIso,
+      },
+      { merge: true },
+    );
+    return { ok: true };
+  }
+
+  const max = maxClientSessionsForPlan(plan);
+  if (previous.includes(sessionId)) {
+    await userRef.set({ lastClientSeenAt: nowIso }, { merge: true });
+    return { ok: true };
+  }
+
+  if (previous.length >= max) {
+    return {
+      ok: false,
+      error: `This Team plan already has ${max} active browsers. Sign out on another device first.`,
+    };
+  }
+
+  const next = [sessionId, ...previous];
+  await userRef.set(
+    {
+      activeClientSessionId: next[0] || sessionId,
+      activeClientSessionIds: next,
+      activeClientSessionAt: nowIso,
+      lastClientSeenAt: nowIso,
+    },
+    { merge: true },
+  );
+  return { ok: true };
+}
+
+export async function bindActiveClientSession(email: string, sessionId: string) {
+  await claimClientSession(email, sessionId);
+}
+
+export async function touchClientSessionActivity(email: string) {
+  const db = getDb();
+  if (!db) return;
+  await db.collection("users").doc(normalizeEmail(email)).set(
+    { lastClientSeenAt: new Date().toISOString() },
+    { merge: true },
+  );
+}
+
+/** Returns false when this browser is not the allowed Solo/trial session. */
+export async function isActiveClientSession(
+  email: string,
+  sessionId: string,
+): Promise<boolean> {
+  const db = getDb();
+  if (!db || !sessionId) return false;
+
+  const snap = await db.collection("users").doc(normalizeEmail(email)).get();
+  if (!snap.exists) return false;
+
+  const data = (snap.data() || {}) as Record<string, unknown>;
+  const plan = String(data.subscriptionPlan || "none");
+  const max = maxClientSessionsForPlan(plan);
+  const singleDevice = isSingleDeviceAccount(data);
+  const ids = Array.isArray(data.activeClientSessionIds)
+    ? data.activeClientSessionIds.map(String)
+    : data.activeClientSessionId
+      ? [String(data.activeClientSessionId)]
+      : [];
+
+  if (ids.length === 0) {
+    const claimed = await claimClientSession(email, sessionId);
+    return claimed.ok;
+  }
+
+  if (singleDevice || max <= 1) {
+    const ok = ids[0] === sessionId || data.activeClientSessionId === sessionId;
+    if (ok) void touchClientSessionActivity(email);
+    return Boolean(ok);
+  }
+
+  const ok = ids.includes(sessionId);
+  if (ok) void touchClientSessionActivity(email);
+  return ok;
+}
+
+export const SESSION_REPLACED_MESSAGE =
+  "This email has an active Solo plan and cannot be used on multiple devices. Sign out on the other device first.";
 
 function hashPassword(password: string, salt: string) {
   return scryptSync(password, salt, 64).toString("hex");
@@ -164,13 +315,19 @@ export async function registerClientUser(
     await recordTrialIpUsage(signupIp, emailCheck.email);
   }
 
+  const created = createClientSession(emailCheck.email);
+  const claimed = await claimClientSession(emailCheck.email, created.sessionId);
+  if (!claimed.ok) {
+    return { ok: false, error: claimed.error };
+  }
+
   return {
     ok: true,
     trialGranted,
     user: {
       email: emailCheck.email,
       name: displayName,
-      sid: makeSid(emailCheck.email),
+      sid: created.sid,
     },
   };
 }
@@ -322,7 +479,10 @@ export async function updateUserPasswordByAdmin(
 export async function authenticateUser(
   email: string,
   password: string,
-): Promise<{ ok: true; user: { email: string; name: string; sid: string } } | { ok: false; error: string }> {
+): Promise<
+  | { ok: true; user: { email: string; name: string; sid: string } }
+  | { ok: false; error: string; code?: string }
+> {
   const db = getDb();
   if (!db) {
     return { ok: false, error: "Database not configured." };
@@ -344,12 +504,18 @@ export async function authenticateUser(
     return { ok: false, error: "Invalid email or password." };
   }
 
+  const created = createClientSession(user.email);
+  const claimed = await claimClientSession(user.email, created.sessionId);
+  if (!claimed.ok) {
+    return { ok: false, error: claimed.error, code: "MULTI_DEVICE_BLOCKED" };
+  }
+
   return {
     ok: true,
     user: {
       email: user.email,
       name: user.name,
-      sid: makeSid(user.email),
+      sid: created.sid,
     },
   };
 }

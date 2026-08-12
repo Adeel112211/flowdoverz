@@ -1,23 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getClientSessionFromCookies } from "@/lib/client-session";
 import { getDb } from "@/lib/firebase-admin";
 import { sendPaymentPendingEmail, sendAdminNotificationEmail } from "@/lib/email";
 import { senderPaymentLabel, SENDER_PAYMENT_OPTIONS } from "@/lib/sender-payment-options";
 import { CHECKOUT_PAYMENT_METHODS } from "@/lib/payment-methods-config";
 import { validateSenderAccountNumber } from "@/lib/sender-account-validation";
+import { requireActiveClientSession } from "@/lib/require-client-session";
 import { getPlanActivationBlock } from "@/lib/user-store";
 
 export async function POST(request: NextRequest) {
   try {
-    const session = await getClientSessionFromCookies();
-    if (!session) {
-      return NextResponse.json(
-        { success: false, code: "NOT_LOGGED_IN", error: "You must be signed in to purchase a plan." },
-        { status: 401 }
-      );
-    }
+    const gate = await requireActiveClientSession();
+    if (!gate.ok) return gate.response;
 
-    const email = session.email;
+    const email = gate.email;
 
     const db = getDb();
     if (!email || !db) {

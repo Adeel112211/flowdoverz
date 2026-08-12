@@ -586,10 +586,15 @@ export function DashboardPage() {
                       <MonitorSmartphone size={24} />
                     </div>
                     <div>
-                      <p className="text-sm font-bold tracking-wide uppercase text-slate-400 mb-1">Device Logins</p>
-                      <p className="text-2xl font-black text-white">
-                        1 <span className="text-slate-500 text-lg">/ {maxDevices}</span>
-                      </p>
+                  <p className="text-sm font-bold tracking-wide uppercase text-slate-400 mb-1">Device Logins</p>
+                  <p className="text-2xl font-black text-white">
+                    1 <span className="text-slate-500 text-lg">/ {maxDevices}</span>
+                  </p>
+                  <p className="mt-1 text-xs text-slate-500">
+                    {maxDevices === 1
+                      ? "Solo: one browser at a time"
+                      : "Team: up to 3 browsers"}
+                  </p>
                     </div>
                   </div>
                 </div>

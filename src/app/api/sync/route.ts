@@ -71,6 +71,32 @@ export async function GET(request: NextRequest) {
     );
   }
 
+  const sidValue = cookieStore.get(CLIENT_SID_COOKIE)?.value;
+  const verified = verifyClientSession(sidValue);
+  if (!verified?.sessionId) {
+    return NextResponse.json(
+      {
+        success: false,
+        code: "NOT_LOGGED_IN",
+        message: "Sign in on the FlowDoverz login page first.",
+      },
+      { status: 401 },
+    );
+  }
+
+  const { isActiveClientSession, SESSION_REPLACED_MESSAGE } = await import("@/lib/user-store");
+  const sessionOk = await isActiveClientSession(email, verified.sessionId);
+  if (!sessionOk) {
+    return NextResponse.json(
+      {
+        success: false,
+        code: "SESSION_REPLACED",
+        message: SESSION_REPLACED_MESSAGE,
+      },
+      { status: 401 },
+    );
+  }
+
   const { getUserStatus, resolveBillingPresentation } = await import("@/lib/user-store");
   const status = await getUserStatus(email);
 

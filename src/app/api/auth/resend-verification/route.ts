@@ -7,7 +7,7 @@ import {
   clientIpFromRequest,
   getSignupSecuritySettings,
 } from "@/lib/signup-security";
-import { getClientSessionFromCookies } from "@/lib/client-session";
+import { requireActiveClientSession } from "@/lib/require-client-session";
 
 export async function POST(request: NextRequest) {
   const security = await getSignupSecuritySettings();
@@ -20,12 +20,10 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const session = await getClientSessionFromCookies();
-  if (!session) {
-    return NextResponse.json({ success: false, error: "Sign in first." }, { status: 401 });
-  }
+  const gate = await requireActiveClientSession();
+  if (!gate.ok) return gate.response;
 
-  const email = normalizeEmail(session.email);
+  const email = normalizeEmail(gate.email);
   const db = getDb();
   if (!db) {
     return NextResponse.json({ success: false, error: "Database not configured." }, { status: 503 });
