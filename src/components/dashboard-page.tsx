@@ -47,7 +47,6 @@ export function DashboardPage() {
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [extensionDownloadUrl, setExtensionDownloadUrl] = useState<string | null>(null);
   const [extensionVersion, setExtensionVersion] = useState<string | null>(null);
-  const [chromeStoreUrl, setChromeStoreUrl] = useState<string | null>(null);
   const [showInstallGuide, setShowInstallGuide] = useState(false);
   const [installSteps, setInstallSteps] = useState<string[]>([]);
   const [mobileInstallSteps, setMobileInstallSteps] = useState<string[]>([]);
@@ -117,7 +116,6 @@ export function DashboardPage() {
         if (data.success) {
           setExtensionDownloadUrl(data.extension.downloadUrl);
           setExtensionVersion(data.extension.activeVersion);
-          setChromeStoreUrl(data.extension.chromeStoreUrl || null);
           setInstallSteps(data.extension.installSteps || []);
           setMobileInstallSteps(data.extension.mobileInstallSteps || []);
         }
@@ -690,8 +688,6 @@ export function DashboardPage() {
             open={showInstallGuide}
             onClose={() => setShowInstallGuide(false)}
             extensionVersion={extensionVersion}
-            chromeStoreUrl={chromeStoreUrl}
-            // Future: pass onOpenExtensionsPage={() => { ... }} when ready
           />,
           document.body
         )}

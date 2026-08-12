@@ -8,6 +8,18 @@ const nextConfig: NextConfig = {
     "jwks-rsa",
     "jose",
   ],
+  async headers() {
+    return [
+      {
+        source: "/install/:path*",
+        headers: [
+          { key: "Content-Disposition", value: "inline" },
+          { key: "X-Content-Type-Options", value: "nosniff" },
+          { key: "Accept-Ranges", value: "bytes" },
+        ],
+      },
+    ];
+  },
 };
 
 export default nextConfig;
