@@ -8,12 +8,16 @@ type AdminLiveRefreshOptions = {
   pauseWhenHidden?: boolean;
 };
 
+/**
+ * Light live refresh for admin pages.
+ * Default: every 60s, paused while the tab is hidden.
+ */
 export function useAdminLiveRefresh(
   refresh: () => void | Promise<void>,
   deps: unknown[] = [],
   options: AdminLiveRefreshOptions = {},
 ) {
-  const { intervalMs = 10000, enabled = true, pauseWhenHidden = true } = options;
+  const { intervalMs = 60_000, enabled = true, pauseWhenHidden = true } = options;
   const refreshRef = useRef(refresh);
   refreshRef.current = refresh;
 

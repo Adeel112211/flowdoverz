@@ -62,7 +62,7 @@ export async function POST(request: NextRequest) {
     },
   });
 
-  response.cookies.set(CLIENT_SID_COOKIE, result.user.sid, sessionCookieOptions(60 * 60 * 24 * 30));
+  response.cookies.set(CLIENT_SID_COOKIE, result.user.sid, sessionCookieOptions(60 * 60 * 24));
 
   return response;
 }

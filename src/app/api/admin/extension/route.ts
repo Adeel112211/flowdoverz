@@ -81,6 +81,15 @@ export async function POST(request: NextRequest) {
         );
       }
 
+      try {
+        const { assertSafeExtensionZip } = await import("@/lib/extension-zip-guard");
+        assertSafeExtensionZip(zipBuffer);
+      } catch (guardError) {
+        const message =
+          guardError instanceof Error ? guardError.message : "ZIP failed safety checks.";
+        return NextResponse.json({ success: false, error: message }, { status: 400 });
+      }
+
       const config = await uploadExtensionRelease({
         version,
         versionName: versionName || undefined,

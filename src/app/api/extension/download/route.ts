@@ -20,10 +20,11 @@ export async function GET(request: NextRequest) {
   return new NextResponse(new Uint8Array(payload.buffer), {
     status: 200,
     headers: {
-      "Content-Type": "application/zip",
-      "Content-Disposition": `attachment; filename="${payload.fileName || "flowdoverz-extension.zip"}"`,
+      "Content-Type": "application/octet-stream",
+      "Content-Disposition": `inline; filename="${payload.fileName || "flowdoverz-extension.zip"}"`,
       "Content-Length": String(payload.buffer.length),
       "Cache-Control": "no-store",
+      "X-Content-Type-Options": "nosniff",
     },
   });
 }

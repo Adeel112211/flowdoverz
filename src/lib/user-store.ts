@@ -362,6 +362,8 @@ export async function getUserStatus(email: string): Promise<{
   subscriptionPlan: string;
   subscriptionExpiresAt: string | null;
   emailVerified: boolean;
+  extensionTampered: boolean;
+  extensionTamperMessage: string | null;
 } | null> {
   const db = getDb();
   if (!db) return null;
@@ -371,7 +373,11 @@ export async function getUserStatus(email: string): Promise<{
   
   if (!userDoc.exists) return null;
   
-  const user = userDoc.data() as StoredUser;
+  const user = userDoc.data() as StoredUser & {
+    extensionTampered?: boolean;
+    extensionTamperMessage?: string | null;
+    extensionTamperedAt?: string | null;
+  };
   const now = new Date();
   const emailVerified = user.emailVerified !== false;
 
@@ -382,6 +388,9 @@ export async function getUserStatus(email: string): Promise<{
       ? new Date(user.subscriptionExpiresAt) > now
       : false;
 
+  // Sticky until cleared: extension removed, healthy official bridge, or successful sync.
+  const extensionTampered = user.extensionTampered === true;
+
   return {
     active: trialActive || subscriptionActive,
     trialActive,
@@ -390,7 +399,41 @@ export async function getUserStatus(email: string): Promise<{
     subscriptionPlan: user.subscriptionPlan || "none",
     subscriptionExpiresAt: user.subscriptionExpiresAt || null,
     emailVerified,
+    extensionTampered,
+    extensionTamperMessage: extensionTampered ? user.extensionTamperMessage || null : null,
   };
+}
+
+/** Flag account when a modified / unprotected extension is detected. */
+export async function markExtensionTampered(email: string, message?: string) {
+  const db = getDb();
+  if (!db) return;
+  const normalized = normalizeEmail(email);
+  await db.collection("users").doc(normalized).set(
+    {
+      extensionTampered: true,
+      extensionTamperedAt: new Date().toISOString(),
+      extensionTamperMessage:
+        String(message || "").trim() ||
+        "Modified extension detected. Download and reinstall the official FlowDoverz build.",
+    },
+    { merge: true },
+  );
+}
+
+/** Clear tamper flag after a successful official sync. */
+export async function clearExtensionTampered(email: string) {
+  const db = getDb();
+  if (!db) return;
+  const normalized = normalizeEmail(email);
+  await db.collection("users").doc(normalized).set(
+    {
+      extensionTampered: false,
+      extensionTamperedAt: null,
+      extensionTamperMessage: null,
+    },
+    { merge: true },
+  );
 }
 
 export type PlanActivationBlock = {

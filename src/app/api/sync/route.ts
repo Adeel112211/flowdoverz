@@ -32,6 +32,34 @@ export async function GET(request: NextRequest) {
   const cookieStore = await cookies();
   const email = resolveSessionEmail(cookieStore.get(CLIENT_SID_COOKIE)?.value);
 
+  // Require challenge proof of real official file bytes (+ live function attestation).
+  const { validateExtensionIntegrityHeaders } = await import("@/lib/extension-build");
+  const integrityCheck = validateExtensionIntegrityHeaders({
+    integrity: request.headers.get("x-extension-integrity"),
+    challenge: request.headers.get("x-extension-challenge"),
+    proof: request.headers.get("x-extension-proof"),
+  });
+  if (!integrityCheck.ok) {
+    // Flag the account so Dashboard can show "reinstall official" guidance.
+    if (email) {
+      try {
+        const { markExtensionTampered } = await import("@/lib/user-store");
+        await markExtensionTampered(email, integrityCheck.message);
+      } catch {
+        // non-blocking
+      }
+    }
+    // 409 (not 403) so clients never mistake this for subscription expired.
+    return NextResponse.json(
+      {
+        success: false,
+        code: integrityCheck.code,
+        message: integrityCheck.message,
+      },
+      { status: 409 },
+    );
+  }
+
   if (!email) {
     return NextResponse.json(
       {
@@ -124,10 +152,14 @@ export async function GET(request: NextRequest) {
     const { getDb } = await import("@/lib/firebase-admin");
     const db = getDb();
     if (db) {
+      // Official integrity already passed above — clear any stale tamper flag.
       await db.collection("users").doc(email).set(
         {
           lastSyncAt: now.toISOString(),
           lastSyncSlot: slot,
+          extensionTampered: false,
+          extensionTamperedAt: null,
+          extensionTamperMessage: null,
           ...(extensionVersion ? { extensionVersion } : {}),
         },
         { merge: true },

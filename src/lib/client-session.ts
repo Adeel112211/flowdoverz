@@ -3,7 +3,7 @@ import { cookies } from "next/headers";
 import type { NextRequest } from "next/server";
 
 export const CLIENT_SID_COOKIE = "flowdoverz_sid";
-const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+const SESSION_TTL_MS = 24 * 60 * 60 * 1000;
 
 function sessionSecret(): string {
   const configured = process.env.FLOWBRIDGE_SESSION_SECRET?.trim();

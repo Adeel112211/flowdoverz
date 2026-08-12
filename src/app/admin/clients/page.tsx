@@ -31,7 +31,6 @@ import { useAdminToast } from "@/components/admin-toast";
 import { AdminPageLayout } from "@/components/admin-page-layout";
 import { ClientMobileCard } from "@/components/admin-mobile-cards";
 import { useAdminLiveRefresh } from "@/hooks/use-admin-live-refresh";
-
 type Client = {
   email: string;
   name?: string;

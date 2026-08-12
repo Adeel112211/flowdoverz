@@ -24,7 +24,6 @@ import { PaymentMobileCard } from "@/components/admin-mobile-cards";
 import { senderPaymentLabel } from "@/lib/sender-payment-options";
 import { payToMethodDisplayLabel } from "@/lib/payment-methods-config";
 import { useAdminLiveRefresh } from "@/hooks/use-admin-live-refresh";
-
 type Payment = {
   id: string;
   userEmail: string;

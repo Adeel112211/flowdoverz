@@ -257,7 +257,7 @@ export function AdminExtensionEditor({
                 className={inputClass}
                 value={config.chromeStoreUrl || ""}
                 onChange={(e) => onChange({ ...config, chromeStoreUrl: e.target.value })}
-                placeholder="https://chrome.google.com/webstore/..."
+                placeholder="https://chromewebstore.google.com/detail/your-extension-id"
               />
             </div>
             </div>

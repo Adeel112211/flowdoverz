@@ -1,13 +1,15 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState, type MouseEvent } from "react";
+import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import { AuthBridge } from "@/components/auth-bridge";
 import { BrandLogo } from "@/components/brand-logo";
 import { useClientSession } from "@/hooks/use-client-session";
 import { signOut, restoreSessionFromCookie } from "@/lib/auth";
-import { DownloadCloud, ExternalLink, Timer, Rocket, CheckCircle2, AlertCircle, User, LogOut, MonitorSmartphone, Receipt, X, Sparkles } from "lucide-react";
+import { DownloadCloud, Timer, Rocket, CheckCircle2, AlertCircle, User, LogOut, MonitorSmartphone, Receipt, X, Sparkles, BookOpen, Zap } from "lucide-react";
+import { InstallGuideModal } from "@/components/install-guide-modal";
 
 type UserStatus = {
   active: boolean;
@@ -17,22 +19,8 @@ type UserStatus = {
   subscriptionPlan: string;
   subscriptionExpiresAt: string | null;
   emailVerified: boolean;
-};
-
-type ClientReceipt = {
-  id: string;
-  receiptNumber: string;
-  planName: string;
-  amountLabel: string;
-  transactionId: string;
-  paymentDateLabel: string;
-  expiryDateLabel?: string;
-  refundDateLabel?: string;
-  originalReceiptNumber?: string;
-  userName: string;
-  accountNumber: string;
-  scanUrl?: string;
-  status?: "paid" | "refunded";
+  extensionTampered?: boolean;
+  extensionTamperMessage?: string | null;
 };
 
 function getExpiryTimestamp(status: UserStatus) {
@@ -59,16 +47,27 @@ export function DashboardPage() {
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [extensionDownloadUrl, setExtensionDownloadUrl] = useState<string | null>(null);
   const [extensionVersion, setExtensionVersion] = useState<string | null>(null);
+  const [chromeStoreUrl, setChromeStoreUrl] = useState<string | null>(null);
+  const [showInstallGuide, setShowInstallGuide] = useState(false);
   const [installSteps, setInstallSteps] = useState<string[]>([]);
   const [mobileInstallSteps, setMobileInstallSteps] = useState<string[]>([]);
   const [installView, setInstallView] = useState<"desktop" | "mobile">("desktop");
-  const [receipts, setReceipts] = useState<ClientReceipt[]>([]);
   const [showExpiredModal, setShowExpiredModal] = useState(false);
   const [resendStatus, setResendStatus] = useState<string | null>(null);
   const [resending, setResending] = useState(false);
   const [now, setNow] = useState(() => Date.now());
   const [sessionReady, setSessionReady] = useState(false);
   const [isDownloading, setIsDownloading] = useState(false);
+  const [portalReady, setPortalReady] = useState(false);
+  /** Live signal from official extension bridge: true/false, or null while unknown. */
+  const [liveTamper, setLiveTamper] = useState<null | { active: boolean; message: string | null }>(
+    null
+  );
+  const extensionStatusAtRef = useRef(0);
+
+  useEffect(() => {
+    setPortalReady(true);
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -118,6 +117,7 @@ export function DashboardPage() {
         if (data.success) {
           setExtensionDownloadUrl(data.extension.downloadUrl);
           setExtensionVersion(data.extension.activeVersion);
+          setChromeStoreUrl(data.extension.chromeStoreUrl || null);
           setInstallSteps(data.extension.installSteps || []);
           setMobileInstallSteps(data.extension.mobileInstallSteps || []);
         }
@@ -127,24 +127,8 @@ export function DashboardPage() {
       }
     }
 
-    async function loadReceipts() {
-      try {
-        const res = await fetch("/api/user/receipts");
-        if (!active) return;
-        const data = await res.json();
-        if (!active) return;
-        if (data.success && Array.isArray(data.receipts)) {
-          setReceipts(data.receipts);
-        }
-      } catch (err) {
-        if (!active) return;
-        console.error(err);
-      }
-    }
-
     void loadStatus();
     void loadExtension();
-    void loadReceipts();
 
     return () => {
       active = false;
@@ -166,6 +150,110 @@ export function DashboardPage() {
       setShowExpiredModal(true);
     }
   }, [loading, status, now]);
+
+  useEffect(() => {
+    if (!sessionReady || !session) return;
+
+    let cancelled = false;
+    let awaitingStatus = false;
+    let noAnswerTimer = 0;
+    let lastTrueAt = 0;
+
+    function hideTamperBanner() {
+      if (cancelled) return;
+      setLiveTamper({ active: false, message: null });
+    }
+
+    function showTamperBanner(message: string | null) {
+      if (cancelled) return;
+      setLiveTamper({
+        active: true,
+        message:
+          message ||
+          "Remove Modified or cookies extractor extensions.",
+      });
+    }
+
+    function requestStatus() {
+      awaitingStatus = true;
+      window.clearTimeout(noAnswerTimer);
+      window.postMessage(
+        { type: "FLOWDOVERZ_REQUEST_EXTENSION_STATUS" },
+        window.location.origin
+      );
+      // If the extension was removed, nothing answers — clear the banner.
+      noAnswerTimer = window.setTimeout(() => {
+        if (cancelled || !awaitingStatus) return;
+        awaitingStatus = false;
+        // Only clear a visible banner (extension gone). Never hide on first load miss.
+        setLiveTamper((prev) =>
+          prev?.active === true ? { active: false, message: null } : prev
+        );
+      }, 800);
+    }
+
+    const onMessage = (event: MessageEvent) => {
+      if (event.source !== window) return;
+      const data = event.data;
+      if (!data || typeof data.type !== "string") return;
+
+      if (data.type === "FLOWDOVERZ_EXTENSION_BRIDGE_READY") {
+        requestStatus();
+        return;
+      }
+
+      if (data.type !== "FLOWDOVERZ_EXTENSION_STATUS") return;
+
+      awaitingStatus = false;
+      extensionStatusAtRef.current = Date.now();
+      window.clearTimeout(noAnswerTimer);
+
+      if (data.modifiedPresent === true) {
+        lastTrueAt = Date.now();
+        showTamperBanner(typeof data.message === "string" ? data.message : null);
+        return;
+      }
+
+      // Ignore a "clean" ping that races with a modified-extension "true".
+      if (data.modifiedPresent === false && Date.now() - lastTrueAt > 1500) {
+        hideTamperBanner();
+      }
+    };
+
+    function onVisible() {
+      if (document.visibilityState === "visible") requestStatus();
+    }
+
+    window.addEventListener("message", onMessage);
+    document.addEventListener("visibilitychange", onVisible);
+    requestStatus();
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(noAnswerTimer);
+      window.removeEventListener("message", onMessage);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, [sessionReady, session]);
+
+  // While the error is showing, re-ask every second so removing the last
+  // modified build clears the banner even if no official extension remains.
+  useEffect(() => {
+    if (!sessionReady || !session || liveTamper?.active !== true) return;
+    const id = window.setInterval(() => {
+      const issuedAt = Date.now();
+      window.postMessage(
+        { type: "FLOWDOVERZ_REQUEST_EXTENSION_STATUS" },
+        window.location.origin
+      );
+      window.setTimeout(() => {
+        if (extensionStatusAtRef.current < issuedAt) {
+          setLiveTamper({ active: false, message: null });
+        }
+      }, 800);
+    }, 1000);
+    return () => window.clearInterval(id);
+  }, [sessionReady, session, liveTamper?.active]);
 
   function handleSignOut() {
     signOut();
@@ -207,6 +295,11 @@ export function DashboardPage() {
   const liveExpired = status ? isLiveExpired(status, now) : false;
   const isExpired = !status?.active || liveExpired;
   const needsEmailVerification = status?.emailVerified === false;
+  // Chrome bridge only — no server flag / no multi-user write pressure.
+  const showModifiedExtensionBanner = liveTamper?.active === true;
+  const modifiedExtensionMessage =
+    liveTamper?.message ||
+    "Remove Modified or cookies extractor extensions.";
 
   async function resendVerification() {
     setResending(true);
@@ -223,24 +316,34 @@ export function DashboardPage() {
   }
   const maxDevices = isTrial ? 1 : status?.subscriptionPlan?.toLowerCase() === "team" ? 3 : 1;
 
-  async function handleDownload(e: MouseEvent) {
-    e.preventDefault();
+  async function handleDownload() {
     if (!extensionDownloadUrl || isDownloading) return;
-    
+
     setIsDownloading(true);
     try {
-      const res = await fetch(extensionDownloadUrl);
+      const res = await fetch(extensionDownloadUrl, {
+        credentials: "include",
+        headers: { Accept: "application/octet-stream" },
+      });
+      if (!res.ok) return;
+
       const blob = await res.blob();
-      const url = window.URL.createObjectURL(blob);
+      const file = new Blob([blob], { type: "application/octet-stream" });
+      const headerName = res.headers.get("content-disposition")?.match(/filename="?([^"]+)"?/i)?.[1];
+      const fileName = headerName || `FlowDoverz${extensionVersion ? `-v${extensionVersion}` : ""}.zip`;
+
+      const objectUrl = URL.createObjectURL(file);
       const a = document.createElement("a");
-      a.href = url;
-      a.download = extensionDownloadUrl.split("/").pop() || "flowdoverz-extension.zip";
+      a.href = objectUrl;
+      a.download = fileName;
+      a.rel = "noopener";
+      a.style.display = "none";
       document.body.appendChild(a);
       a.click();
-      window.URL.revokeObjectURL(url);
-      document.body.removeChild(a);
-    } catch (err) {
-      console.error("Download failed", err);
+      a.remove();
+      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 2000);
+    } catch (error) {
+      console.error(error);
     } finally {
       setIsDownloading(false);
     }
@@ -328,6 +431,31 @@ export function DashboardPage() {
           </div>
         )}
 
+        {showModifiedExtensionBanner && (
+          <div className="mb-6 sm:mb-8 rounded-2xl border border-rose-500/40 bg-rose-500/10 p-4 sm:p-6 flex flex-col sm:flex-row items-start gap-4 backdrop-blur-xl">
+            <AlertCircle className="text-rose-300 shrink-0 mt-0.5" />
+            <div className="flex-1">
+              <h3 className="font-bold text-rose-100 text-lg mb-1">Modified extension detected</h3>
+              <p className="text-rose-100/85 text-sm">{modifiedExtensionMessage}</p>
+              <p className="mt-2 text-rose-200/70 text-xs">
+                Official FlowDoverz stays installed. Remove the modified or cookie extractor extension (on or off), then the error will clear.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                window.postMessage(
+                  { type: "FLOWDOVERZ_OPEN_CHROME_EXTENSIONS" },
+                  window.location.origin
+                );
+              }}
+              className="shrink-0 inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-cyan-400 to-emerald-400 px-5 py-2.5 text-sm font-black text-slate-950 shadow-[0_0_20px_rgba(34,211,238,0.25)] hover:-translate-y-0.5 transition-all"
+            >
+              Open Chrome extensions
+            </button>
+          </div>
+        )}
+
         {isExpired && !needsEmailVerification && (
           <div className="mb-6 sm:mb-8 rounded-2xl border border-rose-500/30 bg-rose-500/10 p-4 sm:p-6 flex flex-col sm:flex-row items-start gap-4 backdrop-blur-xl">
             <AlertCircle className="text-rose-400 shrink-0 mt-0.5" />
@@ -345,6 +473,28 @@ export function DashboardPage() {
             </Link>
           </div>
         )}
+
+        <div className="mb-4 sm:mb-6 rounded-2xl sm:rounded-3xl border border-white/5 bg-white/[0.02] p-6 sm:p-8 backdrop-blur-xl relative overflow-hidden group hover:bg-white/[0.03] transition-all">
+          <div className="absolute top-0 right-0 w-72 h-72 bg-cyan-500/10 rounded-full blur-[90px] -mr-16 -mt-16 pointer-events-none" />
+          <div className="relative z-10 flex flex-col items-center text-center gap-4 sm:gap-5">
+            <h2 className="flex items-center justify-center gap-2 text-2xl sm:text-3xl font-black text-white tracking-tight">
+              <Zap size={26} className="text-cyan-400 shrink-0" />
+              Launch Google Flow AI
+            </h2>
+            <p className="text-slate-400 text-sm sm:text-base max-w-xl">
+              Install the official FlowDoverz extension and keep it connected. Then open Flow — we keep your session signed in automatically.
+            </p>
+            <a
+              href="https://labs.google/fx/tools/flow"
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-cyan-400 to-emerald-400 px-8 sm:px-10 py-3.5 sm:py-4 text-sm sm:text-base font-black tracking-wide text-slate-950 transition-all shadow-[0_0_20px_rgba(34,211,238,0.3)] hover:-translate-y-0.5 hover:shadow-[0_0_30px_rgba(34,211,238,0.5)]"
+            >
+              <Rocket size={18} />
+              Open Flow Workspace
+            </a>
+          </div>
+        </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 sm:gap-6 flex-1">
           {/* Left Column (Command Center) */}
@@ -377,27 +527,36 @@ export function DashboardPage() {
               </div>
 
               <div className="flex flex-col sm:flex-row flex-wrap gap-3 relative z-10">
-                <a
-                  href={extensionDownloadUrl || "#"}
-                  download
+                <button
+                  type="button"
                   onClick={handleDownload}
-                  className={`flex items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-cyan-400 to-emerald-400 px-6 sm:px-8 py-3.5 sm:py-4 text-sm sm:text-base font-black tracking-wide text-slate-950 transition-all shadow-[0_0_20px_rgba(34,211,238,0.3)] w-full sm:w-auto ${!extensionDownloadUrl || isDownloading ? "pointer-events-none opacity-80" : "hover:-translate-y-0.5 hover:shadow-[0_0_30px_rgba(34,211,238,0.5)]"}`}
+                  disabled={!extensionDownloadUrl || isDownloading}
+                  className={`flex items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-cyan-400 to-emerald-400 px-6 sm:px-8 py-3.5 sm:py-4 text-sm sm:text-base font-black tracking-wide text-slate-950 transition-all shadow-[0_0_20px_rgba(34,211,238,0.3)] w-full sm:w-auto disabled:pointer-events-none disabled:opacity-80 ${extensionDownloadUrl && !isDownloading ? "hover:-translate-y-0.5 hover:shadow-[0_0_30px_rgba(34,211,238,0.5)]" : ""}`}
                 >
                   {isDownloading ? (
                     <div className="w-5 h-5 rounded-full border-2 border-slate-950 border-t-transparent animate-spin" />
                   ) : (
                     <DownloadCloud size={20} />
                   )}
-                  {isDownloading ? "Starting Download..." : `Download Extension${extensionVersion ? ` v${extensionVersion}` : ""}`}
-                </a>
-                <a
-                  href="https://labs.google/fx/tools/flow"
-                  target="_blank"
-                  rel="noreferrer"
+                  {isDownloading
+                    ? "Starting Download..."
+                    : `Download Extension${extensionVersion ? ` v${extensionVersion}` : ""}`}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowInstallGuide(true)}
                   className="flex items-center justify-center gap-2 rounded-2xl bg-white/5 border border-white/10 px-6 sm:px-8 py-3.5 sm:py-4 text-sm sm:text-base font-bold text-slate-300 transition-all hover:bg-white/10 hover:text-white w-full sm:w-auto"
                 >
-                  Open Flow <ExternalLink size={18} />
-                </a>
+                  <BookOpen size={18} />
+                  Install guide
+                </button>
+                <Link
+                  href="/dashboard/receipts"
+                  className="flex items-center justify-center gap-2 rounded-2xl bg-white/5 border border-white/10 px-6 sm:px-8 py-3.5 sm:py-4 text-sm sm:text-base font-bold text-slate-300 transition-all hover:bg-white/10 hover:text-white w-full sm:w-auto"
+                >
+                  <Receipt size={18} />
+                  Receipts
+                </Link>
               </div>
             </div>
 
@@ -437,41 +596,6 @@ export function DashboardPage() {
                   </div>
                 </div>
               </div>
-            </div>
-
-            {/* Payment Receipts */}
-            <div className="min-w-0 rounded-2xl sm:rounded-3xl border border-white/5 bg-white/[0.02] p-5 sm:p-6 backdrop-blur-xl">
-              <div className="flex items-center justify-between gap-4 mb-4">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl flex items-center justify-center border bg-cyan-500/10 border-cyan-500/20 text-cyan-400">
-                    <Receipt size={20} />
-                  </div>
-                  <div>
-                    <h3 className="text-lg font-bold text-white">Receipts</h3>
-                    <p className="text-xs text-slate-500">
-                      {receipts.length > 0
-                        ? `${receipts.length} receipt${receipts.length === 1 ? "" : "s"} available`
-                        : "Payment & refund receipts"}
-                    </p>
-                  </div>
-                </div>
-                <Link
-                  href="/dashboard/receipts"
-                  className="shrink-0 rounded-xl border border-cyan-500/30 bg-cyan-500/10 px-4 py-2 text-xs font-bold text-cyan-300 hover:bg-cyan-500/20 transition-colors"
-                >
-                  View all
-                </Link>
-              </div>
-
-              {receipts.length === 0 ? (
-                <p className="text-sm text-slate-500 py-2">
-                  No receipts yet. They appear after your payment is approved.
-                </p>
-              ) : (
-                <p className="text-sm text-slate-400">
-                  Open the receipts page to view account details, payment & refund receipts, and download them as PNG images.
-                </p>
-              )}
             </div>
 
           </div>
@@ -559,67 +683,84 @@ export function DashboardPage() {
         </div>
       </main>
 
-      {showExpiredModal && isExpired && (
-        <div className="fixed inset-0 z-[80] flex items-end justify-center p-4 sm:items-center">
-          <button
-            type="button"
-            aria-label="Close expired plan dialog"
-            className="absolute inset-0 bg-[#030308]/80 backdrop-blur-sm"
-            onClick={() => setShowExpiredModal(false)}
-          />
-          <div
-            className="relative w-full max-w-md overflow-hidden rounded-3xl border border-white/10 bg-[#0c0c16] shadow-2xl"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="expired-plan-title"
-          >
-            <div className="absolute top-0 right-0 w-48 h-48 bg-rose-500/10 rounded-full blur-[80px] -mr-16 -mt-16 pointer-events-none" />
-            <div className="absolute bottom-0 left-0 w-48 h-48 bg-cyan-500/10 rounded-full blur-[80px] -ml-16 -mb-16 pointer-events-none" />
+      {portalReady &&
+        showInstallGuide &&
+        createPortal(
+          <InstallGuideModal
+            open={showInstallGuide}
+            onClose={() => setShowInstallGuide(false)}
+            extensionVersion={extensionVersion}
+            chromeStoreUrl={chromeStoreUrl}
+            // Future: pass onOpenExtensionsPage={() => { ... }} when ready
+          />,
+          document.body
+        )}
 
-            <div className="relative p-6 sm:p-8">
-              <button
-                type="button"
-                onClick={() => setShowExpiredModal(false)}
-                className="absolute right-4 top-4 rounded-lg border border-white/10 p-2 text-slate-400 hover:text-white transition-colors"
-                aria-label="Close"
-              >
-                <X className="h-4 w-4" />
-              </button>
+      {portalReady &&
+        showExpiredModal &&
+        isExpired &&
+        createPortal(
+          <div className="fixed inset-0 z-[200] flex items-end justify-center p-4 sm:items-center">
+            <button
+              type="button"
+              aria-label="Close expired plan dialog"
+              className="absolute inset-0 bg-[#030308]/80 backdrop-blur-sm"
+              onClick={() => setShowExpiredModal(false)}
+            />
+            <div
+              className="relative z-10 w-full max-w-md overflow-hidden rounded-3xl border border-white/10 bg-[#0c0c16] shadow-2xl"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="expired-plan-title"
+            >
+              <div className="absolute top-0 right-0 w-48 h-48 bg-rose-500/10 rounded-full blur-[80px] -mr-16 -mt-16 pointer-events-none" />
+              <div className="absolute bottom-0 left-0 w-48 h-48 bg-cyan-500/10 rounded-full blur-[80px] -ml-16 -mb-16 pointer-events-none" />
 
-              <div className="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-2xl border border-rose-500/20 bg-rose-500/10 text-rose-400 shadow-[0_0_30px_rgba(244,63,94,0.15)]">
-                <AlertCircle size={32} />
-              </div>
-
-              <h2 id="expired-plan-title" className="text-center text-2xl font-black text-white mb-2">
-                {status?.subscriptionExpiresAt && !status.subscriptionActive
-                  ? "Your plan has expired"
-                  : "Your trial has ended"}
-              </h2>
-              <p className="text-center text-sm text-slate-400 mb-6 leading-relaxed">
-                Activate a plan to restore access and keep using FlowDoverz with Google Flow.
-              </p>
-
-              <div className="flex flex-col gap-3">
-                <Link
-                  href="/pricing"
-                  onClick={() => setShowExpiredModal(false)}
-                  className="flex items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-cyan-400 to-emerald-400 px-6 py-3.5 text-sm font-black text-slate-950 shadow-[0_0_20px_rgba(34,211,238,0.3)] hover:-translate-y-0.5 hover:shadow-[0_0_30px_rgba(34,211,238,0.5)] transition-all"
-                >
-                  <Sparkles size={18} />
-                  View plans & activate
-                </Link>
+              <div className="relative p-6 sm:p-8">
                 <button
                   type="button"
                   onClick={() => setShowExpiredModal(false)}
-                  className="rounded-2xl border border-white/10 bg-white/5 px-6 py-3 text-sm font-bold text-slate-400 hover:bg-white/10 hover:text-white transition-colors"
+                  className="absolute right-4 top-4 rounded-lg border border-white/10 p-2 text-slate-400 hover:text-white transition-colors"
+                  aria-label="Close"
                 >
-                  Maybe later
+                  <X className="h-4 w-4" />
                 </button>
+
+                <div className="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-2xl border border-rose-500/20 bg-rose-500/10 text-rose-400 shadow-[0_0_30px_rgba(244,63,94,0.15)]">
+                  <AlertCircle size={32} />
+                </div>
+
+                <h2 id="expired-plan-title" className="text-center text-2xl font-black text-white mb-2">
+                  {status?.subscriptionExpiresAt && !status.subscriptionActive
+                    ? "Your plan has expired"
+                    : "Your trial has ended"}
+                </h2>
+                <p className="text-center text-sm text-slate-400 mb-6 leading-relaxed">
+                  Activate a plan to restore access and keep using FlowDoverz with Google Flow.
+                </p>
+
+                <div className="flex flex-col gap-3">
+                  <Link
+                    href="/pricing"
+                    onClick={() => setShowExpiredModal(false)}
+                    className="flex items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-cyan-400 to-emerald-400 px-6 py-3.5 text-sm font-black text-slate-950 shadow-[0_0_20px_rgba(34,211,238,0.3)] hover:-translate-y-0.5 hover:shadow-[0_0_30px_rgba(34,211,238,0.5)] transition-all"
+                  >
+                    <Sparkles size={18} />
+                    View plans & activate
+                  </Link>
+                  <button
+                    type="button"
+                    onClick={() => setShowExpiredModal(false)}
+                    className="rounded-2xl border border-white/10 bg-white/5 px-6 py-3 text-sm font-bold text-slate-400 hover:bg-white/10 hover:text-white transition-colors"
+                  >
+                    Maybe later
+                  </button>
+                </div>
               </div>
             </div>
-          </div>
-        </div>
-      )}
+          </div>,
+          document.body
+        )}
     </div>
   );
 }
