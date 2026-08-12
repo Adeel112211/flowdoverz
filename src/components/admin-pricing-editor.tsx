@@ -72,7 +72,7 @@ function AccordionSection({
           isOpen ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0"
         }`}
       >
-        <div className="overflow-hidden">
+        <div className="min-h-0 overflow-hidden">
           <div className="space-y-4 border-t border-white/10 px-5 pb-6 pt-5 md:px-6 md:pb-7 md:pt-6">
             {children}
           </div>

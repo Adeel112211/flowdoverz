@@ -18,7 +18,8 @@ export function AdminPageLayout({
   const contentClass = lockScroll
     ? "flex min-h-0 flex-1 flex-col overflow-hidden overscroll-none pt-1 max-md:px-3 md:pt-2 md:px-0"
     : scrollContent
-      ? "admin-panel-scroll flex min-h-0 flex-1 flex-col overflow-x-hidden overflow-y-auto overscroll-contain pt-1 pb-4 max-md:px-3 max-md:pb-[max(1rem,env(safe-area-inset-bottom))] md:pt-2 md:pb-6 md:px-0"
+      ? // [&>*]:shrink-0 keeps tall panels from collapsing under overflow-hidden flex min-size rules
+        "admin-panel-scroll flex min-h-0 flex-1 flex-col overflow-x-hidden overflow-y-auto overscroll-contain pt-1 pb-4 max-md:px-3 max-md:pb-[max(1rem,env(safe-area-inset-bottom))] md:pt-2 md:pb-6 md:px-0 [&>*]:shrink-0"
       : "admin-panel-scroll flex min-h-0 flex-1 flex-col overflow-x-hidden overscroll-contain pt-1 max-md:overflow-y-auto max-md:px-3 max-md:pb-[max(1rem,env(safe-area-inset-bottom))] md:overflow-hidden md:pt-2 md:px-0";
 
   return (

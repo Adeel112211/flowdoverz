@@ -40,7 +40,7 @@ function SectionCard({
 }) {
   return (
     <section
-      className={`flex h-full flex-col rounded-xl border border-white/10 bg-[#080810] ${className}`}
+      className={`flex h-auto flex-col rounded-xl border border-white/10 bg-[#080810] lg:h-full ${className}`}
     >
       <div className="flex items-start gap-3 border-b border-white/10 px-5 py-4 md:px-6">
         <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-cyan-500/30 bg-cyan-500/10 text-cyan-400">

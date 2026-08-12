@@ -89,7 +89,9 @@ export function AdminPanel({
 }) {
   return (
     <div
-      className={`overflow-hidden rounded-2xl border border-white/10 bg-[#0F172A] p-6 sm:p-8 max-md:p-4 ${className}`}
+      // shrink-0: overflow-hidden flex children otherwise get min-height:0 and
+      // collapse to the viewport, clipping content so the page cannot scroll.
+      className={`shrink-0 overflow-hidden rounded-2xl border border-white/10 bg-[#0F172A] p-6 sm:p-8 max-md:p-4 ${className}`}
     >
       {children}
     </div>
