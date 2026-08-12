@@ -75,9 +75,6 @@ export function makeSid(email: string) {
   return createClientSession(email).sid;
 }
 
-/** Solo / trial stay locked to one live browser. Abandoned sessions free after this. */
-const SINGLE_DEVICE_STALE_MS = 45 * 60 * 1000;
-
 function singleDeviceBlockedMessage(plan: string) {
   const normalized = String(plan || "").toLowerCase();
   if (normalized === "solo" || normalized === "studio" || normalized === "nano") {
@@ -94,11 +91,73 @@ function isSingleDeviceAccount(data: Record<string, unknown>) {
   return Number.isFinite(trialExpiresAt) && trialExpiresAt > Date.now();
 }
 
-function sessionLooksLive(data: Record<string, unknown>) {
-  const stamp = String(data.lastClientSeenAt || data.activeClientSessionAt || "");
-  const at = Date.parse(stamp);
-  if (!Number.isFinite(at)) return true;
-  return Date.now() - at < SINGLE_DEVICE_STALE_MS;
+function readActiveSessionIds(data: Record<string, unknown>): string[] {
+  if (Array.isArray(data.activeClientSessionIds)) {
+    return data.activeClientSessionIds.map(String).filter(Boolean);
+  }
+  const legacy = data.activeClientSessionId ? String(data.activeClientSessionId) : "";
+  return legacy && legacy !== "null" && legacy !== "undefined" ? [legacy] : [];
+}
+
+/** Solo seat is held only while explicitly locked. Logout clears the lock instantly. */
+function isSoloSeatHeld(data: Record<string, unknown>): boolean {
+  if (data.clientSessionLock !== true) return false;
+  return readActiveSessionIds(data).length > 0;
+}
+
+/**
+ * Drop one browser seat. When no seats remain, clear activity stamps so
+ * Solo/trial accounts can sign in again immediately.
+ */
+export async function releaseClientSession(email: string, sessionId: string) {
+  const db = getDb();
+  if (!db || !sessionId) return;
+
+  const userRef = db.collection("users").doc(normalizeEmail(email));
+  const snap = await userRef.get();
+  if (!snap.exists) return;
+
+  const data = (snap.data() || {}) as Record<string, unknown>;
+
+  // Solo/trial: any logout frees the only seat immediately (no waiting period).
+  if (isSingleDeviceAccount(data)) {
+    await userRef.set(
+      {
+        activeClientSessionIds: [],
+        activeClientSessionId: null,
+        lastClientSeenAt: null,
+        activeClientSessionAt: null,
+        clientSessionLock: false,
+      },
+      { merge: true },
+    );
+    return;
+  }
+
+  const previous = readActiveSessionIds(data);
+  const next = previous.filter((id) => id !== sessionId);
+
+  if (next.length === 0) {
+    await userRef.set(
+      {
+        activeClientSessionIds: [],
+        activeClientSessionId: null,
+        lastClientSeenAt: null,
+        activeClientSessionAt: null,
+        clientSessionLock: false,
+      },
+      { merge: true },
+    );
+    return;
+  }
+
+  await userRef.set(
+    {
+      activeClientSessionIds: next,
+      activeClientSessionId: next[0] || null,
+    },
+    { merge: true },
+  );
 }
 
 /**
@@ -122,16 +181,13 @@ export async function claimClientSession(
   const plan = String(data.subscriptionPlan || "none");
   const nowIso = new Date().toISOString();
   const singleDevice = isSingleDeviceAccount(data);
-
-  const previous = Array.isArray(data.activeClientSessionIds)
-    ? data.activeClientSessionIds.map(String).filter(Boolean)
-    : data.activeClientSessionId
-      ? [String(data.activeClientSessionId)]
-      : [];
+  const previous = readActiveSessionIds(data);
 
   if (singleDevice) {
-    const currentId = previous[0] || (data.activeClientSessionId ? String(data.activeClientSessionId) : "");
-    if (currentId && currentId !== sessionId && sessionLooksLive(data)) {
+    const currentId = previous[0] || "";
+    // Same browser refreshing / reclaiming its own seat is always allowed.
+    // Other browsers are blocked only while clientSessionLock is explicitly on.
+    if (currentId && currentId !== sessionId && isSoloSeatHeld(data)) {
       return { ok: false, error: singleDeviceBlockedMessage(plan) };
     }
 
@@ -141,6 +197,7 @@ export async function claimClientSession(
         activeClientSessionIds: [sessionId],
         activeClientSessionAt: nowIso,
         lastClientSeenAt: nowIso,
+        clientSessionLock: true,
       },
       { merge: true },
     );
@@ -160,13 +217,14 @@ export async function claimClientSession(
     };
   }
 
-  const next = [sessionId, ...previous];
+  const next = [sessionId, ...previous.filter((id) => id !== sessionId)];
   await userRef.set(
     {
       activeClientSessionId: next[0] || sessionId,
       activeClientSessionIds: next,
       activeClientSessionAt: nowIso,
       lastClientSeenAt: nowIso,
+      clientSessionLock: true,
     },
     { merge: true },
   );
@@ -201,11 +259,7 @@ export async function isActiveClientSession(
   const plan = String(data.subscriptionPlan || "none");
   const max = maxClientSessionsForPlan(plan);
   const singleDevice = isSingleDeviceAccount(data);
-  const ids = Array.isArray(data.activeClientSessionIds)
-    ? data.activeClientSessionIds.map(String)
-    : data.activeClientSessionId
-      ? [String(data.activeClientSessionId)]
-      : [];
+  const ids = readActiveSessionIds(data);
 
   if (ids.length === 0) {
     const claimed = await claimClientSession(email, sessionId);

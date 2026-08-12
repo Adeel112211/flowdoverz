@@ -198,17 +198,36 @@ export async function restoreSessionFromCookie(): Promise<Session | null> {
 
 export async function signOut() {
   if (typeof window !== "undefined") {
-    window.localStorage.removeItem(SESSION_KEY);
-    cachedSession = null;
-    notifySessionChange();
+    let sid: string | undefined;
+    try {
+      const raw = window.localStorage.getItem(SESSION_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw) as { sid?: string } | null;
+        if (typeof parsed?.sid === "string") sid = parsed.sid;
+      }
+    } catch {
+      // ignore
+    }
+
     try {
       await fetch("/api/auth/logout", {
         method: "POST",
         credentials: "include",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify(sid ? { sid } : {}),
       });
     } catch {
       // non-blocking
     }
+
+    window.localStorage.removeItem(SESSION_KEY);
+    try {
+      window.localStorage.removeItem("flowdoverz_auth_tabs");
+    } catch {
+      // ignore
+    }
+    cachedSession = null;
+    notifySessionChange();
   }
 }
 

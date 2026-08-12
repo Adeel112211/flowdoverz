@@ -1,33 +1,58 @@
-import { NextResponse } from "next/server";
-import { CLIENT_SID_COOKIE } from "@/lib/client-session";
+import { NextRequest, NextResponse } from "next/server";
+import {
+  CLIENT_SID_COOKIE,
+  getClientSessionFromRequest,
+  verifyClientSession,
+} from "@/lib/client-session";
 import { clientSessionCookieOptions, sessionCookieOptions } from "@/lib/site-urls";
-import { getClientSessionFromCookies } from "@/lib/client-session";
-import { getDb } from "@/lib/firebase-admin";
-import { normalizeEmail } from "@/lib/user-store";
+import { releaseClientSession } from "@/lib/user-store";
 
-export async function POST() {
+async function sidFromRequestBody(request: NextRequest): Promise<string | null> {
+  const contentType = request.headers.get("content-type") || "";
+
   try {
-    const session = await getClientSessionFromCookies();
-    if (session?.sessionId) {
-      const db = getDb();
-      if (db) {
-        // Drop this browser from the active device list so Solo lock is released.
-        const ref = db.collection("users").doc(normalizeEmail(session.email));
-        const snap = await ref.get();
-        if (snap.exists) {
-          const data = snap.data() || {};
-          const ids = Array.isArray(data.activeClientSessionIds)
-            ? data.activeClientSessionIds.map(String).filter((id: string) => id !== session.sessionId)
-            : [];
-          await ref.set(
-            {
-              activeClientSessionIds: ids,
-              activeClientSessionId: ids[0] || null,
-            },
-            { merge: true },
-          );
-        }
-      }
+    if (contentType.includes("application/json")) {
+      const body = (await request.json()) as { sid?: string } | null;
+      return typeof body?.sid === "string" ? body.sid : null;
+    }
+
+    if (
+      contentType.includes("multipart/form-data") ||
+      contentType.includes("application/x-www-form-urlencoded")
+    ) {
+      const form = await request.formData();
+      const sid = form.get("sid");
+      return typeof sid === "string" ? sid : null;
+    }
+
+    // sendBeacon often posts as text/plain
+    const text = (await request.text()).trim();
+    if (!text) return null;
+    if (text.startsWith("{")) {
+      const body = JSON.parse(text) as { sid?: string };
+      return typeof body.sid === "string" ? body.sid : null;
+    }
+    if (text.startsWith("sid=")) {
+      return decodeURIComponent(text.slice(4));
+    }
+  } catch {
+    return null;
+  }
+
+  return null;
+}
+
+export async function POST(request: NextRequest) {
+  try {
+    const cookieSession = getClientSessionFromRequest(request);
+    const bodySid = await sidFromRequestBody(request);
+    const bodySession = bodySid ? verifyClientSession(bodySid) : null;
+
+    const email = cookieSession?.email || bodySession?.email;
+    const sessionId = cookieSession?.sessionId || bodySession?.sessionId;
+
+    if (email && sessionId) {
+      await releaseClientSession(email, sessionId);
     }
   } catch {
     // still clear cookie
