@@ -287,7 +287,6 @@ export function CookiesPage() {
 
   return (
     <AdminPageLayout
-      scrollContent={false}
       header={
         <AdminPageHeader
           title="Cookie Manager"
@@ -317,9 +316,9 @@ export function CookiesPage() {
         aria-hidden="true"
       />
 
-      <main className="mx-auto flex min-h-0 w-full max-w-7xl flex-1 flex-col overflow-x-hidden min-w-0 max-md:overflow-visible md:overflow-y-auto">
+      <main className="mx-auto w-full max-w-7xl space-y-4 pb-2 sm:space-y-6">
         {/* One-click daily action */}
-        <div className="shrink-0 grid gap-4 grid-cols-1 sm:grid-cols-2 md:pt-0.5">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <button
             type="button"
             disabled={saving}
@@ -356,7 +355,7 @@ export function CookiesPage() {
         </div>
 
         {slots.length > 0 && (
-          <div className="mt-4 shrink-0 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
             {SLOTS.map((key) => {
               const info = slots.find((s) => s.key === key);
               const active = slot === key;
@@ -380,9 +379,9 @@ export function CookiesPage() {
           </div>
         )}
 
-        <div className="mt-4 sm:mt-8 rounded-xl sm:rounded-2xl border border-white/5 bg-white/[0.02] p-4 sm:p-8 backdrop-blur-xl relative overflow-x-hidden flex-1 flex flex-col min-h-0 overflow-y-auto lg:overflow-hidden">
-          <div className="absolute top-0 right-0 w-48 h-48 bg-cyan-500/5 rounded-full blur-3xl pointer-events-none" />
-          <div className="mb-6 shrink-0 flex flex-wrap items-end gap-4 relative z-30">
+        <div className="relative overflow-hidden rounded-xl border border-white/5 bg-white/[0.02] p-4 backdrop-blur-xl sm:rounded-2xl sm:p-8">
+          <div className="pointer-events-none absolute top-0 right-0 h-48 w-48 rounded-full bg-cyan-500/5 blur-3xl" />
+          <div className="relative z-30 mb-6 flex flex-wrap items-end gap-4">
             <div>
               <label
                 htmlFor="slot"
@@ -484,7 +483,7 @@ export function CookiesPage() {
           </div>
 
           {meta.names.length > 0 && (
-            <div className="mb-4 shrink-0 flex flex-wrap gap-1.5">
+            <div className="mb-4 flex flex-wrap gap-1.5">
               {meta.names.slice(0, 12).map((name) => (
                 <span
                   key={name}
@@ -503,7 +502,7 @@ export function CookiesPage() {
 
           {status && (
             <p
-              className={`mb-4 shrink-0 rounded-lg border px-4 py-3 text-sm ${
+              className={`mb-4 rounded-lg border px-4 py-3 text-sm ${
                 status.type === "ok"
                   ? "border-teal-500/30 bg-teal-500/10 text-teal-100"
                   : "border-rose-500/30 bg-rose-500/10 text-rose-200"
@@ -525,14 +524,14 @@ export function CookiesPage() {
               const file = e.dataTransfer.files?.[0];
               if (file) readFile(file);
             }}
-            className={`rounded-xl border border-dashed p-1 transition-colors flex-1 flex flex-col min-h-0 ${
+            className={`rounded-xl border border-dashed p-1 transition-colors ${
               dragging
                 ? "border-cyan-400 bg-cyan-500/10"
                 : "border-transparent"
             }`}
           >
-            <div className="relative z-10 flex-1 flex flex-col min-h-0">
-              <div className="mb-4 shrink-0 flex items-center justify-between">
+            <div className="relative z-10">
+              <div className="mb-4 flex items-center justify-between">
                 <label className="text-sm font-bold text-slate-300">
                   Raw JSON
                 </label>
@@ -557,13 +556,14 @@ export function CookiesPage() {
                   }
                 }}
                 spellCheck={false}
+                rows={12}
                 placeholder="Paste cookie array here, or drag & drop a .json file..."
-                className="flex-1 w-full min-h-[150px] sm:min-h-0 sm:h-0 resize-none rounded-2xl border border-white/5 bg-[#080810]/50 p-4 font-mono text-[11px] leading-relaxed text-slate-400 outline-none focus:border-cyan-500/50 focus:ring-1 focus:ring-cyan-500/50"
+                className="w-full min-h-[180px] resize-y rounded-2xl border border-white/5 bg-[#080810]/50 p-4 font-mono text-[11px] leading-relaxed text-slate-400 outline-none focus:border-cyan-500/50 focus:ring-1 focus:ring-cyan-500/50 sm:min-h-[240px]"
               />
             </div>
           </div>
 
-          <div className="mt-6 sm:mt-8 shrink-0 grid grid-cols-2 sm:flex sm:flex-wrap gap-2 justify-end relative z-10">
+          <div className="relative z-10 mt-6 grid grid-cols-2 gap-2 justify-end sm:mt-8 sm:flex sm:flex-wrap">
             <button
               type="button"
               disabled={saving}
@@ -594,9 +594,7 @@ export function CookiesPage() {
               Clear slot
             </button>
           </div>
-
         </div>
-
       </main>
 
       {preview && (
