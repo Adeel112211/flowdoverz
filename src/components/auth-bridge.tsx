@@ -40,7 +40,6 @@ function unregisterTab(tabId: string): boolean {
     const tabs = raw ? (JSON.parse(raw) as Record<string, number>) : {};
     delete tabs[tabId];
     const now = Date.now();
-    // Drop stale tab markers (crashed tabs).
     for (const [id, seenAt] of Object.entries(tabs)) {
       if (now - Number(seenAt) > 60_000) delete tabs[id];
     }
@@ -51,40 +50,41 @@ function unregisterTab(tabId: string): boolean {
   }
 }
 
-function releaseSeatBeacon(sid: string | null) {
+/** End server session + free Solo seat when the last portal tab closes. */
+function expireSessionOnTabClose(sid: string | null) {
+  const logoutFetch = (body?: BodyInit, contentType?: string) => {
+    void fetch("/api/auth/logout", {
+      method: "POST",
+      credentials: "include",
+      keepalive: true,
+      headers: contentType ? { "Content-Type": contentType } : undefined,
+      body,
+    }).catch(() => {});
+  };
+
   if (!sid) {
     try {
-      if (typeof navigator.sendBeacon === "function") {
-        navigator.sendBeacon("/api/auth/logout");
+      if (typeof navigator.sendBeacon === "function" && navigator.sendBeacon("/api/auth/logout")) {
         return;
       }
     } catch {
       // fall through
     }
-    void fetch("/api/auth/logout", {
-      method: "POST",
-      credentials: "include",
-      keepalive: true,
-    }).catch(() => {});
+    logoutFetch();
     return;
   }
 
   try {
-    const body = new Blob([JSON.stringify({ sid })], { type: "application/json" });
-    if (typeof navigator.sendBeacon === "function" && navigator.sendBeacon("/api/auth/logout", body)) {
+    const form = new FormData();
+    form.append("sid", sid);
+    if (typeof navigator.sendBeacon === "function" && navigator.sendBeacon("/api/auth/logout", form)) {
       return;
     }
   } catch {
     // fall through
   }
 
-  void fetch("/api/auth/logout", {
-    method: "POST",
-    credentials: "include",
-    keepalive: true,
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ sid }),
-  }).catch(() => {});
+  logoutFetch(JSON.stringify({ sid }), "application/json");
 }
 
 /** Invisible DOM bridge the Chrome extension reads to detect portal login. */
@@ -114,23 +114,22 @@ export function AuthBridge({ session, daysRemaining = 14 }: AuthBridgeProps) {
     };
 
     const endSessionOnClose = (event: PageTransitionEvent) => {
-      // Keep session on back-forward cache and on refresh.
+      // Keep session on back-forward cache and on refresh (F5 / Ctrl+R).
       if (event.persisted || reloadGuardRef.current) return;
 
       const sid = readSessionSid();
       const lastTab = unregisterTab(tabId);
-
-      // Only free the Solo seat when this was the last open portal tab.
       if (!lastTab) return;
 
       try {
         window.localStorage.removeItem(SESSION_KEY);
+        window.localStorage.removeItem(TAB_REGISTRY_KEY);
         notifySessionChange();
       } catch {
         // ignore
       }
 
-      releaseSeatBeacon(sid);
+      expireSessionOnTabClose(sid);
     };
 
     window.addEventListener("keydown", markPossibleReload);

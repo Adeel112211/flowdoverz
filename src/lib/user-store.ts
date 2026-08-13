@@ -75,14 +75,6 @@ export function makeSid(email: string) {
   return createClientSession(email).sid;
 }
 
-function singleDeviceBlockedMessage(plan: string) {
-  const normalized = String(plan || "").toLowerCase();
-  if (normalized === "solo" || normalized === "studio" || normalized === "nano") {
-    return "This email has an active Solo plan and cannot be used on multiple devices. Sign out on the other device, browser, or profile first.";
-  }
-  return "This email has an active trial and cannot be used on multiple devices. Sign out on the other device, browser, or profile first.";
-}
-
 function isSingleDeviceAccount(data: Record<string, unknown>) {
   const plan = String(data.subscriptionPlan || "none").toLowerCase();
   if (plan === "team") return false;
@@ -99,15 +91,37 @@ function readActiveSessionIds(data: Record<string, unknown>): string[] {
   return legacy && legacy !== "null" && legacy !== "undefined" ? [legacy] : [];
 }
 
-/** Solo seat is held only while explicitly locked. Logout clears the lock instantly. */
-function isSoloSeatHeld(data: Record<string, unknown>): boolean {
-  if (data.clientSessionLock !== true) return false;
-  return readActiveSessionIds(data).length > 0;
+function singleDeviceBlockedMessage(plan: string) {
+  const normalized = String(plan || "").toLowerCase();
+  if (normalized === "solo" || normalized === "studio" || normalized === "nano") {
+    return "This email has an active Solo plan and cannot be used on multiple devices. Sign out on the other device, browser, or profile first.";
+  }
+  return "This email has an active trial and cannot be used on multiple devices. Sign out on the other device, browser, or profile first.";
 }
 
 /**
- * Drop one browser seat. When no seats remain, clear activity stamps so
- * Solo/trial accounts can sign in again immediately.
+ * Solo/trial seat is held only while soloSeatActive is explicitly true.
+ * Logout / tab-close clears this immediately — next login works with no timer.
+ * Legacy clientSessionLock ghosts are ignored so stuck accounts can sign in again.
+ */
+function isSoloSeatHeld(data: Record<string, unknown>): boolean {
+  if (data.soloSeatActive !== true) return false;
+  return readActiveSessionIds(data).length > 0;
+}
+
+function clearedSoloSeatFields() {
+  return {
+    activeClientSessionIds: [] as string[],
+    activeClientSessionId: null as string | null,
+    lastClientSeenAt: null as string | null,
+    activeClientSessionAt: null as string | null,
+    soloSeatActive: false,
+    clientSessionLock: false,
+  };
+}
+
+/**
+ * Drop one browser seat. Logout frees Solo/trial instantly (no timer).
  */
 export async function releaseClientSession(email: string, sessionId: string) {
   const db = getDb();
@@ -119,18 +133,9 @@ export async function releaseClientSession(email: string, sessionId: string) {
 
   const data = (snap.data() || {}) as Record<string, unknown>;
 
-  // Solo/trial: any logout frees the only seat immediately (no waiting period).
+  // Solo/trial: any logout frees the only seat immediately.
   if (isSingleDeviceAccount(data)) {
-    await userRef.set(
-      {
-        activeClientSessionIds: [],
-        activeClientSessionId: null,
-        lastClientSeenAt: null,
-        activeClientSessionAt: null,
-        clientSessionLock: false,
-      },
-      { merge: true },
-    );
+    await userRef.set(clearedSoloSeatFields(), { merge: true });
     return;
   }
 
@@ -138,16 +143,7 @@ export async function releaseClientSession(email: string, sessionId: string) {
   const next = previous.filter((id) => id !== sessionId);
 
   if (next.length === 0) {
-    await userRef.set(
-      {
-        activeClientSessionIds: [],
-        activeClientSessionId: null,
-        lastClientSeenAt: null,
-        activeClientSessionAt: null,
-        clientSessionLock: false,
-      },
-      { merge: true },
-    );
+    await userRef.set(clearedSoloSeatFields(), { merge: true });
     return;
   }
 
@@ -162,7 +158,7 @@ export async function releaseClientSession(email: string, sessionId: string) {
 
 /**
  * Claim a browser seat.
- * Solo/trial: reject if another device is already signed in.
+ * Solo/trial: block second device while seat is active; free instantly after logout.
  * Team: up to 3 browsers.
  */
 export async function claimClientSession(
@@ -185,8 +181,8 @@ export async function claimClientSession(
 
   if (singleDevice) {
     const currentId = previous[0] || "";
-    // Same browser refreshing / reclaiming its own seat is always allowed.
-    // Other browsers are blocked only while clientSessionLock is explicitly on.
+    // Same browser / same session can refresh. A different browser is blocked
+    // only while soloSeatActive is on (cleared instantly on logout).
     if (currentId && currentId !== sessionId && isSoloSeatHeld(data)) {
       return { ok: false, error: singleDeviceBlockedMessage(plan) };
     }
@@ -197,7 +193,8 @@ export async function claimClientSession(
         activeClientSessionIds: [sessionId],
         activeClientSessionAt: nowIso,
         lastClientSeenAt: nowIso,
-        clientSessionLock: true,
+        soloSeatActive: true,
+        clientSessionLock: false,
       },
       { merge: true },
     );
@@ -224,7 +221,8 @@ export async function claimClientSession(
       activeClientSessionIds: next,
       activeClientSessionAt: nowIso,
       lastClientSeenAt: nowIso,
-      clientSessionLock: true,
+      soloSeatActive: true,
+      clientSessionLock: false,
     },
     { merge: true },
   );
@@ -262,11 +260,15 @@ export async function isActiveClientSession(
   const ids = readActiveSessionIds(data);
 
   if (ids.length === 0) {
+    // After logout the seat is empty — require a fresh login, do not auto-reclaim.
+    if (singleDevice) return false;
     const claimed = await claimClientSession(email, sessionId);
     return claimed.ok;
   }
 
   if (singleDevice || max <= 1) {
+    // Logout clears soloSeatActive immediately — treat as signed out.
+    if (singleDevice && data.soloSeatActive !== true) return false;
     const ok = ids[0] === sessionId || data.activeClientSessionId === sessionId;
     if (ok) void touchClientSessionActivity(email);
     return Boolean(ok);
