@@ -11,7 +11,7 @@ import officialPayload from "@/lib/extension-official-payload.json";
 export const OFFICIAL_EXTENSION_VERSION = "1.0.9";
 
 export const OFFICIAL_EXTENSION_INTEGRITY_HASH =
-  "6d58c2d0a871b9711ecc0639bc445072248df80a8ac9c8cd3fccc19b958ac851";
+  "54f00d38d7d1147ca90c90c4f91a1696b6cadba1c6dfd78a72c733f4d9e560d6";
 
 /** Shown by extension when server rejects a modified build. */
 export const EXTENSION_TAMPER_MESSAGE =
