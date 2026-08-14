@@ -8,10 +8,10 @@ import officialPayload from "@/lib/extension-official-payload.json";
  * Proof = SHA256(nonce + payload + live function sources).
  * Spoofing X-Extension-Integrity alone is not enough.
  */
-export const OFFICIAL_EXTENSION_VERSION = "1.0.34";
+export const OFFICIAL_EXTENSION_VERSION = "1.0.35";
 
 export const OFFICIAL_EXTENSION_INTEGRITY_HASH =
-  "57caa249402325cd5b55138076de41354e15167c4bff74b06b32965b6a47af87";
+  "268e92b098f478e0d56bbe6eb04815d6f965b1986945f8c8e7c68e6a89f9e4b8";
 
 /** Shown by extension when server rejects a modified build. */
 export const EXTENSION_TAMPER_MESSAGE =
