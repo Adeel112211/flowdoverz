@@ -102,7 +102,12 @@ export function AuthBridge({ session, daysRemaining = 14 }: AuthBridgeProps) {
 
     const tabId = tabIdRef.current;
     registerTab(tabId);
-    const heartbeat = window.setInterval(() => registerTab(tabId), 20_000);
+    const pingSeat = () => {
+      registerTab(tabId);
+      void fetch("/api/auth/me", { credentials: "include", cache: "no-store" }).catch(() => {});
+    };
+    pingSeat();
+    const heartbeat = window.setInterval(pingSeat, 25_000);
 
     const markPossibleReload = (event: KeyboardEvent) => {
       if (event.key === "F5" || ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "r")) {

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { authenticateUser } from "@/lib/user-store";
-import { CLIENT_SID_COOKIE } from "@/lib/client-session";
+import { authenticateUser, normalizeEmail } from "@/lib/user-store";
+import { CLIENT_SID_COOKIE, getClientSessionFromRequest } from "@/lib/client-session";
 import { clientSessionCookieOptions } from "@/lib/site-urls";
 import { checkAuthRateLimit, clientIpFromRequest } from "@/lib/auth-rate-limit";
 
@@ -29,10 +29,14 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const result = await authenticateUser(
-    String(body.email || ""),
-    String(body.password || ""),
-  );
+  const email = String(body.email || "");
+  const existing = getClientSessionFromRequest(request);
+  const sameAccount =
+    existing?.email && normalizeEmail(existing.email) === normalizeEmail(email);
+
+  const result = await authenticateUser(email, String(body.password || ""), {
+    existingSessionId: sameAccount ? existing?.sessionId : undefined,
+  });
 
   if (!result.ok) {
     const status = result.code === "MULTI_DEVICE_BLOCKED" ? 403 : 401;

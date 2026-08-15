@@ -99,14 +99,24 @@ function singleDeviceBlockedMessage(plan: string) {
   return "This email has an active trial and cannot be used on multiple devices. Sign out on the other device, browser, or profile first.";
 }
 
+/** Seat is live only while a portal/extension heartbeat is recent. */
+const SOLO_SEAT_STALE_MS = 4 * 60 * 1000;
+
+function isSoloSeatFresh(data: Record<string, unknown>): boolean {
+  const seen = data.lastClientSeenAt ? Date.parse(String(data.lastClientSeenAt)) : 0;
+  if (!Number.isFinite(seen) || seen <= 0) return false;
+  return Date.now() - seen < SOLO_SEAT_STALE_MS;
+}
+
 /**
- * Solo/trial seat is held only while soloSeatActive is explicitly true.
- * Logout / tab-close clears this immediately — next login works with no timer.
- * Legacy clientSessionLock ghosts are ignored so stuck accounts can sign in again.
+ * Solo/trial seat is held only while soloSeatActive is true AND the
+ * previous browser was seen recently. Closed/crashed sessions (logout
+ * beacon missed) must not block the next login.
  */
 function isSoloSeatHeld(data: Record<string, unknown>): boolean {
   if (data.soloSeatActive !== true) return false;
-  return readActiveSessionIds(data).length > 0;
+  if (readActiveSessionIds(data).length === 0) return false;
+  return isSoloSeatFresh(data);
 }
 
 function clearedSoloSeatFields() {
@@ -164,6 +174,7 @@ export async function releaseClientSession(email: string, sessionId: string) {
 export async function claimClientSession(
   email: string,
   sessionId: string,
+  options?: { existingSessionId?: string },
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   const db = getDb();
   if (!db || !sessionId) return { ok: false, error: "Database not configured." };
@@ -178,12 +189,15 @@ export async function claimClientSession(
   const nowIso = new Date().toISOString();
   const singleDevice = isSingleDeviceAccount(data);
   const previous = readActiveSessionIds(data);
+  const existingSessionId = String(options?.existingSessionId || "");
 
   if (singleDevice) {
     const currentId = previous[0] || "";
-    // Same browser / same session can refresh. A different browser is blocked
-    // only while soloSeatActive is on (cleared instantly on logout).
-    if (currentId && currentId !== sessionId && isSoloSeatHeld(data)) {
+    const sameBrowser =
+      Boolean(currentId) &&
+      (currentId === sessionId || (existingSessionId && existingSessionId === currentId));
+    // Same browser can sign in again. A different live browser stays blocked.
+    if (currentId && currentId !== sessionId && isSoloSeatHeld(data) && !sameBrowser) {
       return { ok: false, error: singleDeviceBlockedMessage(plan) };
     }
 
@@ -535,6 +549,7 @@ export async function updateUserPasswordByAdmin(
 export async function authenticateUser(
   email: string,
   password: string,
+  options?: { existingSessionId?: string },
 ): Promise<
   | { ok: true; user: { email: string; name: string; sid: string } }
   | { ok: false; error: string; code?: string }
@@ -561,7 +576,9 @@ export async function authenticateUser(
   }
 
   const created = createClientSession(user.email);
-  const claimed = await claimClientSession(user.email, created.sessionId);
+  const claimed = await claimClientSession(user.email, created.sessionId, {
+    existingSessionId: options?.existingSessionId,
+  });
   if (!claimed.ok) {
     return { ok: false, error: claimed.error, code: "MULTI_DEVICE_BLOCKED" };
   }

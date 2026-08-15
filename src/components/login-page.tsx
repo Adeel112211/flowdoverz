@@ -25,6 +25,10 @@ export function LoginPage() {
     setError(notice);
   }, []);
 
+  useEffect(() => {
+    if (session && !error) router.replace("/dashboard");
+  }, [session, error, router]);
+
   async function handleSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setError("");
