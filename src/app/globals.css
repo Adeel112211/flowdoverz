@@ -67,6 +67,70 @@ html.admin-app-active body {
   animation: fade-up 0.5s ease forwards;
 }
 
+@keyframes maintenance-bob {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-8px); }
+}
+
+@keyframes maintenance-drift {
+  0%, 100% { transform: translate(0, 0); }
+  50% { transform: translate(8px, -12px); }
+}
+
+@keyframes maintenance-drift-alt {
+  0%, 100% { transform: translate(0, 0) rotate(0deg); }
+  50% { transform: translate(-6px, -10px) rotate(-8deg); }
+}
+
+@keyframes maintenance-spin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes maintenance-blink {
+  0%, 100% { opacity: 1; filter: drop-shadow(0 0 6px #34d399); }
+  50% { opacity: 0.2; filter: drop-shadow(0 0 1px #34d399); }
+}
+
+@keyframes maintenance-hook {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(10px); }
+}
+
+.maintenance-bob {
+  animation: maintenance-bob 4.5s ease-in-out infinite;
+}
+
+.maintenance-drift {
+  animation: maintenance-drift 5s ease-in-out infinite;
+}
+
+.maintenance-drift-alt {
+  animation: maintenance-drift-alt 6s ease-in-out infinite;
+}
+
+.maintenance-spin {
+  animation: maintenance-spin 10s linear infinite;
+}
+
+.maintenance-blink {
+  animation: maintenance-blink 1.4s ease-in-out infinite;
+}
+
+.maintenance-hook {
+  animation: maintenance-hook 3.2s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .maintenance-bob,
+  .maintenance-drift,
+  .maintenance-drift-alt,
+  .maintenance-spin,
+  .maintenance-blink,
+  .maintenance-hook {
+    animation: none;
+  }
+}
+
 /* Fix browser autofill background on dark theme */
 input:-webkit-autofill,
 input:-webkit-autofill:hover, 
