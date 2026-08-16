@@ -20,7 +20,7 @@ export default function AdminPricingPage() {
   const load = async () => {
     setLoading(true);
     try {
-      const res = await fetch("/api/admin/pricing", { credentials: "same-origin" });
+      const res = await fetch("/api/admin/pricing", { credentials: "same-origin", cache: "no-store" });
       const data = await res.json();
       if (data.success) setConfig(data.config);
     } finally {

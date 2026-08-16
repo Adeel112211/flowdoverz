@@ -45,7 +45,7 @@ export default function CheckoutPage() {
       return;
     }
 
-    fetch("/api/pricing")
+    fetch("/api/pricing", { cache: "no-store" })
       .then((r) => r.json())
       .then((d) => {
         if (d.success) {

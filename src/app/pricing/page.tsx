@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { Check, Zap, Shield, Users, Sparkles, ArrowRight, Menu, X, Star } from "lucide-react";
-import { DEFAULT_PRICING_CONFIG, formatPkr, formatTrialDurationLabel, type PricingConfig, type PricingPlan } from "@/lib/pricing-config";
+import { formatPkr, formatTrialDurationLabel, mergePricingConfig, type PricingConfig, type PricingPlan } from "@/lib/pricing-config";
 import { useClientSession } from "@/hooks/use-client-session";
 import { UserMenuButton } from "@/components/user-menu-button";
 import { BrandLogo } from "@/components/brand-logo";
@@ -59,7 +59,7 @@ function pricingFaqs(trialLabel: string) {
 export default function PricingPage() {
   const [openFaq, setOpenFaq] = useState<number | null>(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [pricing, setPricing] = useState<PricingConfig>(DEFAULT_PRICING_CONFIG);
+  const [pricing, setPricing] = useState<PricingConfig>(() => mergePricingConfig(null));
   const [activationBlock, setActivationBlock] = useState<{ code: string; error: string } | null>(null);
   const [noTrialNotice, setNoTrialNotice] = useState(false);
   const session = useClientSession();
@@ -72,7 +72,7 @@ export default function PricingPage() {
   useEffect(() => {
     let active = true;
 
-    fetch("/api/pricing")
+    fetch("/api/pricing", { cache: "no-store" })
       .then((r) => r.json())
       .then((d) => {
         if (!active) return;

@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { FormEvent, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { AlertCircle, ChevronDown, Eye, EyeOff } from "lucide-react";
 import { BrandLogo } from "@/components/brand-logo";
 import { AuthPageBackground } from "@/components/auth-page-background";
 import { appPath, marketingPath } from "@/lib/site-urls";
@@ -28,7 +29,7 @@ export function SignupPage() {
 
   useEffect(() => {
     let active = true;
-    fetch("/api/pricing")
+    fetch("/api/pricing", { cache: "no-store" })
       .then((res) => res.json())
       .then((data) => {
         if (!active || !data?.success || !data.config) return;

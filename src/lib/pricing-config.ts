@@ -62,8 +62,6 @@ export const DEFAULT_PRICING_PLANS: PricingPlan[] = [
     priceMonthlyPkr: 999,
     priceAnnualPkr: 799,
     periodLabel: "per month · 30 days",
-    originalPricePkr: 1499,
-    saveBadge: "SAVE 33%",
     btnLabel: "Get Solo Plan",
     featured: true,
     enabled: true,
@@ -86,8 +84,6 @@ export const DEFAULT_PRICING_PLANS: PricingPlan[] = [
     priceMonthlyPkr: 1999,
     priceAnnualPkr: 1599,
     periodLabel: "per month · 30 days",
-    originalPricePkr: 2999,
-    saveBadge: "SAVE 33%",
     btnLabel: "Get Team Plan",
     featured: false,
     enabled: true,
@@ -120,23 +116,68 @@ export function formatPkr(amount: number) {
   return `PKR ${amount.toLocaleString("en-PK")}`;
 }
 
+function clonePlanWithoutDummyCompare(plan: PricingPlan): PricingPlan {
+  const next: PricingPlan = { ...plan, features: [...plan.features] };
+  delete next.originalPricePkr;
+  delete next.saveBadge;
+  return next;
+}
+
+function isStockDummyCompareAt(plan: PricingPlan) {
+  if (plan.saveBadge !== "SAVE 33%") return false;
+  if (plan.id === "solo" && Number(plan.originalPricePkr) === 1499) return true;
+  if (plan.id === "team" && Number(plan.originalPricePkr) === 2999) return true;
+  return false;
+}
+
+function mergePlan(base: PricingPlan, plan: Partial<PricingPlan>): PricingPlan {
+  const merged: PricingPlan = {
+    ...base,
+    ...plan,
+    features: plan.features?.length ? plan.features : [...base.features],
+  };
+
+  const original = Number(plan.originalPricePkr);
+  if (Number.isFinite(original) && original > 0) {
+    merged.originalPricePkr = original;
+  } else {
+    delete merged.originalPricePkr;
+  }
+
+  if (plan.saveBadge) {
+    merged.saveBadge = plan.saveBadge;
+  } else {
+    delete merged.saveBadge;
+  }
+
+  if (isStockDummyCompareAt(merged)) {
+    delete merged.originalPricePkr;
+    delete merged.saveBadge;
+  }
+
+  if (merged.originalPricePkr && merged.originalPricePkr <= merged.priceMonthlyPkr) {
+    delete merged.originalPricePkr;
+    delete merged.saveBadge;
+  }
+
+  return merged;
+}
+
 export function mergePricingConfig(partial?: Partial<PricingConfig> | null): PricingConfig {
+  const defaults = DEFAULT_PRICING_PLANS.map((p) => clonePlanWithoutDummyCompare(p));
+
   if (!partial) {
     return {
       ...DEFAULT_PRICING_CONFIG,
-      plans: DEFAULT_PRICING_PLANS.map((p) => ({ ...p, features: [...p.features] })),
+      plans: defaults,
     };
   }
 
-  const planMap = new Map(DEFAULT_PRICING_PLANS.map((p) => [p.id, { ...p, features: [...p.features] }]));
+  const planMap = new Map(defaults.map((p) => [p.id, { ...p, features: [...p.features] }]));
   for (const plan of partial.plans || []) {
     const base = planMap.get(plan.id);
     if (base) {
-      planMap.set(plan.id, {
-        ...base,
-        ...plan,
-        features: plan.features?.length ? plan.features : base.features,
-      });
+      planMap.set(plan.id, mergePlan(base, plan));
     }
   }
 
@@ -175,15 +216,11 @@ export function formatTrialDurationLabel(settings: { trialDays?: number; trialMi
 
 export function withLivePlanLabels(config: PricingConfig): PricingConfig {
   const trialLabel = formatTrialDurationLabel(config);
-  const subDays = Math.max(1, Number(config.subscriptionDays) || 30);
   return {
     ...config,
     plans: config.plans.map((plan) => {
       if (plan.id === "trial") {
         return { ...plan, periodLabel: `${trialLabel} trial` };
-      }
-      if (plan.id === "solo" || plan.id === "team") {
-        return { ...plan, periodLabel: `per month · ${subDays} days` };
       }
       return plan;
     }),

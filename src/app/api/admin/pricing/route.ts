@@ -12,7 +12,10 @@ export async function GET() {
   }
 
   const config = await getPricingConfig();
-  return NextResponse.json({ success: true, config });
+  return NextResponse.json(
+    { success: true, config },
+    { headers: { "Cache-Control": "no-store, max-age=0" } },
+  );
 }
 
 export async function PUT(request: NextRequest) {
