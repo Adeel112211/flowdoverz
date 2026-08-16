@@ -30,13 +30,13 @@ function extraMessage(custom: string) {
   return raw;
 }
 
-function MaintenanceMark() {
+function MaintenanceMark({ className = "" }: { className?: string }) {
   return (
-    <div className="relative mx-auto mb-5 flex h-32 w-32 items-center justify-center">
-      <div className="absolute inset-1 rounded-[2.1rem] bg-amber-400/25 blur-2xl" />
+    <div className={`relative flex shrink-0 items-center justify-center ${className}`}>
+      <div className="absolute inset-0 rounded-2xl bg-amber-400/25 blur-xl" />
       <svg
         viewBox="0 0 112 112"
-        className="relative h-32 w-32 drop-shadow-[0_0_32px_rgba(34,211,238,0.22)]"
+        className="relative h-full w-full drop-shadow-[0_0_18px_rgba(34,211,238,0.28)]"
         aria-hidden="true"
       >
         <defs>
@@ -165,33 +165,41 @@ export function MaintenanceGate({
         role="dialog"
         aria-modal="true"
         aria-labelledby="maintenance-title"
-        className="animate-fade-up relative z-10 w-full max-w-[360px] overflow-hidden rounded-[1.5rem] border border-white/10 bg-[#0b101c]/92 px-6 py-8 text-center shadow-[0_24px_80px_rgba(0,0,0,0.45)] backdrop-blur-xl"
+        className="animate-fade-up relative z-10 w-full max-w-[380px] overflow-hidden rounded-[1.5rem] border border-white/10 bg-[#0b101c]/92 px-6 py-7 text-center shadow-[0_24px_80px_rgba(0,0,0,0.45)] backdrop-blur-xl"
       >
-        <MaintenanceMark />
-        <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-amber-300/90">
+        <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-amber-300">
           Under maintenance
         </p>
-        <h1 id="maintenance-title" className="mt-2 text-[1.65rem] font-black tracking-tight text-white">
-          We'll be back soon
-        </h1>
-        <p className="mt-3 text-sm leading-relaxed text-slate-400">
+        <div className="mt-4 flex items-center justify-center gap-3 text-left">
+          <MaintenanceMark className="h-[4.25rem] w-[4.25rem]" />
+          <h1 id="maintenance-title" className="text-[1.55rem] font-black leading-tight tracking-tight text-white">
+            We'll be back soon
+          </h1>
+        </div>
+        {remaining ? (
+          <div className="mt-5 rounded-2xl border border-amber-400/35 bg-amber-400/12 px-4 py-3">
+            <p className="text-[1.65rem] font-black leading-none tracking-tight text-amber-200">
+              {remaining.label}
+            </p>
+            <p className="mt-1.5 text-[11px] font-bold uppercase tracking-[0.16em] text-amber-300">
+              left
+            </p>
+            {untilLabel ? (
+              <p className="mt-2 text-xs font-medium text-slate-200">
+                Expected back {untilLabel}
+              </p>
+            ) : null}
+          </div>
+        ) : untilLabel ? (
+          <p className="mt-5 text-sm font-semibold text-slate-200">Expected back {untilLabel}</p>
+        ) : null}
+        <p className="mt-5 text-sm leading-relaxed text-slate-400">
           The site is <strong className="font-bold text-white">under maintenance</strong>.
           Please check back shortly.
         </p>
         {note ? (
           <p className="mt-2 text-sm leading-relaxed text-slate-300">{note}</p>
         ) : null}
-        {(untilLabel || remaining) && (
-          <p className="mt-6 text-xs text-slate-500">
-            {untilLabel ? (
-              <>
-                Expected back <span className="font-semibold text-slate-300">{untilLabel}</span>
-              </>
-            ) : null}
-            {untilLabel && remaining ? <span className="px-1.5 text-slate-600">·</span> : null}
-            {remaining ? <span className="font-semibold text-amber-300">{remaining.label} left</span> : null}
-          </p>
-        )}
       </div>
     </div>
   );
