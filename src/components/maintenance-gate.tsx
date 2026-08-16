@@ -2,7 +2,6 @@
 
 import { useEffect, useState, type ReactNode } from "react";
 import { usePathname } from "next/navigation";
-import { Clock, Construction } from "lucide-react";
 import {
   MAINTENANCE_EVENT,
   type MaintenanceNotice,
@@ -19,16 +18,17 @@ function formatUntil(iso: string) {
   });
 }
 
-function remainingText(iso: string, now: number) {
-  if (!iso) return "";
+function remainingParts(iso: string, now: number) {
+  if (!iso) return null;
   const untilMs = Date.parse(iso);
-  if (Number.isNaN(untilMs)) return "";
+  if (Number.isNaN(untilMs)) return null;
   const diff = untilMs - now;
-  if (diff <= 0) return "";
+  if (diff <= 0) return null;
   const hours = Math.floor(diff / (60 * 60 * 1000));
-  const minutes = Math.floor((diff % (60 * 60 * 1000)) / (60 * 1000));
-  if (hours > 0) return `${hours}h ${minutes}m remaining`;
-  return `${Math.max(1, minutes)}m remaining`;
+  const minutes = Math.max(hours > 0 ? 0 : 1, Math.floor((diff % (60 * 60 * 1000)) / (60 * 1000)));
+  return {
+    label: hours > 0 ? `${hours}h ${minutes}m` : `${minutes}m`,
+  };
 }
 
 export function MaintenanceGate({
@@ -96,7 +96,7 @@ export function MaintenanceGate({
     return () => window.clearInterval(tick);
   }, [isAdmin, status.active]);
 
-  const remaining = remainingText(status.until, now);
+  const remaining = remainingParts(status.until, now);
 
   if (isAdmin || !status.active) {
     return children;
@@ -115,45 +115,37 @@ export function MaintenanceGate({
         role="dialog"
         aria-modal="true"
         aria-labelledby="maintenance-title"
-        className="animate-fade-up relative z-10 w-full max-w-[340px] overflow-hidden rounded-[1.35rem] border border-white/10 bg-[#0b101c]/92 p-6 shadow-[0_24px_80px_rgba(0,0,0,0.45)] backdrop-blur-xl"
+        className="animate-fade-up relative z-10 w-full max-w-[340px] overflow-hidden rounded-[1.35rem] border border-white/10 bg-[#0b101c]/92 px-6 py-7 text-center shadow-[0_24px_80px_rgba(0,0,0,0.45)] backdrop-blur-xl"
       >
-        <div className="mx-auto mb-4 flex h-11 w-11 items-center justify-center rounded-2xl border border-amber-400/25 bg-amber-500/10 text-amber-300 shadow-[0_0_24px_rgba(245,158,11,0.18)]">
-          <Construction className="h-5 w-5" />
-        </div>
-        <p className="mb-2 text-center text-[10px] font-bold uppercase tracking-[0.22em] text-amber-300/90">
+        <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-amber-300/90">
           Under maintenance
         </p>
-        <h1 id="maintenance-title" className="text-center text-xl font-black tracking-tight text-white">
+        <h1 id="maintenance-title" className="mt-2 text-xl font-black tracking-tight text-white">
           We'll be back soon
         </h1>
-        <p className="mt-2 text-center text-sm leading-relaxed text-slate-400">
+        {remaining ? (
+          <p className="mt-5 font-black tracking-tight text-amber-200">
+            <span className="block text-3xl leading-none">{remaining.label}</span>
+            <span className="mt-1.5 block text-[10px] font-bold uppercase tracking-[0.18em] text-amber-300/70">
+              remaining
+            </span>
+          </p>
+        ) : null}
+        <p className="mt-5 text-sm leading-relaxed text-slate-400">
           The site is <strong className="font-bold text-white">under maintenance</strong>.
           Please check back shortly.
         </p>
         {status.message &&
         status.message !== "The site is under maintenance. Please check back shortly." ? (
-          <p className="mt-3 text-center text-sm leading-relaxed text-slate-300">
+          <p className="mt-3 text-sm leading-relaxed text-slate-300">
             {status.message}
           </p>
         ) : null}
-        {(untilLabel || remaining) && (
-          <div className="mt-5 flex flex-col gap-2">
-            {untilLabel ? (
-              <div className="flex items-center justify-center gap-2 text-xs text-slate-400">
-                <Clock className="h-3.5 w-3.5 text-slate-500" />
-                <span>
-                  Expected back <span className="font-semibold text-slate-200">{untilLabel}</span>
-                </span>
-              </div>
-            ) : null}
-            {remaining ? (
-              <div className="flex items-center justify-center gap-2 rounded-full border border-amber-400/20 bg-amber-500/10 px-3 py-1.5 text-xs font-bold text-amber-200">
-                <span className="h-1.5 w-1.5 rounded-full bg-amber-300 shadow-[0_0_8px_rgba(252,211,77,0.9)]" />
-                {remaining}
-              </div>
-            ) : null}
-          </div>
-        )}
+        {untilLabel ? (
+          <p className="mt-5 text-xs text-slate-500">
+            Expected back <span className="font-semibold text-slate-300">{untilLabel}</span>
+          </p>
+        ) : null}
       </div>
     </div>
   );
