@@ -209,7 +209,7 @@ const BLOCKED_LOCAL_PARTS = new Set([
 ]);
 
 export const SIGNUP_EMAIL_REJECTED =
-  "Temporary or disposable email addresses are not allowed. Use a real email (Gmail, Outlook, Yahoo, etc.).";
+  "Temporary or disposable email addresses are not allowed. Use a real Gmail.";
 
 const GMAIL_DOMAINS = new Set(["gmail.com", "googlemail.com"]);
 const MICROSOFT_DOMAINS = new Set(["outlook.com", "hotmail.com", "live.com", "msn.com"]);

@@ -233,12 +233,9 @@ export function SignupPage() {
               </div>
               {emailInvalid && (
                 <p className="mt-2 text-xs font-medium text-rose-400">
-                  Temp / disposable emails are blocked. Use Gmail, Outlook, Yahoo, or another real inbox.
+                  Temp / disposable emails are blocked. Use a real Gmail.
                 </p>
               )}
-              <p className="mt-2 text-xs text-slate-500">
-                One account per IP. Gmail/Outlook/Yahoo +aliases and extra dots are blocked.
-              </p>
             </div>
 
             {codeSent && (
