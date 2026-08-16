@@ -1,6 +1,7 @@
 import { getDb } from "./firebase-admin";
 import {
   mergePricingConfig,
+  withLivePlanLabels,
   type PricingConfig,
 } from "./pricing-config";
 
@@ -8,14 +9,14 @@ const DOC_PATH = { collection: "settings", id: "pricing" };
 
 export async function getPricingConfig(): Promise<PricingConfig> {
   const db = getDb();
-  if (!db) return mergePricingConfig(null);
+  if (!db) return withLivePlanLabels(mergePricingConfig(null));
 
   try {
     const doc = await db.collection(DOC_PATH.collection).doc(DOC_PATH.id).get();
-    if (!doc.exists) return mergePricingConfig(null);
-    return mergePricingConfig(doc.data() as Partial<PricingConfig>);
+    if (!doc.exists) return withLivePlanLabels(mergePricingConfig(null));
+    return withLivePlanLabels(mergePricingConfig(doc.data() as Partial<PricingConfig>));
   } catch {
-    return mergePricingConfig(null);
+    return withLivePlanLabels(mergePricingConfig(null));
   }
 }
 
@@ -40,5 +41,5 @@ export async function savePricingConfig(partial: Partial<PricingConfig>) {
     subscriptionDays: next.subscriptionDays,
   });
 
-  return next;
+  return withLivePlanLabels(next);
 }

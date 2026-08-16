@@ -488,7 +488,9 @@ export async function createUserByAdmin(input: {
   const { getSystemSettings, getTrialDurationMs } = await import("./admin-settings");
   const settings = await getSystemSettings();
   const defaultTrialExpiry = new Date(now.getTime() + getTrialDurationMs(settings)).toISOString();
-  const defaultSubExpiry = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000).toISOString();
+  const defaultSubExpiry = new Date(
+    now.getTime() + Math.max(settings.subscriptionDays, 1) * 24 * 60 * 60 * 1000,
+  ).toISOString();
 
   const trialExpiresAt =
     input.trialExpiresAt ||

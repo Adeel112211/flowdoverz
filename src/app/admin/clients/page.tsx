@@ -28,6 +28,7 @@ import { AdminDateTimeInput } from "@/components/admin-datetime-input";
 import { AdminLoadingState } from "@/components/admin-loading-state";
 import { AdminGlassModal, AdminGlassPanel } from "@/components/admin-glass-modal";
 import { useAdminToast } from "@/components/admin-toast";
+import { getTrialDurationMs } from "@/lib/pricing-config";
 import { AdminPageLayout } from "@/components/admin-page-layout";
 import { ClientMobileCard } from "@/components/admin-mobile-cards";
 import { useAdminLiveRefresh } from "@/hooks/use-admin-live-refresh";
@@ -69,22 +70,36 @@ type NewClientForm = {
   subscriptionExpiresAt: string;
 };
 
-function defaultExpiryForPlan(plan: string) {
+type BillingDefaults = {
+  trialDays: number;
+  trialMinutes: number;
+  subscriptionDays: number;
+};
+
+const DEFAULT_BILLING: BillingDefaults = {
+  trialDays: 14,
+  trialMinutes: 0,
+  subscriptionDays: 30,
+};
+
+function defaultExpiryForPlan(plan: string, billing: BillingDefaults = DEFAULT_BILLING) {
   const now = Date.now();
   if (PAID_PLANS.includes(plan)) {
     return {
       trialExpiresAt: new Date(now).toISOString(),
-      subscriptionExpiresAt: new Date(now + 30 * 24 * 60 * 60 * 1000).toISOString(),
+      subscriptionExpiresAt: new Date(
+        now + Math.max(billing.subscriptionDays, 1) * 24 * 60 * 60 * 1000,
+      ).toISOString(),
     };
   }
   return {
-    trialExpiresAt: new Date(now + 10 * 60 * 1000).toISOString(),
+    trialExpiresAt: new Date(now + getTrialDurationMs(billing)).toISOString(),
     subscriptionExpiresAt: "",
   };
 }
 
-function emptyNewClient(): NewClientForm {
-  const defaults = defaultExpiryForPlan("trial");
+function emptyNewClient(billing: BillingDefaults = DEFAULT_BILLING): NewClientForm {
+  const defaults = defaultExpiryForPlan("trial", billing);
   return {
     email: "",
     name: "",
@@ -193,6 +208,7 @@ export default function ClientsPage() {
   const [deletingClient, setDeletingClient] = useState(false);
   const [filter, setFilter] = useState<Filter>("all");
   const [searchQuery, setSearchQuery] = useState("");
+  const [billing, setBilling] = useState<BillingDefaults>(DEFAULT_BILLING);
 
   const fetchClients = useCallback(async (silent = false) => {
     try {
@@ -226,6 +242,17 @@ export default function ClientsPage() {
 
   useEffect(() => {
     void fetchClients(false);
+    fetch("/api/admin/pricing", { credentials: "same-origin" })
+      .then((res) => res.json())
+      .then((data) => {
+        if (!data?.success || !data.config) return;
+        setBilling({
+          trialDays: Number(data.config.trialDays) || 0,
+          trialMinutes: Number(data.config.trialMinutes) || 0,
+          subscriptionDays: Number(data.config.subscriptionDays) || 30,
+        });
+      })
+      .catch(() => {});
   }, [fetchClients]);
 
   useAdminLiveRefresh(() => fetchClients(true), [fetchClients]);
@@ -264,7 +291,7 @@ export default function ClientsPage() {
       if (data.success) {
         alert("Client created successfully");
         setCreating(false);
-        setNewClient(emptyNewClient());
+        setNewClient(emptyNewClient(billing));
         fetchClients();
       } else {
         alert("Create failed: " + data.error);
@@ -275,7 +302,7 @@ export default function ClientsPage() {
   };
 
   const handlePlanChange = (plan: string, target: "edit" | "create") => {
-    const defaults = defaultExpiryForPlan(plan);
+    const defaults = defaultExpiryForPlan(plan, billing);
     if (target === "edit" && editing) {
       setEditing({
         ...editing,
@@ -572,7 +599,7 @@ export default function ClientsPage() {
               <button
                 type="button"
                 onClick={() => {
-                  setNewClient(emptyNewClient());
+                  setNewClient(emptyNewClient(billing));
                   setCreating(true);
                 }}
                 className="inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-cyan-400 to-emerald-400 px-4 py-2.5 text-sm font-bold text-slate-950 transition-all shadow-[0_0_15px_rgba(34,211,238,0.3)] hover:shadow-[0_0_20px_rgba(34,211,238,0.5)]"
@@ -738,7 +765,7 @@ export default function ClientsPage() {
                   type="button"
                   onClick={() => {
                     setCreating(false);
-                    setNewClient(emptyNewClient());
+                    setNewClient(emptyNewClient(billing));
                   }}
                   className="flex-1 rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-bold text-slate-300 transition-all hover:bg-white/10"
                 >

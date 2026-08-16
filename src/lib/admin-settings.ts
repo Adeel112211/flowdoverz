@@ -1,4 +1,5 @@
 import { getDb } from "./firebase-admin";
+import { getTrialDurationMs as trialDurationFromConfig } from "./pricing-config";
 
 export type SystemSettings = {
   soloPricePkr: number;
@@ -23,7 +24,7 @@ export const DEFAULT_SYSTEM_SETTINGS: SystemSettings = {
   soloPricePkr: 999,
   teamPricePkr: 1999,
   trialDays: 14,
-  trialMinutes: 10,
+  trialMinutes: 0,
   subscriptionDays: 30,
   adminNotificationEmail: "",
   minExtensionVersion: "1.0.0",
@@ -64,10 +65,7 @@ export async function saveSystemSettings(partial: Partial<SystemSettings>) {
 }
 
 export function getTrialDurationMs(settings: SystemSettings): number {
-  if (settings.trialMinutes > 0) {
-    return settings.trialMinutes * 60 * 1000;
-  }
-  return Math.max(settings.trialDays, 1) * 24 * 60 * 60 * 1000;
+  return trialDurationFromConfig(settings);
 }
 
 export function planPricePkr(planId: string | undefined, settings: SystemSettings) {

@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { Check, Zap, Shield, Users, Sparkles, ArrowRight, Menu, X, Star } from "lucide-react";
-import { DEFAULT_PRICING_CONFIG, formatPkr, type PricingConfig, type PricingPlan } from "@/lib/pricing-config";
+import { DEFAULT_PRICING_CONFIG, formatPkr, formatTrialDurationLabel, type PricingConfig, type PricingPlan } from "@/lib/pricing-config";
 import { useClientSession } from "@/hooks/use-client-session";
 import { UserMenuButton } from "@/components/user-menu-button";
 import { BrandLogo } from "@/components/brand-logo";
@@ -43,12 +43,17 @@ function planVisuals(planId: PricingPlan["id"]) {
   };
 }
 
-const FAQS = [
-  { q: "What happens after the free trial?", a: "After your 10-minute trial, cookies are removed and the extension pauses. Upgrade to Solo or Team to instantly re-activate — no setup required." },
-  { q: "Is there an annual discount?", a: "Yes! Switch to annual billing and save over 20% compared to monthly pricing. The discount is applied automatically at checkout." },
-  { q: "Can I switch plans later?", a: "Absolutely. Upgrade or downgrade at any time. Upgrades apply immediately; downgrades take effect at the next billing cycle." },
-  { q: "Is the extension safe to install?", a: "Yes. Our extension is strictly scoped to labs.google.com only. It never accesses, modifies, or tracks any other site or personal data." },
-];
+function pricingFaqs(trialLabel: string) {
+  return [
+    {
+      q: "What happens after the free trial?",
+      a: `After your ${trialLabel} trial, cookies are removed and the extension pauses. Upgrade to Solo or Team to instantly re-activate — no setup required.`,
+    },
+    { q: "Is there an annual discount?", a: "Yes! Switch to annual billing and save over 20% compared to monthly pricing. The discount is applied automatically at checkout." },
+    { q: "Can I switch plans later?", a: "Absolutely. Upgrade or downgrade at any time. Upgrades apply immediately; downgrades take effect at the next billing cycle." },
+    { q: "Is the extension safe to install?", a: "Yes. Our extension is strictly scoped to labs.google.com only. It never accesses, modifies, or tracks any other site or personal data." },
+  ];
+}
 
 
 export default function PricingPage() {
@@ -385,7 +390,7 @@ export default function PricingPage() {
             <p className="text-slate-400">Everything you need to know before subscribing.</p>
           </div>
           <div className="space-y-3">
-            {FAQS.map((faq, i) => (
+            {pricingFaqs(formatTrialDurationLabel(pricing)).map((faq, i) => (
               <div
                 key={i}
                 onClick={() => setOpenFaq(openFaq === i ? null : i)}

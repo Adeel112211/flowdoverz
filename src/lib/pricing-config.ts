@@ -40,7 +40,7 @@ export const DEFAULT_PRICING_PLANS: PricingPlan[] = [
       "Experience the full power of Google Flow with no commitment. Perfect for testing before you subscribe.",
     priceMonthlyPkr: 0,
     priceAnnualPkr: 0,
-    periodLabel: "10-minute trial",
+    periodLabel: "14-day trial",
     btnLabel: "Start Free Trial",
     featured: false,
     enabled: true,
@@ -105,7 +105,7 @@ export const DEFAULT_PRICING_PLANS: PricingPlan[] = [
 
 export const DEFAULT_PRICING_CONFIG: PricingConfig = {
   trialDays: 14,
-  trialMinutes: 10,
+  trialMinutes: 0,
   trialOnePerIp: true,
   subscriptionDays: 30,
   heroEyebrow: "Transparent pricing · No hidden fees",
@@ -154,4 +154,38 @@ export function planFromConfig(config: PricingConfig, planId: string) {
 export function planPriceFromConfig(planId: string, config: PricingConfig) {
   const plan = config.plans.find((p) => p.id === planId);
   return plan?.priceMonthlyPkr ?? 0;
+}
+
+/** Days win when set so a 14-day trial is not overridden by leftover minutes. */
+export function getTrialDurationMs(settings: { trialDays?: number; trialMinutes?: number }) {
+  const days = Math.max(0, Number(settings.trialDays) || 0);
+  const minutes = Math.max(0, Number(settings.trialMinutes) || 0);
+  if (days > 0) return days * 24 * 60 * 60 * 1000;
+  if (minutes > 0) return minutes * 60 * 1000;
+  return 14 * 24 * 60 * 60 * 1000;
+}
+
+export function formatTrialDurationLabel(settings: { trialDays?: number; trialMinutes?: number }) {
+  const days = Math.max(0, Number(settings.trialDays) || 0);
+  const minutes = Math.max(0, Number(settings.trialMinutes) || 0);
+  if (days > 0) return days === 1 ? "1 day" : `${days} days`;
+  if (minutes > 0) return minutes === 1 ? "1 min" : `${minutes} min`;
+  return "14 days";
+}
+
+export function withLivePlanLabels(config: PricingConfig): PricingConfig {
+  const trialLabel = formatTrialDurationLabel(config);
+  const subDays = Math.max(1, Number(config.subscriptionDays) || 30);
+  return {
+    ...config,
+    plans: config.plans.map((plan) => {
+      if (plan.id === "trial") {
+        return { ...plan, periodLabel: `${trialLabel} trial` };
+      }
+      if (plan.id === "solo" || plan.id === "team") {
+        return { ...plan, periodLabel: `per month · ${subDays} days` };
+      }
+      return plan;
+    }),
+  };
 }

@@ -257,18 +257,7 @@ export function AdminPricingEditor({ config, onChange }: Props) {
         >
           <div className="grid gap-4 sm:grid-cols-2">
             <div>
-              <label className={labelClass}>Default trial minutes</label>
-              <input
-                type="number"
-                min={1}
-                className={inputClass}
-                value={config.trialMinutes ?? 10}
-                onChange={(e) => onChange({ ...config, trialMinutes: Number(e.target.value) })}
-              />
-              <p className="mt-1 text-xs text-slate-500">Used for new signups and trial resets (default 10 min).</p>
-            </div>
-            <div>
-              <label className={labelClass}>Legacy trial days</label>
+              <label className={labelClass}>Trial days</label>
               <input
                 type="number"
                 min={0}
@@ -276,7 +265,22 @@ export function AdminPricingEditor({ config, onChange }: Props) {
                 value={config.trialDays}
                 onChange={(e) => onChange({ ...config, trialDays: Number(e.target.value) })}
               />
-              <p className="mt-1 text-xs text-slate-500">Only used if trial minutes is set to 0.</p>
+              <p className="mt-1 text-xs text-slate-500">
+                Used for new signups when greater than 0 (example: 14 days).
+              </p>
+            </div>
+            <div>
+              <label className={labelClass}>Trial minutes</label>
+              <input
+                type="number"
+                min={0}
+                className={inputClass}
+                value={config.trialMinutes ?? 0}
+                onChange={(e) => onChange({ ...config, trialMinutes: Number(e.target.value) })}
+              />
+              <p className="mt-1 text-xs text-slate-500">
+                Used only when trial days is 0, for short test trials.
+              </p>
             </div>
             <div className="sm:col-span-2">
               <label className="flex items-start gap-3 rounded-xl border border-white/10 bg-black/20 px-4 py-3 cursor-pointer">

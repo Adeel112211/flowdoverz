@@ -9,7 +9,7 @@ import { appPath, marketingPath } from "@/lib/site-urls";
 import { signUp } from "@/lib/auth";
 import { applyMaintenanceFromPayload } from "@/lib/maintenance-client";
 import { validateSignupEmailClient, SIGNUP_EMAIL_REJECTED } from "@/lib/signup-email-rules";
-import { Eye, EyeOff, ChevronDown, AlertCircle } from "lucide-react";
+import { formatTrialDurationLabel, type PricingConfig } from "@/lib/pricing-config";
 
 export function SignupPage() {
   const router = useRouter();
@@ -24,6 +24,21 @@ export function SignupPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [selectedPlan, setSelectedPlan] = useState("trial");
   const [planDropdownOpen, setPlanDropdownOpen] = useState(false);
+  const [trialLabel, setTrialLabel] = useState("14 days");
+
+  useEffect(() => {
+    let active = true;
+    fetch("/api/pricing")
+      .then((res) => res.json())
+      .then((data) => {
+        if (!active || !data?.success || !data.config) return;
+        setTrialLabel(formatTrialDurationLabel(data.config as PricingConfig));
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, []);
 
   useEffect(() => {
     if (resendSeconds <= 0) return;
@@ -284,7 +299,7 @@ export function SignupPage() {
                   className="flex w-full items-center justify-between rounded-2xl border border-white/10 bg-white/5 px-5 py-3.5 text-sm text-white outline-none transition-all duration-300 hover:bg-white/10 focus:border-cyan-400 focus:shadow-[0_0_20px_rgba(34,211,238,0.25)] focus:ring-2 focus:ring-cyan-500/20"
                 >
                   <span>
-                    {selectedPlan === "trial" ? "Free Trial (10 min)" : "Paid Plan (Solo / Team)"}
+                    {selectedPlan === "trial" ? `Free Trial (${trialLabel})` : "Paid Plan (Solo / Team)"}
                   </span>
                   <ChevronDown
                     className={`h-4 w-4 text-slate-400 transition-transform duration-300 ${planDropdownOpen ? "rotate-180" : ""}`}
@@ -303,7 +318,7 @@ export function SignupPage() {
                         }}
                         className="w-full px-5 py-3.5 text-left text-sm text-slate-200 transition-colors hover:bg-white/5 hover:text-white"
                       >
-                        Free Trial (10 min)
+                        Free Trial ({trialLabel})
                       </button>
                       <button
                         type="button"
