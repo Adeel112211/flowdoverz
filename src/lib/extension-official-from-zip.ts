@@ -88,7 +88,10 @@ function sha256Hex(text: string) {
  * Stamp an uploaded ZIP as official: hash every text file, write EXPECTED_INTEGRITY_HASH,
  * and return the server proof profile. Modified copies of this ZIP will fail sync.
  */
-export async function sealOfficialExtensionZip(zipBuffer: Buffer): Promise<{
+export async function sealOfficialExtensionZip(
+  zipBuffer: Buffer,
+  options?: { version?: string },
+): Promise<{
   zipBuffer: Buffer;
   profile: OfficialIntegrityProfile;
 }> {
@@ -124,6 +127,24 @@ export async function sealOfficialExtensionZip(zipBuffer: Buffer): Promise<{
     texts[file] = await zipEntry(zip, file)!.async("string");
   }
 
+  const releaseVersion = String(options?.version || "").trim();
+  if (releaseVersion) {
+    try {
+      const manifest = JSON.parse(texts["manifest.json"] || "{}") as {
+        version?: string;
+        version_name?: string;
+      };
+      manifest.version = releaseVersion;
+      manifest.version_name = releaseVersion;
+      const stamped = `${JSON.stringify(manifest, null, 2)}\n`;
+      texts["manifest.json"] = stamped;
+      const manifestEntry = zipEntry(zip, "manifest.json");
+      if (manifestEntry) zip.file(manifestEntry.name, stamped);
+    } catch {
+      throw new Error("ZIP manifest.json could not be updated with the release version.");
+    }
+  }
+
   let payload = files.map((file) => stripIntegrityHashConstant(texts[file])).join("");
   const hash = sha256Hex(payload);
 
@@ -151,12 +172,14 @@ export async function sealOfficialExtensionZip(zipBuffer: Buffer): Promise<{
     }
   }
 
-  let version = "1.0.0";
-  try {
-    const manifest = JSON.parse(texts["manifest.json"] || "{}") as { version?: string };
-    version = String(manifest.version || version);
-  } catch {
-    // keep default
+  let version = releaseVersion || "1.0.0";
+  if (!releaseVersion) {
+    try {
+      const manifest = JSON.parse(texts["manifest.json"] || "{}") as { version?: string };
+      version = String(manifest.version || version);
+    } catch {
+      // keep default
+    }
   }
 
   const sealed = await zip.generateAsync({

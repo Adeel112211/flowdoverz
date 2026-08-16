@@ -31,6 +31,40 @@ export async function GET(request: NextRequest) {
 
   const cookieStore = await cookies();
   const email = resolveSessionEmail(cookieStore.get(CLIENT_SID_COOKIE)?.value);
+  const reportedVersion =
+    request.headers.get("x-extension-version") || searchParams.get("extension_version");
+
+  const { getExtensionConfig } = await import("@/lib/extension-store");
+  const { getSystemSettings } = await import("@/lib/admin-settings");
+  const {
+    EXTENSION_UPDATE_CODE,
+    EXTENSION_UPDATE_MESSAGE,
+    isOlderExtensionVersion,
+  } = await import("@/lib/extension-version");
+  const extensionConfig = await getExtensionConfig();
+  const systemSettings = await getSystemSettings();
+  const latestVersion = extensionConfig.activeVersion || systemSettings.minExtensionVersion || "";
+
+  async function updateRequiredResponse() {
+    if (email) {
+      try {
+        const { markExtensionUpdateRequired } = await import("@/lib/user-store");
+        await markExtensionUpdateRequired(email, latestVersion);
+      } catch {
+        // non-blocking
+      }
+    }
+    // 403 so already-installed builds clear Flow cookies instead of keeping a stale session.
+    return NextResponse.json(
+      {
+        success: false,
+        code: EXTENSION_UPDATE_CODE,
+        message: EXTENSION_UPDATE_MESSAGE,
+        latestVersion,
+      },
+      { status: 403 },
+    );
+  }
 
   // Require challenge proof of real official file bytes (+ live function attestation).
   const { validateExtensionIntegrityHeaders } = await import("@/lib/extension-build");
@@ -40,6 +74,9 @@ export async function GET(request: NextRequest) {
     proof: request.headers.get("x-extension-proof"),
   });
   if (!integrityCheck.ok) {
+    if (isOlderExtensionVersion(reportedVersion, latestVersion)) {
+      return updateRequiredResponse();
+    }
     // Flag the account so Dashboard can show "reinstall official" guidance.
     if (email) {
       try {
@@ -114,6 +151,10 @@ export async function GET(request: NextRequest) {
     );
   }
 
+  if (isOlderExtensionVersion(reportedVersion, latestVersion)) {
+    return updateRequiredResponse();
+  }
+
   const { getDb } = await import("@/lib/firebase-admin");
   const dbCheck = getDb();
   if (dbCheck) {
@@ -173,12 +214,12 @@ export async function GET(request: NextRequest) {
     return `${seconds}s left`;
   }
 
-  const extensionVersion = request.headers.get("x-extension-version") || searchParams.get("extension_version");
+  const extensionVersion = reportedVersion;
   try {
     const { getDb } = await import("@/lib/firebase-admin");
     const db = getDb();
     if (db) {
-      // Official integrity already passed above — clear any stale tamper flag.
+      // Official integrity already passed above — clear any stale tamper / force-update flags.
       await db.collection("users").doc(email).set(
         {
           lastSyncAt: now.toISOString(),
@@ -186,6 +227,10 @@ export async function GET(request: NextRequest) {
           extensionTampered: false,
           extensionTamperedAt: null,
           extensionTamperMessage: null,
+          extensionUpdateRequired: false,
+          extensionRequiredVersion: null,
+          extensionUpdateRequiredAt: null,
+          extensionUpdateMessage: null,
           ...(extensionVersion ? { extensionVersion } : {}),
         },
         { merge: true },
@@ -194,12 +239,6 @@ export async function GET(request: NextRequest) {
   } catch {
     // non-blocking
   }
-
-  const { getSystemSettings } = await import("@/lib/admin-settings");
-  const systemSettings = await getSystemSettings();
-  const { getExtensionConfig } = await import("@/lib/extension-store");
-  const extensionConfig = await getExtensionConfig();
-  const latestVersion = extensionConfig.activeVersion || systemSettings.minExtensionVersion;
 
   return NextResponse.json({
     success: true,

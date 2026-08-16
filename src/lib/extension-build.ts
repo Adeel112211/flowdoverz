@@ -13,7 +13,7 @@ import type { OfficialIntegrityAttestation, OfficialIntegrityProfile } from "@/l
 export const OFFICIAL_EXTENSION_VERSION = "1.0.0";
 
 export const OFFICIAL_EXTENSION_INTEGRITY_HASH =
-  "2a741b84800c649dc896d297e6df7b6a563489b5ec9c4b8b14df09494e82e1f0";
+  "5bcef0931241cc2aaaad85c1b043d2c56800a94f1f085b56e302856e9dfaf3c4";
 
 /** Shown by extension when server rejects a modified build. */
 export const EXTENSION_TAMPER_MESSAGE =
@@ -92,6 +92,23 @@ function challengeSecret() {
 export async function expectedExtensionIntegrityHash() {
   const profile = await resolveOfficialProfile();
   return profile.hash.toLowerCase();
+}
+
+export async function officialExtensionVersion() {
+  try {
+    const { getExtensionConfig } = await import("./extension-store");
+    const config = await getExtensionConfig();
+    if (config.activeVersion) return String(config.activeVersion);
+  } catch {
+    // fall through
+  }
+  try {
+    const profile = await resolveOfficialProfile();
+    if (profile.version) return String(profile.version);
+  } catch {
+    // fall through
+  }
+  return OFFICIAL_EXTENSION_VERSION;
 }
 
 export async function officialExtensionPayload() {

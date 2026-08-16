@@ -2,6 +2,7 @@
 
 import { useEffect, useState, type ReactNode } from "react";
 import { usePathname } from "next/navigation";
+import { BrandLogo } from "@/components/brand-logo";
 import {
   MAINTENANCE_EVENT,
   type MaintenanceNotice,
@@ -28,43 +29,6 @@ function extraMessage(custom: string) {
     return raw.slice(raw.toLowerCase().indexOf("shortly.") + "shortly.".length).trim();
   }
   return raw;
-}
-
-function MaintenanceMark({ className = "" }: { className?: string }) {
-  return (
-    <div className={`relative flex shrink-0 items-center justify-center ${className}`}>
-      <div className="absolute inset-0 rounded-2xl bg-amber-400/25 blur-xl" />
-      <svg
-        viewBox="0 0 112 112"
-        className="relative h-full w-full drop-shadow-[0_0_18px_rgba(34,211,238,0.28)]"
-        aria-hidden="true"
-      >
-        <defs>
-          <linearGradient id="mm-ring" x1="10" y1="102" x2="102" y2="10" gradientUnits="userSpaceOnUse">
-            <stop stopColor="#FBBF24" />
-            <stop offset="0.5" stopColor="#22D3EE" />
-            <stop offset="1" stopColor="#34D399" />
-          </linearGradient>
-          <linearGradient id="mm-fill" x1="28" y1="24" x2="86" y2="88" gradientUnits="userSpaceOnUse">
-            <stop stopColor="#FDE68A" />
-            <stop offset="0.45" stopColor="#67E8F9" />
-            <stop offset="1" stopColor="#34D399" />
-          </linearGradient>
-        </defs>
-        <rect x="8" y="8" width="96" height="96" rx="28" fill="#070b14" stroke="url(#mm-ring)" strokeWidth="3.2" />
-        <path
-          d="M40 34a12 12 0 1 1 8.5 20.5L70 76a7 7 0 0 0 10-10L58.5 44.5A12 12 0 0 1 40 34Z"
-          fill="none"
-          stroke="url(#mm-fill)"
-          strokeWidth="5"
-          strokeLinejoin="round"
-        />
-        <circle cx="40" cy="40" r="5.5" fill="none" stroke="url(#mm-fill)" strokeWidth="4" />
-        <circle cx="78" cy="72" r="3.6" fill="#22D3EE" />
-        <circle cx="78" cy="72" r="7" fill="none" stroke="#22D3EE" strokeOpacity="0.3" />
-      </svg>
-    </div>
-  );
 }
 
 function remainingParts(iso: string, now: number) {
@@ -155,50 +119,52 @@ export function MaintenanceGate({
   const untilLabel = formatUntil(status.until);
 
   return (
-    <div className="fixed inset-0 z-[200] flex items-center justify-center overflow-y-auto bg-[#05060a] px-4 py-6">
-      <div className="pointer-events-none absolute inset-0 overflow-hidden">
-        <div className="absolute left-1/2 top-[16%] h-[320px] w-[320px] -translate-x-1/2 rounded-full bg-amber-500/16 blur-[100px]" />
-        <div className="absolute bottom-[10%] right-[6%] h-[200px] w-[200px] rounded-full bg-cyan-500/10 blur-[90px]" />
+    <div className="fixed inset-0 z-[200] min-h-dvh overflow-y-auto bg-[#080810]">
+      <div className="pointer-events-none absolute inset-0">
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_0%,rgba(6,182,212,0.16)_0%,transparent_48%),radial-gradient(circle_at_50%_100%,rgba(20,184,166,0.12)_0%,transparent_42%)]" />
       </div>
 
       <div
-        role="dialog"
-        aria-modal="true"
+        role="main"
         aria-labelledby="maintenance-title"
-        className="animate-fade-up relative z-10 w-full max-w-[380px] overflow-hidden rounded-[1.5rem] border border-white/10 bg-[#0b101c]/92 px-6 py-7 text-center shadow-[0_24px_80px_rgba(0,0,0,0.45)] backdrop-blur-xl"
+        className="animate-fade-up relative z-10 flex min-h-dvh flex-col items-center justify-center px-6 py-16 text-center"
       >
-        <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-amber-300">
+        <BrandLogo size="xl" stacked showTagline={false} />
+        <p className="mt-8 text-[11px] font-bold uppercase tracking-[0.28em] text-cyan-400">
           Under maintenance
         </p>
-        <div className="mt-4 flex items-center justify-center gap-3 text-left">
-          <MaintenanceMark className="h-[4.25rem] w-[4.25rem]" />
-          <h1 id="maintenance-title" className="text-[1.55rem] font-black leading-tight tracking-tight text-white">
-            We'll be back soon
-          </h1>
-        </div>
-        {remaining ? (
-          <div className="mt-5 rounded-2xl border border-amber-400/35 bg-amber-400/12 px-4 py-3">
-            <p className="text-[1.65rem] font-black leading-none tracking-tight text-amber-200">
-              {remaining.label}
-            </p>
-            <p className="mt-1.5 text-[11px] font-bold uppercase tracking-[0.16em] text-amber-300">
-              left
-            </p>
-            {untilLabel ? (
-              <p className="mt-2 text-xs font-medium text-slate-200">
-                Expected back {untilLabel}
-              </p>
-            ) : null}
-          </div>
-        ) : untilLabel ? (
-          <p className="mt-5 text-sm font-semibold text-slate-200">Expected back {untilLabel}</p>
-        ) : null}
-        <p className="mt-5 text-sm leading-relaxed text-slate-400">
+        <h1
+          id="maintenance-title"
+          className="mt-3 max-w-xl text-4xl font-black tracking-tight text-white sm:text-5xl"
+        >
+          We'll be back soon
+        </h1>
+        <p className="mt-4 max-w-md text-base leading-relaxed text-slate-400">
           The site is <strong className="font-bold text-white">under maintenance</strong>.
           Please check back shortly.
         </p>
         {note ? (
-          <p className="mt-2 text-sm leading-relaxed text-slate-300">{note}</p>
+          <p className="mt-2 max-w-md text-base leading-relaxed text-slate-300">{note}</p>
+        ) : null}
+
+        {remaining ? (
+          <div className="mt-10">
+            <p className="bg-gradient-to-r from-cyan-400 to-emerald-400 bg-clip-text text-5xl font-black tracking-tight text-transparent sm:text-6xl">
+              {remaining.label}
+            </p>
+            <p className="mt-2 text-[11px] font-bold uppercase tracking-[0.22em] text-cyan-400">
+              left
+            </p>
+            {untilLabel ? (
+              <p className="mt-4 text-sm text-slate-400">
+                Expected back <span className="font-semibold text-slate-200">{untilLabel}</span>
+              </p>
+            ) : null}
+          </div>
+        ) : untilLabel ? (
+          <p className="mt-10 text-sm text-slate-400">
+            Expected back <span className="font-semibold text-slate-200">{untilLabel}</span>
+          </p>
         ) : null}
       </div>
     </div>

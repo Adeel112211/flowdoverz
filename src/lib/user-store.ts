@@ -603,6 +603,8 @@ export async function getUserStatus(email: string): Promise<{
   emailVerified: boolean;
   extensionTampered: boolean;
   extensionTamperMessage: string | null;
+  extensionUpdateRequired: boolean;
+  extensionRequiredVersion: string | null;
 } | null> {
   const db = getDb();
   if (!db) return null;
@@ -616,6 +618,8 @@ export async function getUserStatus(email: string): Promise<{
     extensionTampered?: boolean;
     extensionTamperMessage?: string | null;
     extensionTamperedAt?: string | null;
+    extensionUpdateRequired?: boolean;
+    extensionRequiredVersion?: string | null;
   };
   const now = new Date();
   const emailVerified = user.emailVerified !== false;
@@ -640,6 +644,8 @@ export async function getUserStatus(email: string): Promise<{
     emailVerified,
     extensionTampered,
     extensionTamperMessage: extensionTampered ? user.extensionTamperMessage || null : null,
+    extensionUpdateRequired: user.extensionUpdateRequired === true,
+    extensionRequiredVersion: String(user.extensionRequiredVersion || "") || null,
   };
 }
 
@@ -670,6 +676,37 @@ export async function clearExtensionTampered(email: string) {
       extensionTampered: false,
       extensionTamperedAt: null,
       extensionTamperMessage: null,
+    },
+    { merge: true },
+  );
+}
+
+export async function markExtensionUpdateRequired(email: string, latestVersion?: string) {
+  const db = getDb();
+  if (!db) return;
+  const { EXTENSION_UPDATE_MESSAGE } = await import("./extension-version");
+  const normalized = normalizeEmail(email);
+  await db.collection("users").doc(normalized).set(
+    {
+      extensionUpdateRequired: true,
+      extensionRequiredVersion: String(latestVersion || "").trim() || null,
+      extensionUpdateRequiredAt: new Date().toISOString(),
+      extensionUpdateMessage: EXTENSION_UPDATE_MESSAGE,
+    },
+    { merge: true },
+  );
+}
+
+export async function clearExtensionUpdateRequired(email: string) {
+  const db = getDb();
+  if (!db) return;
+  const normalized = normalizeEmail(email);
+  await db.collection("users").doc(normalized).set(
+    {
+      extensionUpdateRequired: false,
+      extensionRequiredVersion: null,
+      extensionUpdateRequiredAt: null,
+      extensionUpdateMessage: null,
     },
     { merge: true },
   );

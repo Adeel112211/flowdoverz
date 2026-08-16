@@ -11,7 +11,7 @@ import { useAdminToast } from "@/components/admin-toast";
 import type { MaintenanceSettings } from "@/lib/maintenance";
 
 const inputClass =
-  "w-full rounded-xl border border-white/10 bg-[#080810] px-4 py-3 text-sm text-slate-200 outline-none focus:border-amber-400 focus:ring-1 focus:ring-amber-400/30 transition-colors";
+  "w-full rounded-xl border border-white/10 bg-[#080810] px-4 py-3 text-sm text-slate-200 outline-none focus:border-cyan-400 focus:ring-1 focus:ring-cyan-400/30 transition-colors";
 
 const DURATION_PRESETS = [
   { label: "30 min", minutes: 30 },
@@ -98,7 +98,7 @@ export default function AdminMaintenancePage() {
       if (data.success) {
         toast(
           data.settings?.enabled
-            ? "Maintenance is on — flow.doverz.com will show the popup"
+            ? "Maintenance is on — visitors will see the full-page notice"
             : "Maintenance is off — flow.doverz.com is live",
         );
         setEnabled(Boolean(data.settings.enabled));
@@ -125,7 +125,7 @@ export default function AdminMaintenancePage() {
               type="button"
               onClick={save}
               disabled={saving}
-              className="inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 px-4 py-2.5 text-sm font-bold text-slate-950 shadow-lg shadow-amber-500/20 hover:opacity-90 disabled:opacity-50"
+              className="inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-cyan-400 to-emerald-400 px-4 py-2.5 text-sm font-bold text-slate-950 shadow-[0_0_15px_rgba(34,211,238,0.3)] hover:shadow-[0_0_20px_rgba(34,211,238,0.5)] disabled:opacity-50"
             >
               <Save className="h-4 w-4" />
               {saving ? "Saving..." : "Save"}
@@ -141,7 +141,7 @@ export default function AdminMaintenancePage() {
               <div
                 className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border ${
                   enabled
-                    ? "border-amber-400/40 bg-amber-500/15 text-amber-300"
+                    ? "border-cyan-400/40 bg-cyan-500/15 text-cyan-300"
                     : "border-white/10 bg-white/5 text-slate-400"
                 }`}
               >
@@ -150,7 +150,7 @@ export default function AdminMaintenancePage() {
               <div>
                 <h2 className="text-lg font-bold text-white">Website maintenance</h2>
                 <p className="mt-1 text-sm leading-relaxed text-slate-400">
-                  When this is on, visitors on flow.doverz.com only see a maintenance popup. Login,
+                  When this is on, visitors on flow.doverz.com see a full-page maintenance screen. Login,
                   signup, dashboard, and pricing are blocked. This admin panel is not affected.
                 </p>
               </div>
@@ -161,7 +161,7 @@ export default function AdminMaintenancePage() {
               aria-checked={enabled}
               onClick={() => toggleEnabled(!enabled)}
               className={`relative h-9 w-16 shrink-0 rounded-full transition-colors ${
-                enabled ? "bg-amber-500" : "bg-slate-700"
+                enabled ? "bg-gradient-to-r from-cyan-400 to-emerald-400" : "bg-slate-700"
               }`}
             >
               <span
@@ -175,12 +175,12 @@ export default function AdminMaintenancePage() {
           <div
             className={`mt-6 rounded-xl border px-4 py-3 text-sm font-medium ${
               enabled
-                ? "border-amber-500/30 bg-amber-500/10 text-amber-200"
+                ? "border-cyan-500/30 bg-cyan-500/10 text-cyan-100"
                 : "border-emerald-500/30 bg-emerald-500/10 text-emerald-200"
             }`}
           >
             {enabled
-              ? `On — flow.doverz.com will show the popup until ${formatUntil(until)}.`
+              ? `On — visitors will see the maintenance page until ${formatUntil(until)}.`
               : "Off — flow.doverz.com works normally."}
             {remainingLabel ? ` ${remainingLabel}` : ""}
           </div>
@@ -197,12 +197,12 @@ export default function AdminMaintenancePage() {
             placeholder="We're upgrading servers. FlowDoverz will be back shortly."
             className={`${inputClass} min-h-[140px] resize-y`}
           />
-          <p className="mt-2 text-xs text-slate-500">This message appears on the visitor popup.</p>
+          <p className="mt-2 text-xs text-slate-500">This message appears on the visitor maintenance page.</p>
         </AdminPanel>
 
         <AdminPanel>
           <div className="mb-4 flex items-center gap-3">
-            <Clock className="h-4 w-4 text-amber-400" />
+            <Clock className="h-4 w-4 text-cyan-400" />
             <div>
               <h3 className="text-base font-bold text-white">Duration</h3>
               <p className="text-sm text-slate-500">
@@ -218,7 +218,7 @@ export default function AdminMaintenancePage() {
                 key={preset.label}
                 type="button"
                 onClick={() => setUntil(hoursFromNowIso(preset.minutes))}
-                className="rounded-lg border border-white/10 bg-[#080810] px-3 py-2 text-xs font-bold text-slate-300 hover:border-amber-400/40 hover:text-white"
+                className="rounded-lg border border-white/10 bg-[#080810] px-3 py-2 text-xs font-bold text-slate-300 hover:border-cyan-400/40 hover:text-white"
               >
                 {preset.label}
               </button>
@@ -232,8 +232,8 @@ export default function AdminMaintenancePage() {
         </AdminPanel>
 
         {enabled && (
-          <div className="flex items-start gap-3 rounded-xl border border-amber-500/20 bg-amber-500/5 px-4 py-3 text-sm text-amber-100/80">
-            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-400" />
+          <div className="flex items-start gap-3 rounded-xl border border-cyan-500/20 bg-cyan-500/5 px-4 py-3 text-sm text-cyan-100/80">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-cyan-400" />
             Visitors cannot use the website until you turn this off or the end time is reached.
           </div>
         )}

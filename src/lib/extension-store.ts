@@ -98,7 +98,7 @@ export async function uploadExtensionRelease(input: {
 
   const { sealOfficialExtensionZip } = await import("./extension-official-from-zip");
   const { invalidateOfficialIntegrityCache } = await import("./extension-build");
-  const sealed = await sealOfficialExtensionZip(input.zipBuffer);
+  const sealed = await sealOfficialExtensionZip(input.zipBuffer, { version });
 
   const config = await getExtensionConfig();
 
@@ -220,7 +220,7 @@ export async function getActiveIntegrityProfile(): Promise<OfficialIntegrityProf
 
   try {
     const { sealOfficialExtensionZip } = await import("./extension-official-from-zip");
-    const sealed = await sealOfficialExtensionZip(zip.buffer);
+    const sealed = await sealOfficialExtensionZip(zip.buffer, { version });
     if (db) {
       await db.collection(INTEGRITY_COLLECTION).doc(sanitizeVersion(version)).set(sealed.profile);
     }

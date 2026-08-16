@@ -22,6 +22,8 @@ type UserStatus = {
   emailVerified: boolean;
   extensionTampered?: boolean;
   extensionTamperMessage?: string | null;
+  extensionUpdateRequired?: boolean;
+  extensionRequiredVersion?: string | null;
 };
 
 function getExpiryTimestamp(status: UserStatus) {
@@ -60,9 +62,12 @@ export function DashboardPage() {
   const [isDownloading, setIsDownloading] = useState(false);
   const [portalReady, setPortalReady] = useState(false);
   /** Live signal from official extension bridge: true/false, or null while unknown. */
-  const [liveTamper, setLiveTamper] = useState<null | { active: boolean; message: string | null }>(
-    null
-  );
+  const [liveTamper, setLiveTamper] = useState<null | {
+    active: boolean;
+    kind?: "modified" | "update";
+    message: string | null;
+    version?: string | null;
+  }>(null);
   const extensionStatusAtRef = useRef(0);
 
   useEffect(() => {
@@ -130,8 +135,13 @@ export function DashboardPage() {
     void loadStatus();
     void loadExtension();
 
+    const statusPoll = window.setInterval(() => {
+      void loadStatus();
+    }, 8000);
+
     return () => {
       active = false;
+      window.clearInterval(statusPoll);
     };
   }, [router, session, sessionReady]);
 
@@ -161,16 +171,29 @@ export function DashboardPage() {
 
     function hideTamperBanner() {
       if (cancelled) return;
-      setLiveTamper({ active: false, message: null });
+      setLiveTamper({ active: false, kind: undefined, message: null, version: null });
     }
 
     function showTamperBanner(message: string | null) {
       if (cancelled) return;
       setLiveTamper({
         active: true,
+        kind: "modified",
         message:
           message ||
           "Remove Modified or cookies extractor extensions.",
+      });
+    }
+
+    function showUpdateBanner(message: string | null, version?: string | null) {
+      if (cancelled) return;
+      setLiveTamper({
+        active: true,
+        kind: "update",
+        message:
+          message ||
+          "A new FlowDoverz extension is required. Download it and install it to continue.",
+        version: version || null,
       });
     }
 
@@ -207,6 +230,15 @@ export function DashboardPage() {
       awaitingStatus = false;
       extensionStatusAtRef.current = Date.now();
       window.clearTimeout(noAnswerTimer);
+
+      if (data.updateRequired === true) {
+        lastTrueAt = Date.now();
+        showUpdateBanner(
+          typeof data.message === "string" ? data.message : null,
+          typeof data.latestVersion === "string" ? data.latestVersion : null,
+        );
+        return;
+      }
 
       if (data.modifiedPresent === true) {
         lastTrueAt = Date.now();
@@ -295,11 +327,18 @@ export function DashboardPage() {
   const liveExpired = status ? isLiveExpired(status, now) : false;
   const isExpired = !status?.active || liveExpired;
   const needsEmailVerification = status?.emailVerified === false;
-  // Chrome bridge only — no server flag / no multi-user write pressure.
-  const showModifiedExtensionBanner = liveTamper?.active === true;
+  const showUpdateExtensionBanner =
+    liveTamper?.active === true && liveTamper.kind === "update"
+      ? true
+      : Boolean(status?.extensionUpdateRequired);
+  const showModifiedExtensionBanner =
+    liveTamper?.active === true && liveTamper.kind !== "update" && !showUpdateExtensionBanner;
   const modifiedExtensionMessage =
     liveTamper?.message ||
     "Remove Modified or cookies extractor extensions.";
+  const updateExtensionMessage =
+    (liveTamper?.kind === "update" && liveTamper.message) ||
+    "A new FlowDoverz extension is required. This version no longer works until you install the latest official build.";
 
   async function resendVerification() {
     setResending(true);
@@ -427,6 +466,30 @@ export function DashboardPage() {
               className="shrink-0 rounded-xl border border-amber-400/40 bg-amber-400/10 px-5 py-2.5 text-sm font-bold text-amber-200 hover:bg-amber-400/20 disabled:opacity-50"
             >
               {resending ? "Sending..." : "Resend email"}
+            </button>
+          </div>
+        )}
+
+        {showUpdateExtensionBanner && (
+          <div className="mb-6 sm:mb-8 rounded-2xl border border-cyan-400/40 bg-cyan-500/10 p-4 sm:p-6 flex flex-col sm:flex-row items-start gap-4 backdrop-blur-xl">
+            <DownloadCloud className="text-cyan-300 shrink-0 mt-0.5" />
+            <div className="flex-1">
+              <h3 className="font-bold text-cyan-100 text-lg mb-1">Extension update required</h3>
+              <p className="text-cyan-100/85 text-sm">{updateExtensionMessage}</p>
+              <p className="mt-2 text-cyan-200/70 text-xs">
+                Remove the old FlowDoverz extension, then install the latest ZIP from this page. Google Flow will not work until you do.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={handleDownload}
+              disabled={isDownloading || !extensionDownloadUrl}
+              className="shrink-0 inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-cyan-400 to-emerald-400 px-5 py-2.5 text-sm font-black text-slate-950 shadow-[0_0_20px_rgba(34,211,238,0.25)] hover:-translate-y-0.5 transition-all disabled:opacity-50"
+            >
+              <DownloadCloud size={16} />
+              {isDownloading
+                ? "Downloading..."
+                : `Download v${liveTamper?.version || status?.extensionRequiredVersion || extensionVersion || "latest"}`}
             </button>
           </div>
         )}

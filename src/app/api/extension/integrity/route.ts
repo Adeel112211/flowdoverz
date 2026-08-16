@@ -1,9 +1,10 @@
 import { NextResponse } from "next/server";
 import {
   EXTENSION_TAMPER_MESSAGE,
-  OFFICIAL_EXTENSION_VERSION,
   createExtensionChallenge,
+  officialExtensionVersion,
 } from "@/lib/extension-build";
+import { EXTENSION_UPDATE_MESSAGE } from "@/lib/extension-version";
 
 export const dynamic = "force-dynamic";
 
@@ -14,12 +15,15 @@ export const dynamic = "force-dynamic";
  */
 export async function GET() {
   const { nonce, challenge, expiresInSec } = createExtensionChallenge();
+  const latestVersion = await officialExtensionVersion();
   return NextResponse.json({
     success: true,
     nonce,
     challenge,
     expiresInSec,
-    version: OFFICIAL_EXTENSION_VERSION,
+    version: latestVersion,
+    latestVersion,
+    updateMessage: EXTENSION_UPDATE_MESSAGE,
     tamperMessage: EXTENSION_TAMPER_MESSAGE,
     code: "EXTENSION_TAMPERED",
   });

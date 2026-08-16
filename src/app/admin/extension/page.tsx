@@ -127,7 +127,7 @@ export default function AdminExtensionPage() {
       header={
         <AdminPageHeader
           title="Extension Manager"
-          description="Upload Chrome extension ZIP releases, manage versions, and control the user download."
+          description="Upload a new ZIP to make it official. Older installed copies stop working until users download this version."
           actions={
             <div className="flex flex-wrap gap-2">
               <Link
