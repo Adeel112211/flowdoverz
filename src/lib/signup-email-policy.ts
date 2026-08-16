@@ -6,8 +6,16 @@ import {
   SIGNUP_EMAIL_REJECTED,
 } from "./signup-email-rules";
 
-let disposableSet: Set<string> | null = null;
+let packagedSet: Set<string> | null = null;
 let wildcardSuffixes: string[] = [];
+let liveSet: Set<string> | null = null;
+let liveLoadedAt = 0;
+
+const LIVE_TTL_MS = 6 * 60 * 60 * 1000;
+const LIVE_LIST_URLS = [
+  "https://raw.githubusercontent.com/disposable/disposable-email-domains/master/domains.txt",
+  "https://disposable.github.io/disposable-email-domains/domains.txt",
+];
 
 const DISPOSABLE_MX_HINTS = [
   "mailinator",
@@ -43,46 +51,91 @@ const DISPOSABLE_MX_HINTS = [
   "smailpro",
   "minuteinbox",
   "jetable",
+  "wabblywabble",
+  "wallywatts",
+  "dnsink",
 ];
 
-function loadDisposableSets() {
-  if (disposableSet) return;
+function unwrapStringList(raw: unknown): string[] {
+  if (Array.isArray(raw)) return raw.map((item) => String(item));
+  if (raw && typeof raw === "object" && Array.isArray((raw as { default?: unknown }).default)) {
+    return ((raw as { default: unknown[] }).default).map((item) => String(item));
+  }
+  return [];
+}
+
+function loadPackagedSets() {
+  if (packagedSet) return;
 
   try {
-    // Server-only: keep the huge list out of the browser bundle.
     // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const list = require("disposable-email-domains") as string[];
-    disposableSet = new Set(
-      (Array.isArray(list) ? list : []).map((d) => String(d).toLowerCase()),
+    packagedSet = new Set(
+      unwrapStringList(require("disposable-email-domains")).map((d) => d.toLowerCase()),
     );
   } catch {
-    disposableSet = new Set();
+    packagedSet = new Set();
   }
 
   try {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const wildcards = require("disposable-email-domains/wildcard.json") as string[];
-    wildcardSuffixes = (Array.isArray(wildcards) ? wildcards : []).map((d) =>
-      String(d).toLowerCase().replace(/^\*\./, ""),
+    wildcardSuffixes = unwrapStringList(require("disposable-email-domains/wildcard.json")).map((d) =>
+      d.toLowerCase().replace(/^\*\./, ""),
     );
   } catch {
     wildcardSuffixes = [];
   }
 }
 
-function isInDisposablePackage(domain: string): boolean {
-  loadDisposableSets();
+function domainInSet(domain: string, set: Set<string> | null): boolean {
+  if (!set || set.size === 0) return false;
   const lower = domain.toLowerCase();
-  if (disposableSet?.has(lower)) return true;
-
+  if (set.has(lower)) return true;
   const parts = lower.split(".");
-  for (let i = 0; i < parts.length - 1; i++) {
-    if (disposableSet?.has(parts.slice(i).join("."))) return true;
+  for (let i = 1; i < parts.length - 1; i++) {
+    if (set.has(parts.slice(i).join("."))) return true;
+  }
+  return false;
+}
+
+function isInPackagedDisposable(domain: string): boolean {
+  loadPackagedSets();
+  if (domainInSet(domain, packagedSet)) return true;
+  const lower = domain.toLowerCase();
+  return wildcardSuffixes.some((suffix) => lower === suffix || lower.endsWith(`.${suffix}`));
+}
+
+async function loadLiveDisposableSet(): Promise<Set<string>> {
+  if (liveSet && Date.now() - liveLoadedAt < LIVE_TTL_MS) return liveSet;
+
+  for (const url of LIVE_LIST_URLS) {
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 8000);
+      const res = await fetch(url, {
+        signal: controller.signal,
+        headers: { Accept: "text/plain" },
+        cache: "no-store",
+      });
+      clearTimeout(timer);
+      if (!res.ok) continue;
+      const text = await res.text();
+      const next = new Set<string>();
+      for (const line of text.split(/\r?\n/)) {
+        const domain = line.trim().toLowerCase();
+        if (!domain || domain.startsWith("#") || !domain.includes(".")) continue;
+        next.add(domain);
+      }
+      if (next.size > 1000) {
+        liveSet = next;
+        liveLoadedAt = Date.now();
+        return next;
+      }
+    } catch {
+      // try the next source
+    }
   }
 
-  return wildcardSuffixes.some(
-    (suffix) => lower === suffix || lower.endsWith(`.${suffix}`),
-  );
+  return liveSet || new Set();
 }
 
 function mxLooksDisposable(exchanges: string[]): boolean {
@@ -99,7 +152,7 @@ async function lookupMxExchanges(domain: string): Promise<string[]> {
       ),
     ]);
     if (!Array.isArray(records)) return [];
-    return records.map((row) => String(row.exchange || "").toLowerCase()).filter(Boolean);
+    return records.map((row) => String(row.exchange || "").replace(/\.$/, "").toLowerCase()).filter(Boolean);
   } catch {
     return [];
   }
@@ -130,7 +183,12 @@ export async function validateSignupEmail(
     return { ok: false, error: SIGNUP_EMAIL_REJECTED };
   }
 
-  if (isInDisposablePackage(domain)) {
+  if (isInPackagedDisposable(domain)) {
+    return { ok: false, error: SIGNUP_EMAIL_REJECTED };
+  }
+
+  const live = await loadLiveDisposableSet();
+  if (domainInSet(domain, live)) {
     return { ok: false, error: SIGNUP_EMAIL_REJECTED };
   }
 
@@ -143,6 +201,9 @@ export async function validateSignupEmail(
     return { ok: false, error: SIGNUP_EMAIL_REJECTED };
   }
   if (mxLooksDisposable(exchanges)) {
+    return { ok: false, error: SIGNUP_EMAIL_REJECTED };
+  }
+  if (exchanges.some((host) => domainInSet(host, live) || isInPackagedDisposable(host))) {
     return { ok: false, error: SIGNUP_EMAIL_REJECTED };
   }
 

@@ -178,6 +178,8 @@ const BLOCKED_DOMAIN_KEYWORDS = [
   "emailsink",
   "mailsink",
   "tempsink",
+  "wabblywabble",
+  "wallywatts",
   "mailsucker",
   "throwam",
   "wegwerf",
