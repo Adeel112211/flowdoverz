@@ -16,7 +16,8 @@ export type ActivityAction =
   | "cookies_cleared"
   | "settings_updated"
   | "email_sent"
-  | "cron_run";
+  | "cron_run"
+  | "maintenance_updated";
 
 export async function logAdminActivity(input: {
   action: ActivityAction;

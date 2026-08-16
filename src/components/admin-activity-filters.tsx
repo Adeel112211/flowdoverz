@@ -31,7 +31,7 @@ export const GROUP_ACTIONS: Record<ActivityGroup, readonly string[]> = {
   ],
   payments: ["payment_approved", "payment_rejected", "payment_refunded"],
   cookies: ["cookies_saved", "cookies_cleared"],
-  admin: ["admin_login", "admin_logout", "password_changed"],
+  admin: ["admin_login", "admin_logout", "password_changed", "maintenance_updated"],
 };
 
 export function formatActivityAction(action: string) {
@@ -53,6 +53,7 @@ export function formatActivityActionShort(action: string) {
     admin_login: "Login",
     admin_logout: "Logout",
     password_changed: "Password",
+    maintenance_updated: "Maintenance",
   };
   return short[action] || formatActivityAction(action);
 }

@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import { FloatingContact } from "@/components/floating-contact";
+import { MaintenanceGate } from "@/components/maintenance-gate";
+import { getPublicMaintenanceStatus } from "@/lib/maintenance";
 import "./globals.css";
 
 const inter = Inter({
@@ -23,19 +25,23 @@ export const metadata: Metadata = {
   },
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const maintenance = await getPublicMaintenanceStatus();
+
   return (
     <html
       lang="en"
       className={`${inter.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col overflow-x-hidden font-sans text-slate-100 bg-black">
-        {children}
-        <FloatingContact />
+        <MaintenanceGate initial={maintenance}>
+          {children}
+          <FloatingContact />
+        </MaintenanceGate>
       </body>
     </html>
   );

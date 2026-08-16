@@ -1,10 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getClientPurchasesPayload } from "@/lib/client-receipts";
 import { requireActiveClientSession } from "@/lib/require-client-session";
+import { publicMaintenanceResponse } from "@/lib/maintenance";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(request: NextRequest) {
+  const maintenance = await publicMaintenanceResponse();
+  if (maintenance) return maintenance;
+
   const gate = await requireActiveClientSession(request);
   if (!gate.ok) return gate.response;
 

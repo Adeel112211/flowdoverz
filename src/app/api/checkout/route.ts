@@ -2,8 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "@/lib/firebase-admin";
 import { requireActiveClientSession } from "@/lib/require-client-session";
 import { getPlanActivationBlock } from "@/lib/user-store";
+import { publicMaintenanceResponse } from "@/lib/maintenance";
 
 export async function POST(request: NextRequest) {
+  const maintenance = await publicMaintenanceResponse();
+  if (maintenance) return maintenance;
+
   try {
     const gate = await requireActiveClientSession();
     if (!gate.ok) return gate.response;

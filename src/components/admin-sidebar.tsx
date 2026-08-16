@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Users, CreditCard, Cookie, Settings, LayoutDashboard, LogOut, Menu, X, Activity, Radio, Mail, Send, Tag, Puzzle, Receipt } from "lucide-react";
+import { Users, CreditCard, Cookie, Settings, LayoutDashboard, LogOut, Menu, X, Activity, Radio, Mail, Send, Tag, Puzzle, Receipt, Construction } from "lucide-react";
 import { BrandLogo } from "@/components/brand-logo";
 
 const navItems = [
@@ -18,6 +18,7 @@ const navItems = [
   { name: "Email History", href: "/admin/emails", icon: Mail },
   { name: "Pricing", href: "/admin/pricing", icon: Tag },
   { name: "Extension", href: "/admin/extension", icon: Puzzle },
+  { name: "Maintenance", href: "/admin/maintenance", icon: Construction },
   { name: "Settings", href: "/admin/settings", icon: Settings },
 ];
 

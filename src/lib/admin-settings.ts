@@ -14,6 +14,9 @@ export type SystemSettings = {
   signupAllowedDomains: string;
   signupRateLimitPerHour: number;
   trialOnePerIp: boolean;
+  maintenanceEnabled: boolean;
+  maintenanceMessage: string;
+  maintenanceUntil: string;
 };
 
 export const DEFAULT_SYSTEM_SETTINGS: SystemSettings = {
@@ -30,6 +33,9 @@ export const DEFAULT_SYSTEM_SETTINGS: SystemSettings = {
   signupAllowedDomains: "",
   signupRateLimitPerHour: 20,
   trialOnePerIp: true,
+  maintenanceEnabled: false,
+  maintenanceMessage: "",
+  maintenanceUntil: "",
 };
 
 const DOC_PATH = { collection: "settings", id: "system" };

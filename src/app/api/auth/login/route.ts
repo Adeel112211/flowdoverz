@@ -3,8 +3,12 @@ import { authenticateUser, normalizeEmail } from "@/lib/user-store";
 import { CLIENT_SID_COOKIE, getClientSessionFromRequest } from "@/lib/client-session";
 import { clientSessionCookieOptions } from "@/lib/site-urls";
 import { checkAuthRateLimit, clientIpFromRequest } from "@/lib/auth-rate-limit";
+import { publicMaintenanceResponse } from "@/lib/maintenance";
 
 export async function POST(request: NextRequest) {
+  const maintenance = await publicMaintenanceResponse();
+  if (maintenance) return maintenance;
+
   const ip = clientIpFromRequest(request);
   const rate = await checkAuthRateLimit("client_login", ip);
   if (!rate.ok) {

@@ -5,8 +5,12 @@ import {
   clientIpFromRequest,
   getSignupSecuritySettings,
 } from "@/lib/signup-security";
+import { publicMaintenanceResponse } from "@/lib/maintenance";
 
 export async function POST(request: NextRequest) {
+  const maintenance = await publicMaintenanceResponse();
+  if (maintenance) return maintenance;
+
   const security = await getSignupSecuritySettings();
   const ip = clientIpFromRequest(request);
   const rateCheck = await checkSignupRateLimit(ip, security.rateLimitPerHour, "send_code");
