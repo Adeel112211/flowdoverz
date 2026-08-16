@@ -250,26 +250,34 @@ export function canonicalizeMailboxEmail(email: string) {
 }
 
 export function looksLikeProviderAliasAbuse(local: string, domain: string) {
+  const plus = local.indexOf("+");
+  if (plus >= 0) {
+    if (isGmailDomain(domain) || isMicrosoftDomain(domain) || isYahooDomain(domain)) {
+      return true;
+    }
+    const tag = local.slice(plus + 1);
+    if (!tag) return true;
+    if (/^[a-z0-9]{3,10}$/i.test(tag)) return true;
+    if (/^(temp|tmp|trial|test|fake|spam|trash|throwaway|disposable|burner|alias|mail|new|free)\b/i.test(tag)) {
+      return true;
+    }
+  }
+
   if (isGmailDomain(domain) && looksLikeGmailDotTrick(local)) return true;
 
-  const plus = local.indexOf("+");
-  if (plus < 0) return false;
-  const tag = local.slice(plus + 1);
-  if (!tag) return true;
-  if (/^(temp|tmp|trial|test|fake|spam|trash|throwaway|disposable|burner|alias|mail|new|free)\b/i.test(tag)) {
+  if (isYahooDomain(domain) && local.includes("-")) {
     return true;
   }
-  if (/^[0-9]{4,}$/.test(tag)) return true;
+
   return false;
 }
 
 function looksLikeGmailDotTrick(local: string) {
   const base = local.split("+")[0];
   const parts = base.split(".").filter(Boolean);
-  if (parts.length < 3) return false;
+  if (parts.length >= 3) return true;
   const singles = parts.filter((part) => part.length === 1).length;
-  if (parts.length >= 4 && singles >= 3) return true;
-  return singles >= 3 && singles / parts.length >= 0.5;
+  return singles >= 2;
 }
 
 export function parseSignupEmail(email: string) {
