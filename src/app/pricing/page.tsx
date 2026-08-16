@@ -7,6 +7,7 @@ import { DEFAULT_PRICING_CONFIG, formatPkr, type PricingConfig, type PricingPlan
 import { useClientSession } from "@/hooks/use-client-session";
 import { UserMenuButton } from "@/components/user-menu-button";
 import { BrandLogo } from "@/components/brand-logo";
+import { applyMaintenanceFromPayload } from "@/lib/maintenance-client";
 
 function planVisuals(planId: PricingPlan["id"]) {
   if (planId === "solo") {
@@ -82,6 +83,7 @@ export default function PricingPage() {
         .then((r) => r.json())
         .then((d) => {
           if (!active) return;
+          if (applyMaintenanceFromPayload(d)) return;
           if (d.success && d.activationBlock) {
             setActivationBlock(d.activationBlock);
           }

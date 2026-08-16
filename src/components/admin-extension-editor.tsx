@@ -266,7 +266,7 @@ export function AdminExtensionEditor({
 
         <SectionCard
           title="Upload release"
-          description="Add a new extension ZIP and version details"
+          description="Uploading a ZIP makes it the official build. Modified copies will be blocked."
           icon={Upload}
         >
           <div className="flex flex-1 flex-col gap-4">

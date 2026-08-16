@@ -103,7 +103,11 @@ export async function POST(request: NextRequest) {
         detail: `Extension release uploaded: v${version}`,
       });
 
-      return NextResponse.json({ success: true, config, message: "Extension release uploaded." });
+      return NextResponse.json({
+        success: true,
+        config,
+        message: "Extension uploaded and marked official. Modified copies will show an error.",
+      });
     }
 
     if (action === "set_active") {

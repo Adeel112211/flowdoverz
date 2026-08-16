@@ -8,6 +8,7 @@ import { BrandLogo } from "@/components/brand-logo";
 import { PlanBadge, getPlanStyles } from "@/components/plan-badge";
 import { CheckoutPaymentMethods } from "@/components/checkout-payment-method-card";
 import { getSession } from "@/lib/auth";
+import { applyMaintenanceFromPayload } from "@/lib/maintenance-client";
 import { formatPkr } from "@/lib/pricing-config";
 import { CHECKOUT_PAYMENT_METHODS } from "@/lib/payment-methods-config";
 import { SENDER_PAYMENT_OPTIONS } from "@/lib/sender-payment-options";
@@ -64,6 +65,7 @@ export default function CheckoutPage() {
     fetch("/api/user/status")
       .then((r) => r.json())
       .then((data) => {
+        if (applyMaintenanceFromPayload(data)) return;
         if (data.success && data.activationBlock) {
           setActivationBlock(data.activationBlock);
         }
@@ -163,6 +165,7 @@ export default function CheckoutPage() {
       });
       const data = await res.json();
 
+      if (applyMaintenanceFromPayload(data)) return;
       if (data.success) {
         setSuccess(true);
       } else if (data.code === "NOT_LOGGED_IN") {

@@ -1,9 +1,11 @@
 import { createHash, createHmac, randomBytes, timingSafeEqual } from "crypto";
 import officialPayload from "@/lib/extension-official-payload.json";
+import type { OfficialIntegrityAttestation, OfficialIntegrityProfile } from "@/lib/extension-official-from-zip";
 
 /**
  * Official extension fingerprint + challenge-response verification.
- * Recompute with: `node extension/compute-integrity.js`
+ * Admin ZIP uploads become the live official profile.
+ * Fallback: `node extension/compute-integrity.js`
  *
  * Proof = SHA256(nonce + payload + live function sources).
  * Spoofing X-Extension-Integrity alone is not enough.
@@ -11,7 +13,7 @@ import officialPayload from "@/lib/extension-official-payload.json";
 export const OFFICIAL_EXTENSION_VERSION = "1.0.0";
 
 export const OFFICIAL_EXTENSION_INTEGRITY_HASH =
-  "2b4d9a04a09f8d277da0919eb5795bd684d864e55241ff022317862882a0cc99";
+  "2a741b84800c649dc896d297e6df7b6a563489b5ec9c4b8b14df09494e82e1f0";
 
 /** Shown by extension when server rejects a modified build. */
 export const EXTENSION_TAMPER_MESSAGE =
@@ -22,15 +24,61 @@ const CHALLENGE_TTL_MS = 90_000;
 type OfficialPayload = {
   hash?: string;
   payload?: string;
-  attestation?: {
-    enforce?: string;
-    isBlockedCookieExtension?: string;
-    computeLivePayload?: string;
-    proveForSync?: string;
-  };
+  attestation?: OfficialIntegrityAttestation;
 };
 
 const payloadDoc = officialPayload as OfficialPayload;
+
+let profileCache: { key: string; profile: OfficialIntegrityProfile } | null = null;
+
+export function invalidateOfficialIntegrityCache() {
+  profileCache = null;
+}
+
+function bakedInProfile(): OfficialIntegrityProfile {
+  const attestation = payloadDoc.attestation || {
+    enforce: "",
+    isBlockedCookieExtension: "",
+    computeLivePayload: "",
+    proveForSync: "",
+  };
+  return {
+    hash: String(payloadDoc.hash || OFFICIAL_EXTENSION_INTEGRITY_HASH).toLowerCase(),
+    payload: String(payloadDoc.payload || ""),
+    files: [],
+    attestation: {
+      enforce: String(attestation.enforce || ""),
+      isBlockedCookieExtension: String(attestation.isBlockedCookieExtension || ""),
+      computeLivePayload: String(attestation.computeLivePayload || ""),
+      proveForSync: String(attestation.proveForSync || ""),
+    },
+    version: OFFICIAL_EXTENSION_VERSION,
+    generatedAt: "",
+  };
+}
+
+async function resolveOfficialProfile(): Promise<OfficialIntegrityProfile> {
+  if (profileCache) return profileCache.profile;
+
+  try {
+    const { getActiveIntegrityProfile, getExtensionConfig } = await import("@/lib/extension-store");
+    const config = await getExtensionConfig();
+    const stored = await getActiveIntegrityProfile();
+    if (stored?.hash && stored.payload && stored.attestation) {
+      profileCache = {
+        key: config.activeVersion || stored.hash,
+        profile: stored,
+      };
+      return stored;
+    }
+  } catch {
+    // Use packaged fallback when Firestore has no sealed ZIP yet.
+  }
+
+  const fallback = bakedInProfile();
+  profileCache = { key: "baked-in", profile: fallback };
+  return fallback;
+}
 
 function challengeSecret() {
   return (
@@ -41,25 +89,19 @@ function challengeSecret() {
   );
 }
 
-export function expectedExtensionIntegrityHash() {
-  return (
-    process.env.FLOWBRIDGE_EXTENSION_INTEGRITY_HASH?.trim().toLowerCase() ||
-    String(payloadDoc.hash || OFFICIAL_EXTENSION_INTEGRITY_HASH).toLowerCase()
-  );
+export async function expectedExtensionIntegrityHash() {
+  const profile = await resolveOfficialProfile();
+  return profile.hash.toLowerCase();
 }
 
-export function officialExtensionPayload() {
-  return String(payloadDoc.payload || "");
+export async function officialExtensionPayload() {
+  const profile = await resolveOfficialProfile();
+  return profile.payload;
 }
 
-export function officialExtensionAttestation() {
-  const a = payloadDoc.attestation || {};
-  return {
-    enforce: String(a.enforce || ""),
-    isBlockedCookieExtension: String(a.isBlockedCookieExtension || ""),
-    computeLivePayload: String(a.computeLivePayload || ""),
-    proveForSync: String(a.proveForSync || ""),
-  };
+export async function officialExtensionAttestation() {
+  const profile = await resolveOfficialProfile();
+  return profile.attestation;
 }
 
 function sha256Hex(text: string) {
@@ -106,8 +148,8 @@ function parseChallenge(challengeHeader: string | null | undefined) {
 
 export function buildExtensionProof(
   nonce: string,
-  payload = officialExtensionPayload(),
-  attestation = officialExtensionAttestation(),
+  payload: string,
+  attestation: OfficialIntegrityAttestation,
 ) {
   // Must match extension/integrity-guard.js buildChallengeProof material.
   const material = [
@@ -126,20 +168,21 @@ export function buildExtensionProof(
  * Validate sync integrity headers.
  * Requires matching file hash AND challenge proof of payload + live function sources.
  */
-export function validateExtensionIntegrityHeaders(headers: {
+export async function validateExtensionIntegrityHeaders(headers: {
   integrity?: string | null;
   challenge?: string | null;
   proof?: string | null;
-}): { ok: true } | { ok: false; code: "EXTENSION_TAMPERED"; message: string } {
+}): Promise<{ ok: true } | { ok: false; code: "EXTENSION_TAMPERED"; message: string }> {
   const fail = {
     ok: false as const,
     code: "EXTENSION_TAMPERED" as const,
     message: EXTENSION_TAMPER_MESSAGE,
   };
 
-  const expectedHash = expectedExtensionIntegrityHash();
-  const payload = officialExtensionPayload();
-  const attestation = officialExtensionAttestation();
+  const profile = await resolveOfficialProfile();
+  const expectedHash = profile.hash.toLowerCase();
+  const payload = profile.payload;
+  const attestation = profile.attestation;
   if (
     !expectedHash ||
     expectedHash === "placeholder" ||
@@ -180,8 +223,8 @@ export function validateExtensionIntegrityHeaders(headers: {
 }
 
 /** @deprecated use validateExtensionIntegrityHeaders */
-export function validateExtensionIntegrityHeader(
+export async function validateExtensionIntegrityHeader(
   reportedHash: string | null | undefined,
-): { ok: true } | { ok: false; code: "EXTENSION_TAMPERED"; message: string } {
+) {
   return validateExtensionIntegrityHeaders({ integrity: reportedHash });
 }

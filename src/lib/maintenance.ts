@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { connection, NextResponse } from "next/server";
 import {
   getSystemSettings,
   saveSystemSettings,
@@ -18,7 +18,7 @@ export type MaintenanceSettings = {
 };
 
 const DEFAULT_MESSAGE =
-  "We're performing scheduled maintenance. Please check back shortly.";
+  "The site is under maintenance. Please check back shortly.";
 
 export function isMaintenanceWindowActive(settings: Pick<
   SystemSettings,
@@ -52,6 +52,7 @@ export function toPublicMaintenanceStatus(
 }
 
 export async function getPublicMaintenanceStatus(): Promise<PublicMaintenanceStatus> {
+  await connection();
   try {
     const settings = await getSystemSettings();
     const status = toPublicMaintenanceStatus(settings);

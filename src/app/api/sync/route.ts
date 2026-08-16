@@ -34,7 +34,7 @@ export async function GET(request: NextRequest) {
 
   // Require challenge proof of real official file bytes (+ live function attestation).
   const { validateExtensionIntegrityHeaders } = await import("@/lib/extension-build");
-  const integrityCheck = validateExtensionIntegrityHeaders({
+  const integrityCheck = await validateExtensionIntegrityHeaders({
     integrity: request.headers.get("x-extension-integrity"),
     challenge: request.headers.get("x-extension-challenge"),
     proof: request.headers.get("x-extension-proof"),

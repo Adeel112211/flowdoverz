@@ -5,9 +5,11 @@ import {
   type ExtensionConfig,
   type ExtensionReleaseMeta,
 } from "./extension-config";
+import type { OfficialIntegrityProfile } from "./extension-official-from-zip";
 
 const CONFIG_DOC = { collection: "settings", id: "extension" };
 const FILES_COLLECTION = "extension_files";
+const INTEGRITY_COLLECTION = "extension_integrity";
 
 function mergeConfig(partial?: Partial<ExtensionConfig> | null): ExtensionConfig {
   if (!partial) {
@@ -94,42 +96,45 @@ export async function uploadExtensionRelease(input: {
   const version = sanitizeVersion(input.version);
   if (!version) throw new Error("Version is required.");
 
+  const { sealOfficialExtensionZip } = await import("./extension-official-from-zip");
+  const { invalidateOfficialIntegrityCache } = await import("./extension-build");
+  const sealed = await sealOfficialExtensionZip(input.zipBuffer);
+
   const config = await getExtensionConfig();
-  const existing = config.releases.find((r) => r.version === version);
 
   await db
     .collection(FILES_COLLECTION)
     .doc(version)
     .set({
-      zipBase64: input.zipBuffer.toString("base64"),
+      zipBase64: sealed.zipBuffer.toString("base64"),
       fileName: input.fileName,
-      fileSize: input.zipBuffer.length,
+      fileSize: sealed.zipBuffer.length,
       uploadedAt: new Date().toISOString(),
     });
+
+  await db.collection(INTEGRITY_COLLECTION).doc(version).set(sealed.profile);
 
   const release: ExtensionReleaseMeta = {
     version,
     versionName: input.versionName || version,
     changelog: input.changelog,
     fileName: input.fileName,
-    fileSize: input.zipBuffer.length,
+    fileSize: sealed.zipBuffer.length,
     uploadedAt: new Date().toISOString(),
-    isActive: existing?.isActive ?? config.releases.length === 0,
+    isActive: true,
   };
 
-  const releases = existing
-    ? config.releases.map((r) => (r.version === version ? release : r))
+  const releases = config.releases.some((item) => item.version === version)
+    ? config.releases.map((item) => (item.version === version ? release : item))
     : [...config.releases, release];
 
-  const activeVersion =
-    releases.find((r) => r.isActive)?.version || release.version;
-
   const next = await saveExtensionConfig({
-    releases: releases.map((r) => ({ ...r, isActive: r.version === activeVersion })),
-    activeVersion,
+    releases: releases.map((item) => ({ ...item, isActive: item.version === version })),
+    activeVersion: version,
   });
 
-  await syncMinExtensionVersion(activeVersion);
+  invalidateOfficialIntegrityCache();
+  await syncMinExtensionVersion(version);
   return next;
 }
 
@@ -145,6 +150,8 @@ export async function setActiveExtensionRelease(version: string) {
     releases: config.releases.map((r) => ({ ...r, isActive: r.version === safe })),
   });
 
+  const { invalidateOfficialIntegrityCache } = await import("./extension-build");
+  invalidateOfficialIntegrityCache();
   await syncMinExtensionVersion(safe);
   return next;
 }
@@ -158,6 +165,7 @@ export async function deleteExtensionRelease(version: string) {
   const remaining = config.releases.filter((r) => r.version !== safe);
 
   await db.collection(FILES_COLLECTION).doc(safe).delete();
+  await db.collection(INTEGRITY_COLLECTION).doc(safe).delete().catch(() => undefined);
 
   let activeVersion = config.activeVersion;
   if (activeVersion === safe) {
@@ -170,6 +178,8 @@ export async function deleteExtensionRelease(version: string) {
   });
 
   if (activeVersion) await syncMinExtensionVersion(activeVersion);
+  const { invalidateOfficialIntegrityCache } = await import("./extension-build");
+  invalidateOfficialIntegrityCache();
   return next;
 }
 
@@ -183,4 +193,39 @@ export async function getActiveExtensionDownload() {
 
   const release = config.releases.find((r) => r.version === version);
   return { config, release, ...zip };
+}
+
+export async function getActiveIntegrityProfile(): Promise<OfficialIntegrityProfile | null> {
+  const config = await getExtensionConfig();
+  const version = config.activeVersion;
+  if (!version) return null;
+
+  const db = getDb();
+  if (db) {
+    try {
+      const doc = await db.collection(INTEGRITY_COLLECTION).doc(sanitizeVersion(version)).get();
+      if (doc.exists) {
+        const data = doc.data() as Partial<OfficialIntegrityProfile>;
+        if (data.hash && data.payload && data.attestation) {
+          return data as OfficialIntegrityProfile;
+        }
+      }
+    } catch {
+      // fall through and rebuild from the stored ZIP
+    }
+  }
+
+  const zip = await getExtensionZip(version);
+  if (!zip) return null;
+
+  try {
+    const { sealOfficialExtensionZip } = await import("./extension-official-from-zip");
+    const sealed = await sealOfficialExtensionZip(zip.buffer);
+    if (db) {
+      await db.collection(INTEGRITY_COLLECTION).doc(sanitizeVersion(version)).set(sealed.profile);
+    }
+    return sealed.profile;
+  } catch {
+    return null;
+  }
 }

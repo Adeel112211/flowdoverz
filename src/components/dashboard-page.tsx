@@ -8,6 +8,7 @@ import { AuthBridge } from "@/components/auth-bridge";
 import { BrandLogo } from "@/components/brand-logo";
 import { useClientSession } from "@/hooks/use-client-session";
 import { signOut, restoreSessionFromCookie } from "@/lib/auth";
+import { applyMaintenanceFromPayload } from "@/lib/maintenance-client";
 import { DownloadCloud, Timer, Rocket, CheckCircle2, AlertCircle, User, LogOut, MonitorSmartphone, Receipt, X, Sparkles, BookOpen, Zap } from "lucide-react";
 import { InstallGuideModal } from "@/components/install-guide-modal";
 
@@ -93,6 +94,7 @@ export function DashboardPage() {
         if (!active) return;
         const data = await res.json();
         if (!active) return;
+        if (applyMaintenanceFromPayload(data)) return;
         if (data.success) {
           setStatus(data.status);
         } else {

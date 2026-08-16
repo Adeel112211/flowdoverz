@@ -40,6 +40,10 @@ export function LoginPage() {
 
     const result = await signIn(email, password);
     if (!result.ok) {
+      if (result.code === "MAINTENANCE") {
+        setLoading(false);
+        return;
+      }
       setError(result.error);
       setLoading(false);
       return;

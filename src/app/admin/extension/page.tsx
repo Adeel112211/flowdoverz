@@ -70,7 +70,7 @@ export default function AdminExtensionPage() {
     });
     const data = await res.json();
     if (data.success) {
-      toast(data.message || "Release uploaded");
+      toast(data.message || "Release uploaded and marked official");
       setConfig(data.config);
     } else {
       toast(data.error || "Upload failed", "error");

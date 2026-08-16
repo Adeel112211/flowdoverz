@@ -3,7 +3,10 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { usePathname } from "next/navigation";
 import { Construction } from "lucide-react";
-import { BrandLogo } from "@/components/brand-logo";
+import {
+  MAINTENANCE_EVENT,
+  type MaintenanceNotice,
+} from "@/lib/maintenance-client";
 import type { PublicMaintenanceStatus } from "@/lib/maintenance";
 
 function formatUntil(iso: string) {
@@ -47,12 +50,16 @@ export function MaintenanceGate({
   useEffect(() => {
     if (isAdmin) return;
 
+    const apply = (next: PublicMaintenanceStatus) => {
+      setStatus(next);
+    };
+
     const refresh = async () => {
       try {
         const res = await fetch("/api/maintenance", { cache: "no-store" });
         const data = await res.json();
         if (data?.success) {
-          setStatus({
+          apply({
             active: Boolean(data.active),
             message: String(data.message || ""),
             until: String(data.until || ""),
@@ -63,8 +70,24 @@ export function MaintenanceGate({
       }
     };
 
+    const onNotice = (event: Event) => {
+      const detail = (event as CustomEvent<MaintenanceNotice>).detail;
+      if (!detail?.active) return;
+      apply({
+        active: true,
+        message: String(detail.message || ""),
+        until: String(detail.until || ""),
+      });
+      void refresh();
+    };
+
+    void refresh();
+    window.addEventListener(MAINTENANCE_EVENT, onNotice);
     const poll = window.setInterval(refresh, 20_000);
-    return () => window.clearInterval(poll);
+    return () => {
+      window.removeEventListener(MAINTENANCE_EVENT, onNotice);
+      window.clearInterval(poll);
+    };
   }, [isAdmin]);
 
   useEffect(() => {
@@ -82,36 +105,41 @@ export function MaintenanceGate({
   const untilLabel = formatUntil(status.until);
 
   return (
-    <div className="fixed inset-0 z-[200] flex items-center justify-center overflow-y-auto bg-[#05060a] px-4 py-8">
+    <div className="fixed inset-0 z-[200] flex items-center justify-center overflow-y-auto bg-[#05060a] px-4 py-6">
       <div className="pointer-events-none absolute inset-0 overflow-hidden">
-        <div className="absolute left-1/2 top-[-10%] h-[420px] w-[720px] -translate-x-1/2 rounded-full bg-amber-500/10 blur-[120px]" />
-        <div className="absolute bottom-[-20%] right-[-10%] h-[360px] w-[360px] rounded-full bg-cyan-500/10 blur-[120px]" />
+        <div className="absolute left-1/2 top-[-8%] h-[280px] w-[520px] -translate-x-1/2 rounded-full bg-amber-500/12 blur-[100px]" />
       </div>
 
       <div
         role="dialog"
         aria-modal="true"
         aria-labelledby="maintenance-title"
-        className="relative z-10 w-full max-w-lg overflow-hidden rounded-3xl border border-white/10 bg-[#0F172A] p-6 shadow-[0_0_80px_rgba(245,158,11,0.15)] sm:p-8"
+        className="relative z-10 w-full max-w-sm overflow-hidden rounded-2xl border border-white/10 bg-[#0c1220] p-5 shadow-[0_0_60px_rgba(245,158,11,0.12)]"
       >
-        <div className="mb-6 flex justify-center">
-          <BrandLogo size="md" />
+        <div className="mb-3 flex items-center justify-center gap-2.5">
+          <div className="flex h-9 w-9 items-center justify-center rounded-lg border border-amber-400/30 bg-amber-500/10 text-amber-300">
+            <Construction className="h-4 w-4" />
+          </div>
+          <h1 id="maintenance-title" className="text-lg font-black text-white">
+            We'll be back soon
+          </h1>
         </div>
-        <div className="mx-auto mb-5 flex h-14 w-14 items-center justify-center rounded-2xl border border-amber-400/30 bg-amber-500/10 text-amber-300">
-          <Construction className="h-6 w-6" />
-        </div>
-        <h1 id="maintenance-title" className="text-center text-2xl font-black text-white">
-          We'll be back soon
-        </h1>
-        <p className="mt-3 text-center text-sm leading-relaxed text-slate-400 sm:text-base">
-          {status.message || "We're performing scheduled maintenance. Please check back shortly."}
+        <p className="text-center text-xs leading-relaxed text-slate-400">
+          The site is <strong className="font-bold text-slate-200">under maintenance</strong>.
+          Please check back shortly.
         </p>
+        {status.message &&
+        status.message !== "The site is under maintenance. Please check back shortly." ? (
+          <p className="mt-2 text-center text-sm leading-relaxed text-slate-300">
+            {status.message}
+          </p>
+        ) : null}
         {(untilLabel || remaining) && (
-          <div className="mt-6 rounded-xl border border-white/10 bg-black/30 px-4 py-3 text-center">
+          <div className="mt-4 rounded-lg border border-white/8 bg-black/25 px-3 py-2.5 text-center">
             {untilLabel ? (
-              <p className="text-sm font-semibold text-slate-200">Expected back {untilLabel}</p>
+              <p className="text-xs font-semibold text-slate-200">Expected back {untilLabel}</p>
             ) : null}
-            {remaining ? <p className="mt-1 text-xs text-amber-300">{remaining}</p> : null}
+            {remaining ? <p className="mt-0.5 text-xs font-medium text-amber-300">{remaining}</p> : null}
           </div>
         )}
       </div>

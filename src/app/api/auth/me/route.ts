@@ -1,8 +1,11 @@
 import { NextResponse } from "next/server";
 import { getDb } from "@/lib/firebase-admin";
 import { requireActiveClientSession } from "@/lib/require-client-session";
+import { publicMaintenanceResponse } from "@/lib/maintenance";
 
 export async function GET() {
+  const maintenance = await publicMaintenanceResponse();
+  if (maintenance) return maintenance;
   const gate = await requireActiveClientSession();
   if (!gate.ok) return gate.response;
 

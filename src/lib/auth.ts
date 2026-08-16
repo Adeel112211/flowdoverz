@@ -1,3 +1,5 @@
+import { applyMaintenanceFromPayload } from "@/lib/maintenance-client";
+
 const SESSION_KEY = "flowdoverz_session";
 const SESSION_CHANGE = "flowdoverz_session_change";
 
@@ -38,7 +40,7 @@ function persistSession(session: Session) {
 
 type AuthResult =
   | { ok: true; session: Session; trialGranted?: boolean; notice?: string }
-  | { ok: false; error: string };
+  | { ok: false; error: string; code?: string };
 
 async function postAuth(
   path: string,
@@ -56,10 +58,15 @@ async function postAuth(
       success?: boolean;
       error?: string;
       code?: string;
+      until?: string;
       notice?: string;
       trialGranted?: boolean;
       user?: { email?: string; name?: string; sid?: string };
     } | null;
+
+    if (applyMaintenanceFromPayload(data)) {
+      return { ok: false, error: "", code: "MAINTENANCE" };
+    }
 
     if (!response.ok || !data?.success || !data.user?.email || !data.user?.sid) {
       return {
@@ -69,6 +76,7 @@ async function postAuth(
           (data?.code === "MULTI_DEVICE_BLOCKED"
             ? "This email has an active Solo plan and cannot be used on multiple devices."
             : "Something went wrong. Please try again."),
+        code: data?.code,
       };
     }
 
@@ -166,8 +174,13 @@ export async function restoreSessionFromCookie(): Promise<Session | null> {
       success?: boolean;
       code?: string;
       error?: string;
+      until?: string;
       user?: { email?: string; name?: string; sid?: string };
     } | null;
+
+    if (applyMaintenanceFromPayload(data)) {
+      return getSession();
+    }
 
     if (response.status === 401) {
       // Solo kicked this browser out — clear local session.

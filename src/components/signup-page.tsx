@@ -7,6 +7,7 @@ import { BrandLogo } from "@/components/brand-logo";
 import { AuthPageBackground } from "@/components/auth-page-background";
 import { appPath, marketingPath } from "@/lib/site-urls";
 import { signUp } from "@/lib/auth";
+import { applyMaintenanceFromPayload } from "@/lib/maintenance-client";
 import { validateSignupEmailClient, SIGNUP_EMAIL_REJECTED } from "@/lib/signup-email-rules";
 import { Eye, EyeOff, ChevronDown, AlertCircle } from "lucide-react";
 
@@ -64,6 +65,7 @@ export function SignupPage() {
         body: JSON.stringify({ email: email.trim() }),
       });
       const data = await res.json();
+      if (applyMaintenanceFromPayload(data)) return;
       if (!data.success) {
         setError(data.error || "Could not send code.");
         if (data.waitSeconds) setResendSeconds(Number(data.waitSeconds));
@@ -105,6 +107,10 @@ export function SignupPage() {
 
     const result = await signUp(formEmail, password, name, verificationCode);
     if (!result.ok) {
+      if (result.code === "MAINTENANCE") {
+        setLoading(false);
+        return;
+      }
       setError(result.error);
       setLoading(false);
       return;
