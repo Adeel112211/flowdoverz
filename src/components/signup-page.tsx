@@ -59,6 +59,22 @@ export function SignupPage() {
     return ok;
   }
 
+  function showTempMailPopup() {
+    setEmailInvalid(true);
+    setError(SIGNUP_EMAIL_REJECTED);
+  }
+
+  function isTempMailError(message: string) {
+    const text = message.toLowerCase();
+    return (
+      text.includes("disposable") ||
+      text.includes("temporary") ||
+      text.includes("real gmail") ||
+      text.includes("temp /") ||
+      text.includes("temp mail")
+    );
+  }
+
   function handleEmailChange(value: string) {
     setEmail(value);
     setCodeSent(false);
@@ -69,7 +85,7 @@ export function SignupPage() {
   async function sendCode() {
     setError("");
     if (!checkEmail(email)) {
-      setError(SIGNUP_EMAIL_REJECTED);
+      showTempMailPopup();
       return;
     }
 
@@ -83,7 +99,9 @@ export function SignupPage() {
       const data = await res.json();
       if (applyMaintenanceFromPayload(data)) return;
       if (!data.success) {
-        setError(data.error || "Could not send code.");
+        const message = data.error || "Could not send code.";
+        setError(isTempMailError(message) ? SIGNUP_EMAIL_REJECTED : message);
+        if (isTempMailError(message)) setEmailInvalid(true);
         if (data.waitSeconds) setResendSeconds(Number(data.waitSeconds));
         return;
       }
@@ -107,7 +125,7 @@ export function SignupPage() {
     const plan = selectedPlan;
 
     if (!checkEmail(formEmail)) {
-      setError(SIGNUP_EMAIL_REJECTED);
+      showTempMailPopup();
       return;
     }
     if (!codeSent) {
@@ -127,7 +145,8 @@ export function SignupPage() {
         setLoading(false);
         return;
       }
-      setError(result.error);
+      setError(isTempMailError(result.error) ? SIGNUP_EMAIL_REJECTED : result.error);
+      if (isTempMailError(result.error)) setEmailInvalid(true);
       setLoading(false);
       return;
     }
@@ -225,17 +244,12 @@ export function SignupPage() {
                 <button
                   type="button"
                   onClick={sendCode}
-                  disabled={sendingCode || emailInvalid || !email.trim() || resendSeconds > 0}
+                  disabled={sendingCode || !email.trim() || resendSeconds > 0}
                   className="shrink-0 rounded-2xl border border-cyan-500/40 bg-cyan-500/10 px-5 py-3.5 text-sm font-bold text-cyan-300 hover:bg-cyan-500/20 disabled:opacity-50 sm:min-w-[7.5rem]"
                 >
                   {sendingCode ? "Sending..." : resendSeconds > 0 ? `${resendSeconds}s` : codeSent ? "Resend" : "Send code"}
                 </button>
               </div>
-              {emailInvalid && (
-                <p className="mt-2 text-xs font-medium text-rose-400">
-                  Temp / disposable emails are blocked. Use a real Gmail.
-                </p>
-              )}
             </div>
 
             {codeSent && (
