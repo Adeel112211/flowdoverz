@@ -129,8 +129,16 @@ export function MaintenanceGate({
         aria-labelledby="maintenance-title"
         className="animate-fade-up relative z-10 flex min-h-dvh flex-col items-center justify-center px-6 py-16 text-center"
       >
-        <BrandLogo size="xl" stacked showTagline={false} />
-        <p className="mt-8 text-[11px] font-bold uppercase tracking-[0.28em] text-cyan-400">
+        <BrandLogo size="md" stacked showTagline={false} />
+        <img
+          src="/maintenance-hero.png"
+          alt=""
+          width={1280}
+          height={720}
+          aria-hidden="true"
+          className="-mt-2 w-full max-w-[42rem] object-contain drop-shadow-[0_20px_60px_rgba(6,182,212,0.18)] sm:max-w-[48rem]"
+        />
+        <p className="-mt-4 text-[11px] font-bold uppercase tracking-[0.28em] text-cyan-400 sm:-mt-6">
           Under maintenance
         </p>
         <h1
