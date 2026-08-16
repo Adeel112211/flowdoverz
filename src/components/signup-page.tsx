@@ -237,7 +237,7 @@ export function SignupPage() {
                 </p>
               )}
               <p className="mt-2 text-xs text-slate-500">
-                One account per network IP. Use a real email — temp mail is blocked.
+                One account per network IP. Temp mail is blocked, including Gmail/Outlook/Yahoo alias tricks.
               </p>
             </div>
 

@@ -211,6 +211,67 @@ const BLOCKED_LOCAL_PARTS = new Set([
 export const SIGNUP_EMAIL_REJECTED =
   "Temporary or disposable email addresses are not allowed. Use a real email (Gmail, Outlook, Yahoo, etc.).";
 
+const GMAIL_DOMAINS = new Set(["gmail.com", "googlemail.com"]);
+const MICROSOFT_DOMAINS = new Set(["outlook.com", "hotmail.com", "live.com", "msn.com"]);
+const YAHOO_DOMAINS = new Set(["yahoo.com", "ymail.com", "yahoo.co.uk", "yahoo.in"]);
+
+function isGmailDomain(domain: string) {
+  return GMAIL_DOMAINS.has(domain.toLowerCase());
+}
+
+function isMicrosoftDomain(domain: string) {
+  return MICROSOFT_DOMAINS.has(domain.toLowerCase());
+}
+
+function isYahooDomain(domain: string) {
+  const lower = domain.toLowerCase();
+  if (YAHOO_DOMAINS.has(lower)) return true;
+  return lower.endsWith(".yahoo.com");
+}
+
+/** Gmail dots and +tags, Outlook/Yahoo +tags — same inbox, one account. */
+export function canonicalizeMailboxEmail(email: string) {
+  const parsed = parseSignupEmail(email);
+  if (!parsed) return email.trim().toLowerCase();
+
+  let local = parsed.local;
+  let domain = parsed.domain;
+  const plus = local.indexOf("+");
+  if (plus >= 0) local = local.slice(0, plus);
+
+  if (isGmailDomain(domain)) {
+    local = local.replace(/\./g, "");
+    domain = "gmail.com";
+  } else if (isMicrosoftDomain(domain) || isYahooDomain(domain)) {
+    local = local.split("+")[0];
+  }
+
+  return `${local}@${domain}`;
+}
+
+export function looksLikeProviderAliasAbuse(local: string, domain: string) {
+  if (isGmailDomain(domain) && looksLikeGmailDotTrick(local)) return true;
+
+  const plus = local.indexOf("+");
+  if (plus < 0) return false;
+  const tag = local.slice(plus + 1);
+  if (!tag) return true;
+  if (/^(temp|tmp|trial|test|fake|spam|trash|throwaway|disposable|burner|alias|mail|new|free)\b/i.test(tag)) {
+    return true;
+  }
+  if (/^[0-9]{4,}$/.test(tag)) return true;
+  return false;
+}
+
+function looksLikeGmailDotTrick(local: string) {
+  const base = local.split("+")[0];
+  const parts = base.split(".").filter(Boolean);
+  if (parts.length < 3) return false;
+  const singles = parts.filter((part) => part.length === 1).length;
+  if (parts.length >= 4 && singles >= 3) return true;
+  return singles >= 3 && singles / parts.length >= 0.5;
+}
+
 export function parseSignupEmail(email: string) {
   const normalized = email.trim().toLowerCase();
   const at = normalized.lastIndexOf("@");
@@ -320,9 +381,13 @@ export function validateSignupEmailClient(
     return { ok: false, error: SIGNUP_EMAIL_REJECTED };
   }
 
+  if (looksLikeProviderAliasAbuse(local, domain)) {
+    return { ok: false, error: SIGNUP_EMAIL_REJECTED };
+  }
+
   if (looksLikeRandomSignupLocalPart(local)) {
     return { ok: false, error: SIGNUP_EMAIL_REJECTED };
   }
 
-  return { ok: true, email: normalized };
+  return { ok: true, email: canonicalizeMailboxEmail(normalized) };
 }

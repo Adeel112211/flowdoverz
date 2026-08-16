@@ -3,6 +3,8 @@ import {
   parseSignupEmail,
   isBlockedSignupDomain,
   looksLikeRandomSignupLocalPart,
+  looksLikeProviderAliasAbuse,
+  canonicalizeMailboxEmail,
   SIGNUP_EMAIL_REJECTED,
 } from "./signup-email-rules";
 
@@ -192,6 +194,10 @@ export async function validateSignupEmail(
     return { ok: false, error: SIGNUP_EMAIL_REJECTED };
   }
 
+  if (looksLikeProviderAliasAbuse(local, domain)) {
+    return { ok: false, error: SIGNUP_EMAIL_REJECTED };
+  }
+
   if (looksLikeRandomSignupLocalPart(local)) {
     return { ok: false, error: SIGNUP_EMAIL_REJECTED };
   }
@@ -207,7 +213,7 @@ export async function validateSignupEmail(
     return { ok: false, error: SIGNUP_EMAIL_REJECTED };
   }
 
-  return { ok: true, email: normalized };
+  return { ok: true, email: canonicalizeMailboxEmail(normalized) };
 }
 
 export { validateSignupEmailClient, SIGNUP_EMAIL_REJECTED } from "./signup-email-rules";

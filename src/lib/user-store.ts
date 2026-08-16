@@ -1,6 +1,7 @@
 import { randomBytes, scryptSync, timingSafeEqual } from "crypto";
 import { getDb } from "./firebase-admin";
 import { validateSignupEmail } from "./signup-email-policy";
+import { canonicalizeMailboxEmail } from "./signup-email-rules";
 import { getSignupSecuritySettings } from "./signup-security";
 import { getSystemSettings } from "./admin-settings";
 import { createClientSession, maxClientSessionsForPlan } from "./client-session";
@@ -356,6 +357,14 @@ export async function registerClientUser(
     return { ok: false, error: "An account with this email already exists. Sign in instead." };
   }
 
+  const typedEmail = normalizeEmail(email);
+  if (typedEmail !== emailCheck.email) {
+    const typedDoc = await usersRef.doc(typedEmail).get();
+    if (typedDoc.exists) {
+      return { ok: false, error: "An account with this email already exists. Sign in instead." };
+    }
+  }
+
   if (await isClientNameTaken(displayName)) {
     return { ok: false, error: "This name is already used. Choose a different name." };
   }
@@ -571,7 +580,14 @@ export async function authenticateUser(
   }
 
   const normalized = normalizeEmail(email);
-  const userDoc = await db.collection("users").doc(normalized).get();
+  const users = db.collection("users");
+  let userDoc = await users.doc(normalized).get();
+  if (!userDoc.exists) {
+    const canonical = canonicalizeMailboxEmail(normalized);
+    if (canonical !== normalized) {
+      userDoc = await users.doc(canonical).get();
+    }
+  }
 
   if (!userDoc.exists) {
     return { ok: false, error: "Invalid email or password." };
