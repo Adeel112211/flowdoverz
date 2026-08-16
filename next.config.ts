@@ -7,6 +7,7 @@ const nextConfig: NextConfig = {
     "google-gax",
     "jwks-rsa",
     "jose",
+    "disposable-email-domains",
   ],
   async headers() {
     return [

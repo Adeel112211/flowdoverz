@@ -329,7 +329,10 @@ export async function sendPaymentRejectedEmail(email: string, planName: string) 
 }
 
 export async function sendSignupVerificationCodeEmail(email: string, code: string) {
-  return sendTemplateEmail("email_verification", email, { email, code });
+  const { validateSignupEmail } = await import("@/lib/signup-email-policy");
+  const allowed = await validateSignupEmail(email);
+  if (!allowed.ok) return false;
+  return sendTemplateEmail("email_verification", allowed.email, { email: allowed.email, code });
 }
 
 export async function sendSignupVerificationEmail(

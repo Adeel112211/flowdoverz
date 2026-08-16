@@ -30,7 +30,7 @@ export function UserMenuButton({ session }: Props) {
       {isDropdownOpen && (
         <>
           <div className="fixed inset-0 z-40" onClick={() => setIsDropdownOpen(false)} />
-          <div className="absolute right-0 z-50 mt-3 w-64 origin-top-right transform overflow-hidden rounded-2xl border border-white/10 bg-[#0c0c16]/95 shadow-[0_10px_40px_rgba(0,0,0,0.5)] backdrop-blur-xl transition-all">
+          <div className="absolute right-0 z-50 mt-3 w-64 origin-top-right overflow-hidden rounded-2xl border border-white/10 bg-[#0c0c16] shadow-[0_16px_48px_rgba(0,0,0,0.85)]">
             <div className="flex items-center gap-3 border-b border-white/5 p-4">
               <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-cyan-400 to-emerald-400 text-lg font-black uppercase text-slate-950 shadow-[0_0_15px_rgba(34,211,238,0.3)]">
                 {session.name.charAt(0)}

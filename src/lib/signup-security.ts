@@ -136,8 +136,73 @@ export function isDomainAllowed(emailDomain: string, allowedDomains: string[]): 
   );
 }
 
+export const SIGNUP_IP_REJECTED =
+  "An account was already created from this network. Sign in with your existing email.";
+
 export function hashSignupIp(ip: string): string {
   return hashIp(`trial:${ip}`);
+}
+
+async function ipAlreadyHasAccount(ip: string): Promise<boolean> {
+  const db = getDb();
+  if (!db) {
+    return process.env.NODE_ENV === "production";
+  }
+
+  const ipHash = hashSignupIp(ip);
+  const [signupDoc, trialDoc, usersSnap] = await Promise.all([
+    db.collection("signup_ip_usage").doc(ipHash).get(),
+    db.collection("trial_ip_usage").doc(ipHash).get(),
+    db.collection("users").where("signupIpHash", "==", ipHash).limit(1).get(),
+  ]);
+
+  if (signupDoc.exists) return true;
+  if (trialDoc.exists) return true;
+  return !usersSnap.empty;
+}
+
+export async function isSignupIpAvailable(ip: string | null | undefined): Promise<boolean> {
+  const cleaned = String(ip || "").trim();
+
+  if (isUnreliableIp(cleaned)) {
+    return process.env.NODE_ENV !== "production";
+  }
+
+  if (isLocalIp(cleaned) && process.env.NODE_ENV !== "production") {
+    return true;
+  }
+
+  return !(await ipAlreadyHasAccount(cleaned));
+}
+
+export async function recordSignupIpUsage(ip: string, email: string): Promise<void> {
+  const db = getDb();
+  if (!db) return;
+
+  const cleaned = String(ip || "").trim();
+  if (isUnreliableIp(cleaned)) return;
+
+  const ref = db.collection("signup_ip_usage").doc(hashSignupIp(cleaned));
+  const now = new Date().toISOString();
+
+  await db.runTransaction(async (transaction) => {
+    const doc = await transaction.get(ref);
+    const data = doc.data();
+    const emails = Array.isArray(data?.emails) ? [...data.emails] : [];
+    if (!emails.includes(email)) emails.push(email);
+
+    transaction.set(
+      ref,
+      {
+        accountCount: Number(data?.accountCount || 0) + 1,
+        firstEmail: data?.firstEmail || email,
+        firstUsedAt: data?.firstUsedAt || now,
+        lastUsedAt: now,
+        emails: emails.slice(-20),
+      },
+      { merge: true },
+    );
+  });
 }
 
 export async function isTrialEligibleForIp(ip: string | null | undefined): Promise<boolean> {

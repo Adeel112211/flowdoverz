@@ -237,7 +237,7 @@ export function SignupPage() {
                 </p>
               )}
               <p className="mt-2 text-xs text-slate-500">
-                One free trial per network IP. Extra accounts from the same IP must choose a paid plan.
+                One account per network IP. Use a real email — temp mail is blocked.
               </p>
             </div>
 

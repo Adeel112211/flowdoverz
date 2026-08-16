@@ -418,7 +418,7 @@ export function DashboardPage() {
                   className="fixed inset-0 z-40" 
                   onClick={() => setIsDropdownOpen(false)}
                 />
-                <div className="absolute right-0 mt-3 w-64 rounded-2xl border border-white/10 bg-[#0c0c16]/95 backdrop-blur-xl shadow-[0_10px_40px_rgba(0,0,0,0.5)] z-50 overflow-hidden transform origin-top-right transition-all">
+                <div className="absolute right-0 z-50 mt-3 w-64 origin-top-right overflow-hidden rounded-2xl border border-white/10 bg-[#0c0c16] shadow-[0_16px_48px_rgba(0,0,0,0.85)]">
                   <div className="p-4 border-b border-white/5 flex items-center gap-3">
                     <div className="w-10 h-10 rounded-full bg-gradient-to-br from-cyan-400 to-emerald-400 flex items-center justify-center text-slate-950 font-black shrink-0 shadow-[0_0_15px_rgba(34,211,238,0.3)] text-lg uppercase">
                       {session.name.charAt(0)}

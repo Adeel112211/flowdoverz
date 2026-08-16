@@ -9,6 +9,42 @@ import {
 let disposableSet: Set<string> | null = null;
 let wildcardSuffixes: string[] = [];
 
+const DISPOSABLE_MX_HINTS = [
+  "mailinator",
+  "guerrillamail",
+  "tempmail",
+  "temp-mail",
+  "yopmail",
+  "trashmail",
+  "maildrop",
+  "sharklasers",
+  "spam4.me",
+  "discard.email",
+  "moakt",
+  "mohmal",
+  "getnada",
+  "mailnesia",
+  "inboxkitten",
+  "dropmail",
+  "harakirimail",
+  "10minutemail",
+  "throwaway",
+  "fakeinbox",
+  "dispostable",
+  "mailcatch",
+  "tempr.email",
+  "tmpmail",
+  "tmpeml",
+  "mail.tm",
+  "emailfake",
+  "generator.email",
+  "1secmail",
+  "emailnator",
+  "smailpro",
+  "minuteinbox",
+  "jetable",
+];
+
 function loadDisposableSets() {
   if (disposableSet) return;
 
@@ -49,7 +85,12 @@ function isInDisposablePackage(domain: string): boolean {
   );
 }
 
-async function domainHasMx(domain: string): Promise<boolean> {
+function mxLooksDisposable(exchanges: string[]): boolean {
+  const blob = exchanges.join(" ").toLowerCase();
+  return DISPOSABLE_MX_HINTS.some((hint) => blob.includes(hint));
+}
+
+async function lookupMxExchanges(domain: string): Promise<string[]> {
   try {
     const records = await Promise.race([
       resolveMx(domain),
@@ -57,9 +98,10 @@ async function domainHasMx(domain: string): Promise<boolean> {
         setTimeout(() => reject(new Error("MX lookup timeout")), 4000),
       ),
     ]);
-    return Array.isArray(records) && records.length > 0;
+    if (!Array.isArray(records)) return [];
+    return records.map((row) => String(row.exchange || "").toLowerCase()).filter(Boolean);
   } catch {
-    return false;
+    return [];
   }
 }
 
@@ -84,12 +126,10 @@ export async function validateSignupEmail(
     }
   }
 
-  // Fast local patterns + curated list (also used in the browser)
   if (isBlockedSignupDomain(domain)) {
     return { ok: false, error: SIGNUP_EMAIL_REJECTED };
   }
 
-  // Full npm disposable list (server-only, ~120k domains)
   if (isInDisposablePackage(domain)) {
     return { ok: false, error: SIGNUP_EMAIL_REJECTED };
   }
@@ -98,8 +138,11 @@ export async function validateSignupEmail(
     return { ok: false, error: SIGNUP_EMAIL_REJECTED };
   }
 
-  const hasMx = await domainHasMx(domain);
-  if (!hasMx) {
+  const exchanges = await lookupMxExchanges(domain);
+  if (exchanges.length === 0) {
+    return { ok: false, error: SIGNUP_EMAIL_REJECTED };
+  }
+  if (mxLooksDisposable(exchanges)) {
     return { ok: false, error: SIGNUP_EMAIL_REJECTED };
   }
 

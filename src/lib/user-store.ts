@@ -317,11 +317,6 @@ export async function registerClientUser(
   }
 
   const { consumeSignupVerification } = await import("./signup-verification-code");
-  const codeCheck = await consumeSignupVerification(email, verificationCode);
-  if (!codeCheck.ok) {
-    return { ok: false, error: codeCheck.error };
-  }
-
   const normalized = normalizeEmail(email);
   const trimmedName = name.trim();
   const security = await getSignupSecuritySettings();
@@ -331,6 +326,19 @@ export async function registerClientUser(
   });
   if (!emailCheck.ok) {
     return { ok: false, error: emailCheck.error };
+  }
+
+  const { hashSignupIp, isTrialEligibleForIp, recordTrialIpUsage, isSignupIpAvailable, recordSignupIpUsage, SIGNUP_IP_REJECTED } = await import(
+    "./signup-security"
+  );
+
+  if (!(await isSignupIpAvailable(signupIp))) {
+    return { ok: false, error: SIGNUP_IP_REJECTED };
+  }
+
+  const codeCheck = await consumeSignupVerification(emailCheck.email, verificationCode);
+  if (!codeCheck.ok) {
+    return { ok: false, error: codeCheck.error };
   }
 
   const displayName = trimmedName.replace(/\s+/g, " ");
@@ -356,9 +364,6 @@ export async function registerClientUser(
   const now = new Date();
   const settings = await getSystemSettings();
   const { getTrialDurationMs } = await import("./admin-settings");
-  const { hashSignupIp, isTrialEligibleForIp, recordTrialIpUsage } = await import(
-    "./signup-security"
-  );
 
   const trialGranted = await isTrialEligibleForIp(signupIp);
   const trialExpiresAt = trialGranted
@@ -380,6 +385,10 @@ export async function registerClientUser(
   };
 
   await usersRef.doc(emailCheck.email).set(newUser);
+
+  if (signupIp) {
+    await recordSignupIpUsage(signupIp, emailCheck.email);
+  }
 
   if (trialGranted && signupIp) {
     await recordTrialIpUsage(signupIp, emailCheck.email);

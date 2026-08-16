@@ -31,6 +31,7 @@ export async function POST(request: NextRequest) {
   const result = await sendSignupVerificationCode(
     String(body.email || ""),
     security.allowedDomains,
+    ip,
   );
 
   if (!result.ok) {

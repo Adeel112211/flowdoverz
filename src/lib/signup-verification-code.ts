@@ -30,9 +30,15 @@ export function generateSignupCode() {
 export async function sendSignupVerificationCode(
   email: string,
   allowedDomains: string[] = [],
+  signupIp?: string,
 ): Promise<{ ok: true } | { ok: false; error: string; waitSeconds?: number }> {
   const db = getDb();
   if (!db) return { ok: false, error: "Service unavailable." };
+
+  const { isSignupIpAvailable, SIGNUP_IP_REJECTED } = await import("./signup-security");
+  if (!(await isSignupIpAvailable(signupIp))) {
+    return { ok: false, error: SIGNUP_IP_REJECTED };
+  }
 
   const emailCheck = await validateSignupEmail(normalizeEmail(email), { allowedDomains });
   if (!emailCheck.ok) {
