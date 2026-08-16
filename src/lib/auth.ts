@@ -183,14 +183,17 @@ export async function restoreSessionFromCookie(): Promise<Session | null> {
     }
 
     if (response.status === 401) {
-      // Solo kicked this browser out — clear local session.
-      window.localStorage.removeItem(SESSION_KEY);
-      cachedSession = null;
-      notifySessionChange();
-      if (data?.code === "SESSION_REPLACED" && data.error) {
-        window.sessionStorage.setItem("flowdoverz_session_notice", data.error);
+      if (data?.code === "SESSION_REPLACED") {
+        window.localStorage.removeItem(SESSION_KEY);
+        cachedSession = null;
+        notifySessionChange();
+        if (data.error) {
+          window.sessionStorage.setItem("flowdoverz_session_notice", data.error);
+        }
+        return null;
       }
-      return null;
+      // Cookie missing or expired — keep local session so a refresh does not look like a logout.
+      return getSession();
     }
 
     if (!response.ok || !data?.success || !data.user?.email || !data.user?.sid) {

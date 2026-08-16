@@ -78,8 +78,10 @@ export function ReceiptsPage() {
       .then((data) => {
         if (!active) return;
         if (!data.success) {
-          signOut();
-          router.push("/login");
+          if (data.code === "SESSION_REPLACED") {
+            signOut();
+            router.push("/login");
+          }
           return;
         }
         setAccount(data.account);

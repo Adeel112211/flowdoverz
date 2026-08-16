@@ -1,12 +1,12 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "@/lib/firebase-admin";
 import { requireActiveClientSession } from "@/lib/require-client-session";
 import { publicMaintenanceResponse } from "@/lib/maintenance";
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   const maintenance = await publicMaintenanceResponse();
   if (maintenance) return maintenance;
-  const gate = await requireActiveClientSession();
+  const gate = await requireActiveClientSession(request);
   if (!gate.ok) return gate.response;
 
   const db = getDb();

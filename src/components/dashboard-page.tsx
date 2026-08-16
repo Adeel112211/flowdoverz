@@ -95,14 +95,16 @@ export function DashboardPage() {
 
     async function loadStatus() {
       try {
-        const res = await fetch("/api/user/status");
+        const res = await fetch("/api/user/status", { credentials: "include", cache: "no-store" });
         if (!active) return;
         const data = await res.json();
         if (!active) return;
         if (applyMaintenanceFromPayload(data)) return;
         if (data.success) {
           setStatus(data.status);
-        } else {
+          return;
+        }
+        if (res.status === 401 && data.code === "SESSION_REPLACED") {
           signOut();
           router.push("/login");
         }

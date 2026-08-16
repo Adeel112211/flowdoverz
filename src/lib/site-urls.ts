@@ -77,13 +77,14 @@ export function getCookieDomain(): string | undefined {
   return domain || undefined;
 }
 
-/** Browser session cookie — cleared when the browser is closed. */
+/** Client session cookie — 24h, matching the signed token TTL. */
 export function clientSessionCookieOptions() {
   return {
     path: "/",
     sameSite: "lax" as const,
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
+    maxAge: 24 * 60 * 60,
     ...(getCookieDomain() ? { domain: getCookieDomain() } : {}),
   };
 }
