@@ -139,6 +139,7 @@ export function DashboardPage() {
 
     const statusPoll = window.setInterval(() => {
       void loadStatus();
+      void loadExtension();
     }, 8000);
 
     return () => {
@@ -341,6 +342,7 @@ export function DashboardPage() {
   const updateExtensionMessage =
     (liveTamper?.kind === "update" && liveTamper.message) ||
     "A new FlowDoverz extension is required. This version no longer works until you install the latest official build.";
+  const downloadVersion = extensionVersion || status?.extensionRequiredVersion || null;
 
   async function resendVerification() {
     setResending(true);
@@ -491,7 +493,7 @@ export function DashboardPage() {
               <DownloadCloud size={16} />
               {isDownloading
                 ? "Downloading..."
-                : `Download v${liveTamper?.version || status?.extensionRequiredVersion || extensionVersion || "latest"}`}
+                : `Download v${downloadVersion || "latest"}`}
             </button>
           </div>
         )}
@@ -605,7 +607,7 @@ export function DashboardPage() {
                   )}
                   {isDownloading
                     ? "Starting Download..."
-                    : `Download Extension${extensionVersion ? ` v${extensionVersion}` : ""}`}
+                    : `Download Extension${downloadVersion ? ` v${downloadVersion}` : ""}`}
                 </button>
                 <button
                   type="button"

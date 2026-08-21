@@ -99,6 +99,57 @@ function sha256Hex(text: string) {
   return createHash("sha256").update(text, "utf8").digest("hex");
 }
 
+function attestationFromTexts(texts: Record<string, string>): OfficialIntegrityAttestation {
+  const protectSrc = stripIntegrityHashConstant(texts["protect.js"] || "");
+  const guardStripped = stripIntegrityHashConstant(texts["integrity-guard.js"] || "");
+  return {
+    enforce: extractNamedFunction(protectSrc, "enforce"),
+    isBlockedCookieExtension: extractNamedFunction(protectSrc, "isBlockedCookieExtension"),
+    computeLivePayload: extractNamedFunction(guardStripped, "computeLivePayload"),
+    proveForSync: extractNamedFunction(guardStripped, "proveForSync"),
+  };
+}
+
+/**
+ * Fingerprint the ZIP as it will be downloaded. Do not rewrite files.
+ * Resealing the stored ZIP produced a new hash and made newer installs fail.
+ */
+export async function profileFromExtensionZip(
+  zipBuffer: Buffer,
+  version?: string,
+): Promise<OfficialIntegrityProfile> {
+  const zip = await JSZip.loadAsync(zipBuffer);
+  const files = [...CANONICAL_INTEGRITY_FILES];
+  const texts: Record<string, string> = {};
+  for (const file of files) {
+    const entry = zipEntry(zip, file);
+    if (!entry) throw new Error(`ZIP is missing required file: ${file}`);
+    texts[file] = await entry.async("string");
+  }
+
+  const payload = files.map((file) => stripIntegrityHashConstant(texts[file])).join("");
+  const hash = sha256Hex(payload);
+  const attestation = attestationFromTexts(texts);
+  let releaseVersion = String(version || "").trim();
+  if (!releaseVersion) {
+    try {
+      const manifest = JSON.parse(texts["manifest.json"] || "{}") as { version?: string };
+      releaseVersion = String(manifest.version || "1.0.0");
+    } catch {
+      releaseVersion = "1.0.0";
+    }
+  }
+
+  return {
+    hash,
+    payload,
+    files,
+    attestation,
+    version: releaseVersion,
+    generatedAt: "",
+  };
+}
+
 /**
  * Stamp an uploaded ZIP as official: hash every text file, write EXPECTED_INTEGRITY_HASH,
  * and return the server proof profile. Modified copies of this ZIP will fail sync.
@@ -164,15 +215,7 @@ export async function sealOfficialExtensionZip(
   zip.file(guardEntry.name, guardSrc);
 
   payload = files.map((file) => stripIntegrityHashConstant(texts[file])).join("");
-
-  const protectSrc = stripIntegrityHashConstant(texts["protect.js"]);
-  const guardStripped = stripIntegrityHashConstant(guardSrc);
-  const attestation: OfficialIntegrityAttestation = {
-    enforce: extractNamedFunction(protectSrc, "enforce"),
-    isBlockedCookieExtension: extractNamedFunction(protectSrc, "isBlockedCookieExtension"),
-    computeLivePayload: extractNamedFunction(guardStripped, "computeLivePayload"),
-    proveForSync: extractNamedFunction(guardStripped, "proveForSync"),
-  };
+  const attestation = attestationFromTexts(texts);
 
   for (const [name, src] of Object.entries(attestation)) {
     if (!src || src.length < 80) {

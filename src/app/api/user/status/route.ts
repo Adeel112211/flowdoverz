@@ -15,6 +15,18 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ success: false, error: "User not found" }, { status: 404 });
   }
 
+  if (status.extensionUpdateRequired) {
+    try {
+      const { getExtensionConfig } = await import("@/lib/extension-store");
+      const config = await getExtensionConfig();
+      if (config.activeVersion) {
+        status.extensionRequiredVersion = config.activeVersion;
+      }
+    } catch {
+      // keep stored version
+    }
+  }
+
   const activationBlock = await getPlanActivationBlock(gate.email);
 
   return NextResponse.json({ success: true, status, activationBlock });

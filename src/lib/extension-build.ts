@@ -58,15 +58,18 @@ function bakedInProfile(): OfficialIntegrityProfile {
 }
 
 async function resolveOfficialProfile(): Promise<OfficialIntegrityProfile> {
-  if (profileCache) return profileCache.profile;
-
   try {
     const { getActiveIntegrityProfile, getExtensionConfig } = await import("@/lib/extension-store");
     const config = await getExtensionConfig();
+    const cacheKey = `${config.activeVersion || ""}:${String(config.officialHash || "").toLowerCase()}`;
+    if (profileCache?.key === cacheKey && profileCache.profile?.hash) {
+      return profileCache.profile;
+    }
+
     const stored = await getActiveIntegrityProfile();
     if (stored?.hash && stored.payload && stored.attestation) {
       profileCache = {
-        key: config.activeVersion || stored.hash,
+        key: cacheKey || stored.hash,
         profile: stored,
       };
       return stored;
@@ -75,6 +78,9 @@ async function resolveOfficialProfile(): Promise<OfficialIntegrityProfile> {
     // Use packaged fallback when Firestore has no sealed ZIP yet.
   }
 
+  if (profileCache?.key === "baked-in" && profileCache.profile) {
+    return profileCache.profile;
+  }
   const fallback = bakedInProfile();
   profileCache = { key: "baked-in", profile: fallback };
   return fallback;
@@ -227,7 +233,15 @@ export async function validateExtensionIntegrityHeaders(headers: {
   if (!parsed || !incomingProof || incomingProof.length < 32) {
     return fail;
   }
-  if (incomingHash !== expectedHash) {
+  let activeHash = expectedHash;
+  try {
+    const { getExtensionConfig } = await import("@/lib/extension-store");
+    const official = String((await getExtensionConfig()).officialHash || "").toLowerCase();
+    if (official.length >= 32) activeHash = official;
+  } catch {
+    // keep profile hash
+  }
+  if (incomingHash !== activeHash && incomingHash !== expectedHash) {
     return fail;
   }
 

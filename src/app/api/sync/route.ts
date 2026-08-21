@@ -156,10 +156,6 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  if (isOlderExtensionVersion(reportedVersion, latestVersion)) {
-    return updateRequiredResponse();
-  }
-
   const { getDb } = await import("@/lib/firebase-admin");
   const dbCheck = getDb();
   if (dbCheck) {

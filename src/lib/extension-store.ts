@@ -259,32 +259,27 @@ export async function getActiveIntegrityProfile(): Promise<OfficialIntegrityProf
   const version = config.activeVersion;
   if (!version) return null;
 
-  const db = getDb();
-  if (db) {
+  const zip = await getExtensionZip(version);
+  if (zip) {
     try {
-      const doc = await db.collection(INTEGRITY_COLLECTION).doc(sanitizeVersion(version)).get();
-      if (doc.exists) {
-        const data = doc.data() as Partial<OfficialIntegrityProfile>;
-        if (data.hash && data.payload && data.attestation) {
-          return data as OfficialIntegrityProfile;
-        }
-      }
+      const { profileFromExtensionZip } = await import("./extension-official-from-zip");
+      return await profileFromExtensionZip(zip.buffer, version);
     } catch {
-      // fall through and rebuild from the stored ZIP
+      // fall through to the stored profile from upload
     }
   }
 
-  const zip = await getExtensionZip(version);
-  if (!zip) return null;
-
+  const db = getDb();
+  if (!db) return null;
   try {
-    const { sealOfficialExtensionZip } = await import("./extension-official-from-zip");
-    const sealed = await sealOfficialExtensionZip(zip.buffer, { version });
-    if (db) {
-      await db.collection(INTEGRITY_COLLECTION).doc(sanitizeVersion(version)).set(sealed.profile);
+    const doc = await db.collection(INTEGRITY_COLLECTION).doc(sanitizeVersion(version)).get();
+    if (!doc.exists) return null;
+    const data = doc.data() as Partial<OfficialIntegrityProfile>;
+    if (data.hash && data.payload && data.attestation) {
+      return data as OfficialIntegrityProfile;
     }
-    return sealed.profile;
   } catch {
     return null;
   }
+  return null;
 }
