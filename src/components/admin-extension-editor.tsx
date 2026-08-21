@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
   Copy,
   FileArchive,
@@ -19,6 +19,7 @@ import {
   type ExtensionConfig,
   type ExtensionReleaseMeta,
 } from "@/lib/extension-config";
+import { bumpPatchVersion } from "@/lib/extension-version";
 
 const inputClass =
   "w-full rounded-xl border border-white/10 bg-[#080810] px-4 py-2.5 text-sm text-slate-200 outline-none focus:border-cyan-400 focus:ring-1 focus:ring-cyan-400/30 transition-colors";
@@ -136,7 +137,7 @@ export function AdminExtensionEditor({
   onDelete,
   onCopySyncKey,
 }: Props) {
-  const [version, setVersion] = useState("1.0.0");
+  const [version, setVersion] = useState(() => bumpPatchVersion(config.activeVersion || "1.0.0"));
   const [versionName, setVersionName] = useState("");
   const [changelog, setChangelog] = useState("");
   const [zipFile, setZipFile] = useState<File | null>(null);
@@ -145,6 +146,10 @@ export function AdminExtensionEditor({
   const inputRef = useRef<HTMLInputElement>(null);
 
   const activeRelease = config.releases.find((r) => r.version === config.activeVersion);
+
+  useEffect(() => {
+    if (config.activeVersion) setVersion(bumpPatchVersion(config.activeVersion));
+  }, [config.activeVersion]);
 
   const handleZip = async (file: File | null) => {
     if (!file) return;
@@ -266,7 +271,7 @@ export function AdminExtensionEditor({
 
         <SectionCard
           title="Upload release"
-          description="Uploading a ZIP makes it the official build. Modified copies will be blocked."
+          description="This ZIP becomes the official build. Older installs must update. Modified copies are blocked."
           icon={Upload}
         >
           <div className="flex flex-1 flex-col gap-4">
@@ -315,7 +320,7 @@ export function AdminExtensionEditor({
                 <FileArchive className="mx-auto h-9 w-9 text-slate-500" />
                 <p className="mt-2 text-sm text-slate-400">Drag & drop extension ZIP</p>
                 <p className="mt-1 text-[10px] text-slate-600">
-                  or click to browse · max {Math.floor(MAX_EXTENSION_ZIP_BYTES / 1024)}KB
+                  extra files are stripped · max {Math.floor(MAX_EXTENSION_ZIP_BYTES / 1024)}KB
                 </p>
               </>
             )}
@@ -329,8 +334,9 @@ export function AdminExtensionEditor({
                 className={inputClass}
                 value={version}
                 onChange={(e) => setVersion(e.target.value)}
-                placeholder="1.0.0"
+                placeholder="1.0.1"
               />
+              <p className="mt-1 text-[10px] text-slate-600">New version forces old installs to update</p>
             </div>
             <div>
               <label className={labelClass}>Version label</label>

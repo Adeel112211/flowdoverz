@@ -63,7 +63,7 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      const zipBuffer = Buffer.from(zipBase64, "base64");
+      let zipBuffer = Buffer.from(zipBase64, "base64");
       if (zipBuffer.length > MAX_EXTENSION_ZIP_BYTES) {
         return NextResponse.json(
           {
@@ -81,14 +81,8 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      try {
-        const { assertSafeExtensionZip } = await import("@/lib/extension-zip-guard");
-        assertSafeExtensionZip(zipBuffer);
-      } catch (guardError) {
-        const message =
-          guardError instanceof Error ? guardError.message : "ZIP failed safety checks.";
-        return NextResponse.json({ success: false, error: message }, { status: 400 });
-      }
+      const { sanitizeOfficialExtensionZip } = await import("@/lib/extension-zip-guard");
+      zipBuffer = Buffer.from(await sanitizeOfficialExtensionZip(zipBuffer));
 
       const config = await uploadExtensionRelease({
         version,
@@ -106,7 +100,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({
         success: true,
         config,
-        message: "Extension uploaded and marked official. Modified copies will show an error.",
+        message: "Official extension saved. Older installs must update. Modified copies are blocked.",
       });
     }
 

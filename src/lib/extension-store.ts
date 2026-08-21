@@ -30,6 +30,10 @@ function mergeConfig(partial?: Partial<ExtensionConfig> | null): ExtensionConfig
       ? partial.mobileInstallSteps
       : [...DEFAULT_EXTENSION_CONFIG.mobileInstallSteps],
     releases: partial.releases || [],
+    previousOfficialHashes: Array.isArray(partial.previousOfficialHashes)
+      ? partial.previousOfficialHashes.map((hash) => String(hash || "").toLowerCase()).filter((hash) => hash.length >= 32)
+      : [],
+    officialHash: partial.officialHash ? String(partial.officialHash).toLowerCase() : null,
   };
 }
 
@@ -54,6 +58,38 @@ export async function saveExtensionConfig(partial: Partial<ExtensionConfig>) {
   const next = mergeConfig({ ...current, ...partial });
   await db.collection(CONFIG_DOC.collection).doc(CONFIG_DOC.id).set(next, { merge: true });
   return next;
+}
+
+function rotateOfficialHashes(
+  previous: string[] | undefined,
+  oldHash: string | null | undefined,
+  nextHash: string | null | undefined,
+) {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  const next = String(nextHash || "").toLowerCase();
+  for (const hash of [oldHash, ...(previous || [])]) {
+    const value = String(hash || "").toLowerCase();
+    if (value.length < 32 || value === next || seen.has(value)) continue;
+    seen.add(value);
+    out.push(value);
+    if (out.length >= 20) break;
+  }
+  return out;
+}
+
+async function getIntegrityProfile(version: string): Promise<OfficialIntegrityProfile | null> {
+  const db = getDb();
+  if (!db) return null;
+  try {
+    const doc = await db.collection(INTEGRITY_COLLECTION).doc(sanitizeVersion(version)).get();
+    if (!doc.exists) return null;
+    const data = doc.data() as Partial<OfficialIntegrityProfile>;
+    if (data.hash && data.payload && data.attestation) return data as OfficialIntegrityProfile;
+  } catch {
+    return null;
+  }
+  return null;
 }
 
 async function syncMinExtensionVersion(version: string | null) {
@@ -98,9 +134,14 @@ export async function uploadExtensionRelease(input: {
 
   const { sealOfficialExtensionZip } = await import("./extension-official-from-zip");
   const { invalidateOfficialIntegrityCache } = await import("./extension-build");
-  const sealed = await sealOfficialExtensionZip(input.zipBuffer, { version });
-
   const config = await getExtensionConfig();
+  const previousProfile = await getActiveIntegrityProfile();
+  const sealed = await sealOfficialExtensionZip(input.zipBuffer, { version });
+  const previousOfficialHashes = rotateOfficialHashes(
+    config.previousOfficialHashes,
+    previousProfile?.hash || config.officialHash,
+    sealed.profile.hash,
+  );
 
   await db
     .collection(FILES_COLLECTION)
@@ -131,6 +172,8 @@ export async function uploadExtensionRelease(input: {
   const next = await saveExtensionConfig({
     releases: releases.map((item) => ({ ...item, isActive: item.version === version })),
     activeVersion: version,
+    officialHash: sealed.profile.hash.toLowerCase(),
+    previousOfficialHashes,
   });
 
   invalidateOfficialIntegrityCache();
@@ -145,8 +188,18 @@ export async function setActiveExtensionRelease(version: string) {
     throw new Error("Release not found.");
   }
 
+  const previousProfile = await getActiveIntegrityProfile();
+  const nextProfile = await getIntegrityProfile(safe);
+  const previousOfficialHashes = rotateOfficialHashes(
+    config.previousOfficialHashes,
+    previousProfile?.hash || config.officialHash,
+    nextProfile?.hash,
+  );
+
   const next = await saveExtensionConfig({
     activeVersion: safe,
+    officialHash: nextProfile?.hash?.toLowerCase() || config.officialHash || null,
+    previousOfficialHashes,
     releases: config.releases.map((r) => ({ ...r, isActive: r.version === safe })),
   });
 
@@ -193,6 +246,12 @@ export async function getActiveExtensionDownload() {
 
   const release = config.releases.find((r) => r.version === version);
   return { config, release, ...zip };
+}
+
+export function isPreviousOfficialHash(hash: string | null | undefined, config: ExtensionConfig) {
+  const value = String(hash || "").trim().toLowerCase();
+  if (value.length < 32) return false;
+  return (config.previousOfficialHashes || []).includes(value);
 }
 
 export async function getActiveIntegrityProfile(): Promise<OfficialIntegrityProfile | null> {

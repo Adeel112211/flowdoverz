@@ -687,7 +687,7 @@ export async function markExtensionTampered(email: string, message?: string) {
       extensionTamperedAt: new Date().toISOString(),
       extensionTamperMessage:
         String(message || "").trim() ||
-        "Modified extension detected. Download and reinstall the official FlowDoverz build.",
+        "Modified extension. Download the official FlowDoverz build from your dashboard.",
     },
     { merge: true },
   );

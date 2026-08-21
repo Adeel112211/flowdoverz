@@ -80,6 +80,21 @@ function integrityFilesSource(files: string[]) {
   return `const INTEGRITY_FILES = [\n${files.map((file) => `    "${file}",`).join("\n")}\n  ];`;
 }
 
+function ensureGuardConstants(guardSrc: string, files: string[]) {
+  let src = String(guardSrc || "");
+  if (!/const INTEGRITY_FILES = \[/.test(src)) {
+    src = `${integrityFilesSource(files)}\n${src}`;
+  }
+  if (!/const EXPECTED_INTEGRITY_HASH = "[^"]*";/.test(src)) {
+    if (/"use strict";/.test(src)) {
+      src = src.replace(/"use strict";/, `"use strict";\n\n  const EXPECTED_INTEGRITY_HASH = "PLACEHOLDER";`);
+    } else {
+      src = `const EXPECTED_INTEGRITY_HASH = "PLACEHOLDER";\n${src}`;
+    }
+  }
+  return src;
+}
+
 function sha256Hex(text: string) {
   return createHash("sha256").update(text, "utf8").digest("hex");
 }
@@ -109,14 +124,7 @@ export async function sealOfficialExtensionZip(
     }
   }
 
-  let guardSrc = await guardEntry.async("string");
-  if (!/const INTEGRITY_FILES = \[/.test(guardSrc)) {
-    throw new Error("integrity-guard.js is missing INTEGRITY_FILES.");
-  }
-  if (!/const EXPECTED_INTEGRITY_HASH = "[^"]*";/.test(guardSrc)) {
-    throw new Error("integrity-guard.js is missing EXPECTED_INTEGRITY_HASH.");
-  }
-
+  let guardSrc = ensureGuardConstants(await guardEntry.async("string"), files);
   guardSrc = guardSrc.replace(/const INTEGRITY_FILES = \[[\s\S]*?\];/, integrityFilesSource(files));
 
   const texts: Record<string, string> = {
@@ -157,7 +165,7 @@ export async function sealOfficialExtensionZip(
 
   payload = files.map((file) => stripIntegrityHashConstant(texts[file])).join("");
 
-  const protectSrc = texts["protect.js"];
+  const protectSrc = stripIntegrityHashConstant(texts["protect.js"]);
   const guardStripped = stripIntegrityHashConstant(guardSrc);
   const attestation: OfficialIntegrityAttestation = {
     enforce: extractNamedFunction(protectSrc, "enforce"),

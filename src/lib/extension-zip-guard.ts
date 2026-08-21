@@ -1,75 +1,68 @@
 /**
- * Reject attacker / lab materials from user-facing extension ZIPs.
- * Blocks official-payload.json dual-copy packs and "extension 2" style builds.
+ * Extra files in an admin ZIP are removed, not rejected.
+ * official-payload.json is a server fingerprint and must never block upload.
  */
 
-const BLOCKED_PATH_SNIPPETS = [
+import JSZip from "jszip";
+
+const STRIP_BASENAMES = new Set([
   "official-payload.json",
-  "extension 2/",
-  "extension2/",
-  "extension-2/",
-];
+  "extension-official-payload.json",
+  "compute-integrity.js",
+  "pack-official.js",
+  "guide.md",
+  "debug-integrity.js",
+  "_check-integrity-temp.js",
+  ".ds_store",
+]);
 
-const BLOCKED_MANIFEST_MARKERS = [
-  "no cookie protect",
-  "modified test",
-  "noprotect",
-  "forged integrity",
-  "cookie protection removed",
-];
-
-function readZipLocalNames(buffer: Buffer): string[] {
-  const names: string[] = [];
-  let offset = 0;
-  while (offset + 30 < buffer.length) {
-    // local file header signature 0x04034b50
-    if (buffer.readUInt32LE(offset) !== 0x04034b50) break;
-    const nameLen = buffer.readUInt16LE(offset + 26);
-    const extraLen = buffer.readUInt16LE(offset + 28);
-    const compSize = buffer.readUInt32LE(offset + 18);
-    const nameStart = offset + 30;
-    const nameEnd = nameStart + nameLen;
-    if (nameEnd > buffer.length) break;
-    const name = buffer.slice(nameStart, nameEnd).toString("utf8").replace(/\\/g, "/");
-    names.push(name.toLowerCase());
-    offset = nameEnd + extraLen + compSize;
-  }
-  return names;
+function zipPath(name: string) {
+  return String(name || "")
+    .replace(/\\/g, "/")
+    .toLowerCase();
 }
 
-function extractManifestText(buffer: Buffer): string {
-  // Best-effort: search for uncompressed manifest.json ASCII blob in the zip.
-  const asText = buffer.toString("utf8");
-  const marker = '"manifest_version"';
-  const idx = asText.indexOf(marker);
-  if (idx < 0) return "";
-  const window = asText.slice(Math.max(0, idx - 80), idx + 1200).toLowerCase();
-  return window;
+function zipBasename(name: string) {
+  const path = zipPath(name);
+  const parts = path.split("/");
+  return parts[parts.length - 1] || path;
 }
 
-export function assertSafeExtensionZip(zipBuffer: Buffer): void {
-  const names = readZipLocalNames(zipBuffer);
-  for (const name of names) {
-    for (const blocked of BLOCKED_PATH_SNIPPETS) {
-      if (name.includes(blocked)) {
-        throw new Error(
-          `ZIP rejected: contains blocked path "${blocked}". Upload only the official extension folder.`,
-        );
-      }
-    }
-    if (name.endsWith("official-payload.json")) {
-      throw new Error(
-        "ZIP rejected: official-payload.json is not allowed in client downloads.",
-      );
+function shouldStripEntry(name: string) {
+  const path = zipPath(name);
+  const base = zipBasename(name);
+  return (
+    STRIP_BASENAMES.has(base) ||
+    base.endsWith(".zip") ||
+    path.includes("__macosx/") ||
+    path.includes("official-payload.json")
+  );
+}
+
+/**
+ * Drop payload/lab files from an uploaded extension ZIP so the official
+ * Chrome files can be sealed. Never throws for official-payload.json.
+ */
+export async function sanitizeOfficialExtensionZip(zipBuffer: Buffer): Promise<Buffer> {
+  const zip = await JSZip.loadAsync(zipBuffer);
+  let stripped = 0;
+
+  for (const name of Object.keys(zip.files)) {
+    const entry = zip.files[name];
+    if (!entry || entry.dir) continue;
+    if (shouldStripEntry(name)) {
+      zip.remove(name);
+      stripped += 1;
     }
   }
 
-  const manifestText = extractManifestText(zipBuffer);
-  for (const marker of BLOCKED_MANIFEST_MARKERS) {
-    if (manifestText.includes(marker)) {
-      throw new Error(
-        "ZIP rejected: manifest looks like a modified/test build. Upload the official extension only.",
-      );
-    }
-  }
+  if (stripped === 0) return zipBuffer;
+
+  return Buffer.from(
+    await zip.generateAsync({
+      type: "nodebuffer",
+      compression: "DEFLATE",
+      compressionOptions: { level: 9 },
+    }),
+  );
 }

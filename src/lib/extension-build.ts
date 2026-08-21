@@ -13,11 +13,11 @@ import type { OfficialIntegrityAttestation, OfficialIntegrityProfile } from "@/l
 export const OFFICIAL_EXTENSION_VERSION = "1.0.0";
 
 export const OFFICIAL_EXTENSION_INTEGRITY_HASH =
-  "5bcef0931241cc2aaaad85c1b043d2c56800a94f1f085b56e302856e9dfaf3c4";
+  "0014ebe8c8eedaf67104f2c9854f0af43a13d6561b5aa12b247fa309225219c7";
 
 /** Shown by extension when server rejects a modified build. */
 export const EXTENSION_TAMPER_MESSAGE =
-  "This extension was changed. Reinstall the official FlowDoverz build from your dashboard.";
+  "Modified extension. Download the official FlowDoverz build from your dashboard.";
 
 const CHALLENGE_TTL_MS = 90_000;
 

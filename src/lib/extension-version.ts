@@ -22,6 +22,16 @@ export function compareExtensionVersions(left: string, right: string) {
   return 0;
 }
 
+export function bumpPatchVersion(version: string) {
+  const raw = String(version || "").trim() || "1.0.0";
+  const parts = raw.split(".").map((part) => Number(part));
+  if (!parts.length || parts.some((part) => !Number.isFinite(part))) {
+    return `${raw}.1`;
+  }
+  parts[parts.length - 1] = (parts[parts.length - 1] || 0) + 1;
+  return parts.join(".");
+}
+
 export function isOlderExtensionVersion(installed: string | null | undefined, required: string | null | undefined) {
   const need = String(required || "").trim();
   if (!need) return false;

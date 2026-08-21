@@ -67,21 +67,26 @@ export async function GET(request: NextRequest) {
   }
 
   // Require challenge proof of real official file bytes (+ live function attestation).
-  const { validateExtensionIntegrityHeaders } = await import("@/lib/extension-build");
+  const { validateExtensionIntegrityHeaders, EXTENSION_TAMPER_MESSAGE } = await import("@/lib/extension-build");
+  const { isPreviousOfficialHash } = await import("@/lib/extension-store");
+  const incomingHash = String(request.headers.get("x-extension-integrity") || "").trim().toLowerCase();
   const integrityCheck = await validateExtensionIntegrityHeaders({
-    integrity: request.headers.get("x-extension-integrity"),
+    integrity: incomingHash,
     challenge: request.headers.get("x-extension-challenge"),
     proof: request.headers.get("x-extension-proof"),
   });
   if (!integrityCheck.ok) {
-    if (isOlderExtensionVersion(reportedVersion, latestVersion)) {
+    const outdated =
+      isPreviousOfficialHash(incomingHash, extensionConfig) ||
+      isOlderExtensionVersion(reportedVersion, latestVersion);
+    if (outdated) {
       return updateRequiredResponse();
     }
     // Flag the account so Dashboard can show "reinstall official" guidance.
     if (email) {
       try {
         const { markExtensionTampered } = await import("@/lib/user-store");
-        await markExtensionTampered(email, integrityCheck.message);
+        await markExtensionTampered(email, integrityCheck.message || EXTENSION_TAMPER_MESSAGE);
       } catch {
         // non-blocking
       }

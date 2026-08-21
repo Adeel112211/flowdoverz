@@ -17,6 +17,8 @@ export type ExtensionConfig = {
   mobileInstallSteps: string[];
   chromeStoreUrl?: string;
   activeVersion: string | null;
+  officialHash?: string | null;
+  previousOfficialHashes?: string[];
   releases: ExtensionReleaseMeta[];
 };
 
@@ -39,6 +41,8 @@ export const DEFAULT_EXTENSION_CONFIG: ExtensionConfig = {
   ],
   chromeStoreUrl: "",
   activeVersion: null,
+  officialHash: null,
+  previousOfficialHashes: [],
   releases: [],
 };
 
