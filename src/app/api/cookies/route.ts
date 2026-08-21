@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
+  analyzeCookieCoverage,
   clearSlotCookies,
   getSlotCookies,
   listSlots,
@@ -80,6 +81,7 @@ export async function POST(request: NextRequest) {
         ? body.cookies
         : JSON.stringify(body.cookies ?? []);
     const cookiesList = parseCookieJson(raw);
+    const coverage = analyzeCookieCoverage(cookiesList);
     const record = await saveSlotCookies(WORKSPACE_OWNER, slot, cookiesList, body.label);
 
     await logAdminActivity({
@@ -94,7 +96,11 @@ export async function POST(request: NextRequest) {
       cookie_count: record.cookies.length,
       cookie_hash: record.hash,
       updated_at: record.updatedAt,
-      message: "Cookies saved. Only your unlocked admin browser can sync them.",
+      cookie_names: record.cookies.map((cookie) => cookie.name),
+      warnings: coverage.warnings,
+      message: coverage.warnings.length
+        ? `Saved ${record.cookies.length} cookies, but New project may fail until Google SID cookies are included.`
+        : "Cookies saved. Clients will get them after they sign in.",
     });
   } catch (error) {
     return NextResponse.json(

@@ -17,6 +17,14 @@ type SlotInfo = {
   cookie_count?: number;
 };
 
+function cookieCoverageWarning(names: string[]): string | null {
+  const set = new Set(names);
+  const hasGoogleSid =
+    set.has("SID") || set.has("__Secure-1PSID") || set.has("__Secure-3PSID");
+  if (hasGoogleSid) return null;
+  return "This export has no Google SID / __Secure-1PSID cookies. Ultra can show on the home page, but New project will fail. In Cookie Editor turn OFF “current host only” and include .google.com cookies.";
+}
+
 export function CookiesPage() {
   const fileRef = useRef<HTMLInputElement>(null);
   const [admin, setAdmin] = useState(false);
@@ -41,7 +49,11 @@ export function CookiesPage() {
   }>({ count: 0, updated: null, names: [] });
   const [slotLabel, setSlotLabel] = useState("");
   const [copyTarget, setCopyTarget] = useState("C2");
-  const [preview, setPreview] = useState<{ count: number; names: string[] } | null>(null);
+  const [preview, setPreview] = useState<{
+    count: number;
+    names: string[];
+    warning: string | null;
+  } | null>(null);
   const [pendingSave, setPendingSave] = useState<string | null>(null);
 
   async function checkAdmin() {
@@ -108,9 +120,13 @@ export function CookiesPage() {
         const parsed = JSON.parse(text);
         const list = Array.isArray(parsed) ? parsed : parsed?.cookies;
         if (Array.isArray(list)) {
+          const names = list.slice(0, 8).map((c: { name?: string }) => c.name || "?");
           setPreview({
             count: list.length,
-            names: list.slice(0, 8).map((c: { name?: string }) => c.name || "?"),
+            names,
+            warning: cookieCoverageWarning(
+              list.map((c: { name?: string }) => String(c.name || "")),
+            ),
           });
           setPendingSave(text);
           return false;
@@ -140,8 +156,11 @@ export function CookiesPage() {
         return false;
       }
       setStatus({
-        type: "ok",
-        text: `Replaced ${targetSlot} with ${data.cookie_count} cookies. Clients will get them after they sign in.`,
+        type: data.warnings?.length ? "err" : "ok",
+        text:
+          (data.warnings && data.warnings[0]) ||
+          data.message ||
+          `Replaced ${targetSlot} with ${data.cookie_count} cookies. Clients will get them after they sign in.`,
       });
       setJsonText("");
       await refreshMeta(targetSlot);
@@ -294,7 +313,8 @@ export function CookiesPage() {
             <>
               Paste cookies here. Clients sign in on{" "}
               <code className="font-mono text-cyan-400">/login</code> and their extension syncs
-              these automatically.
+              these automatically. Export from Cookie Editor with “current host only” OFF so
+              labs.google and .google.com cookies are included — otherwise New project signs out.
             </>
           }
           actions={
@@ -604,6 +624,11 @@ export function CookiesPage() {
             <p className="text-sm text-slate-400 mb-4">
               {preview.count} cookies will replace the current slot contents.
             </p>
+            {preview.warning && (
+              <p className="mb-4 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-100">
+                {preview.warning}
+              </p>
+            )}
             <div className="flex flex-wrap gap-1.5 mb-6">
               {preview.names.map((name) => (
                 <span key={name} className="rounded-md border border-white/10 px-2 py-0.5 font-mono text-[10px] text-slate-400">

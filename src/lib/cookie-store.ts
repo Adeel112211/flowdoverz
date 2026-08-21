@@ -7,6 +7,7 @@ export type FlowCookie = {
   value: string;
   domain?: string;
   path?: string;
+  url?: string;
   secure?: boolean;
   httpOnly?: boolean;
   sameSite?: string;
@@ -46,18 +47,56 @@ export function sanitizeForFirestore<T>(value: T): T {
   return value;
 }
 
+function asPositiveNumber(value: unknown): number | undefined {
+  if (typeof value === "number" && Number.isFinite(value) && value > 0) return value;
+  if (typeof value === "string" && value.trim()) {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed) && parsed > 0) return parsed;
+  }
+  return undefined;
+}
+
+function hostnameFromUrl(url: string): string | undefined {
+  try {
+    const host = new URL(url).hostname.toLowerCase();
+    return host || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function cookieValue(row: Record<string, unknown>): string | null {
+  if (typeof row.value === "string") return row.value;
+  if (typeof row.value === "number" && Number.isFinite(row.value)) return String(row.value);
+  if (row.value === null || row.value === undefined) return "";
+  return null;
+}
+
 function buildCookie(row: Record<string, unknown>): FlowCookie {
+  const value = cookieValue(row);
+  if (typeof row.name !== "string" || value === null) {
+    throw new Error("Each cookie needs string name and value fields.");
+  }
+
   const cookie: FlowCookie = {
-    name: row.name as string,
-    value: row.value as string,
-    path: typeof row.path === "string" ? row.path : "/",
+    name: row.name,
+    value,
+    path: typeof row.path === "string" && row.path.startsWith("/") ? row.path : "/",
     secure: Boolean(row.secure),
     httpOnly: Boolean(row.httpOnly),
   };
 
-  if (typeof row.domain === "string") cookie.domain = row.domain;
-  if (typeof row.sameSite === "string") cookie.sameSite = row.sameSite;
-  if (typeof row.expirationDate === "number") cookie.expirationDate = row.expirationDate;
+  const domain =
+    typeof row.domain === "string" && row.domain.trim()
+      ? row.domain.trim()
+      : typeof row.url === "string"
+        ? hostnameFromUrl(row.url)
+        : undefined;
+  if (domain) cookie.domain = domain;
+  if (typeof row.url === "string" && row.url.trim()) cookie.url = row.url.trim();
+  if (typeof row.sameSite === "string" && row.sameSite.trim()) cookie.sameSite = row.sameSite.trim();
+  const expirationDate = asPositiveNumber(row.expirationDate);
+  if (expirationDate !== undefined) cookie.expirationDate = expirationDate;
   if (typeof row.hostOnly === "boolean") cookie.hostOnly = row.hostOnly;
   if (typeof row.session === "boolean") cookie.session = row.session;
   if (typeof row.storeId === "string") cookie.storeId = row.storeId;
@@ -66,6 +105,40 @@ function buildCookie(row: Record<string, unknown>): FlowCookie {
   }
 
   return cookie;
+}
+
+const GOOGLE_IDENTITY_NAMES = new Set(["SID", "__Secure-1PSID", "__Secure-3PSID"]);
+const LABS_SESSION_NAMES = new Set([
+  "OSID",
+  "__Secure-OSID",
+  "__Host-next-auth.session-token",
+  "__Secure-next-auth.session-token",
+  "next-auth.session-token",
+]);
+
+export function analyzeCookieCoverage(cookies: FlowCookie[]): {
+  hasGoogleSid: boolean;
+  hasLabsSession: boolean;
+  warnings: string[];
+} {
+  const names = new Set(cookies.map((cookie) => cookie.name));
+  const hosts = cookies.map((cookie) => String(cookie.domain || "").replace(/^\./, "").toLowerCase());
+  const hasGoogleSid = [...GOOGLE_IDENTITY_NAMES].some((name) => names.has(name));
+  const hasLabsSession = [...LABS_SESSION_NAMES].some((name) => names.has(name));
+  const hasGoogleHost = hosts.some((host) => host === "google.com" || host.endsWith(".google.com"));
+  const hasLabsHost = hosts.some((host) => host === "labs.google" || host.endsWith(".labs.google"));
+  const warnings: string[] = [];
+
+  if (!hasLabsHost && !hasLabsSession) {
+    warnings.push("No labs.google cookies found. Flow will not stay signed in.");
+  }
+  if (!hasGoogleSid || !hasGoogleHost) {
+    warnings.push(
+      "Missing Google account cookies (SID / __Secure-1PSID). Ultra can show on the home page, but New project will fail. In Cookie Editor, turn OFF “current host only” and export labs.google + .google.com cookies together.",
+    );
+  }
+
+  return { hasGoogleSid, hasLabsSession, warnings };
 }
 
 export function parseCookieJson(input: string): FlowCookie[] {
@@ -99,9 +172,6 @@ export function parseCookieJson(input: string): FlowCookie[] {
       throw new Error("Each cookie must be an object.");
     }
     const row = item as Record<string, unknown>;
-    if (typeof row.name !== "string" || typeof row.value !== "string") {
-      throw new Error("Each cookie needs string name and value fields.");
-    }
     cookies.push(buildCookie(row));
   }
 
