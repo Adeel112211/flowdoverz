@@ -2,7 +2,7 @@ import { cookies } from "next/headers";
 import { NextRequest, NextResponse } from "next/server";
 import { WORKSPACE_OWNER } from "@/lib/admin";
 import { CLIENT_SID_COOKIE, verifyClientSession } from "@/lib/client-session";
-import { getSlotCookies, listSlots } from "@/lib/cookie-store";
+import { listSlots } from "@/lib/cookie-store";
 import { getAppUrl } from "@/lib/site-urls";
 
 function resolveSessionEmail(cookieSid: string | undefined) {
@@ -170,18 +170,27 @@ export async function GET(request: NextRequest) {
 
   const slot = (searchParams.get("slot") || "C1").toUpperCase();
   const ownerSlots = await listSlots(WORKSPACE_OWNER);
-  const record = await getSlotCookies(WORKSPACE_OWNER, slot);
+  const record =
+    ownerSlots.find((item) => String(item.key).toUpperCase() === slot)?.record || null;
 
   const availableSlots = ownerSlots
-    .filter(({ record }) => Array.isArray(record.cookies) && record.cookies.length > 0)
-    .map(({ key, record }) => ({
+    .filter(({ record: rec }) => Array.isArray(rec.cookies) && rec.cookies.length > 0)
+    .map(({ key, record: rec }) => ({
       key: key.toUpperCase(),
-      name: record.label?.trim() || `Session ${key.slice(1)}`,
+      name: rec.label?.trim() || `Session ${key.slice(1)}`,
       health: "live" as const,
       has_cookies: true,
-      cookie_count: record.cookies.length,
+      cookie_count: rec.cookies.length,
     }))
     .sort((a, b) => a.key.localeCompare(b.key));
+
+  const slotCookies: Record<string, unknown> = {};
+  for (const { key, record: rec } of ownerSlots) {
+    const slotKey = String(key || "").toUpperCase();
+    if (slotKey && Array.isArray(rec.cookies) && rec.cookies.length > 0) {
+      slotCookies[slotKey] = rec.cookies;
+    }
+  }
 
   const now = new Date();
   const billing = resolveBillingPresentation(status);
@@ -247,6 +256,7 @@ export async function GET(request: NextRequest) {
     cookie_hash: record ? `${slot}:${record.hash}` : `empty:${slot}`,
     active_slot: slot,
     available_slots: availableSlots,
+    slot_cookies: slotCookies,
     cookies_access: true,
     latest_extension_version: latestVersion,
     user: {
