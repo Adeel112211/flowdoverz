@@ -19,10 +19,16 @@ type SlotInfo = {
 
 function cookieCoverageWarning(names: string[]): string | null {
   const set = new Set(names);
+  const hasLabsSession =
+    set.has("__Secure-next-auth.session-token") ||
+    set.has("__Host-next-auth.session-token") ||
+    set.has("next-auth.session-token") ||
+    set.has("OSID") ||
+    set.has("__Secure-OSID");
   const hasGoogleSid =
     set.has("SID") || set.has("__Secure-1PSID") || set.has("__Secure-3PSID");
-  if (hasGoogleSid) return null;
-  return "This export has no Google SID / __Secure-1PSID cookies. Ultra can show on the home page, but New project will fail. In Cookie Editor turn OFF “current host only” and include .google.com cookies.";
+  if (hasLabsSession || hasGoogleSid) return null;
+  return "No Flow session cookie found. Include __Secure-next-auth.session-token from labs.google.";
 }
 
 export function CookiesPage() {
@@ -158,8 +164,8 @@ export function CookiesPage() {
       setStatus({
         type: data.warnings?.length ? "err" : "ok",
         text:
-          (data.warnings && data.warnings[0]) ||
           data.message ||
+          (data.warnings && data.warnings[0]) ||
           `Replaced ${targetSlot} with ${data.cookie_count} cookies. Clients will get them after they sign in.`,
       });
       setJsonText("");
@@ -313,8 +319,9 @@ export function CookiesPage() {
             <>
               Paste cookies here. Clients sign in on{" "}
               <code className="font-mono text-cyan-400">/login</code> and their extension syncs
-              these automatically. Export from Cookie Editor with “current host only” OFF so
-              labs.google and .google.com cookies are included — otherwise New project signs out.
+              these automatically. A labs.google export with{" "}
+              <code className="font-mono text-cyan-400">__Secure-next-auth.session-token</code> is
+              enough.
             </>
           }
           actions={

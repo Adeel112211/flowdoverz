@@ -125,17 +125,11 @@ export function analyzeCookieCoverage(cookies: FlowCookie[]): {
   const hosts = cookies.map((cookie) => String(cookie.domain || "").replace(/^\./, "").toLowerCase());
   const hasGoogleSid = [...GOOGLE_IDENTITY_NAMES].some((name) => names.has(name));
   const hasLabsSession = [...LABS_SESSION_NAMES].some((name) => names.has(name));
-  const hasGoogleHost = hosts.some((host) => host === "google.com" || host.endsWith(".google.com"));
   const hasLabsHost = hosts.some((host) => host === "labs.google" || host.endsWith(".labs.google"));
   const warnings: string[] = [];
 
-  if (!hasLabsHost && !hasLabsSession) {
+  if (!hasLabsHost && !hasLabsSession && !hasGoogleSid) {
     warnings.push("No labs.google cookies found. Flow will not stay signed in.");
-  }
-  if (!hasGoogleSid || !hasGoogleHost) {
-    warnings.push(
-      "Missing Google account cookies (SID / __Secure-1PSID). Ultra can show on the home page, but New project will fail. In Cookie Editor, turn OFF “current host only” and export labs.google + .google.com cookies together.",
-    );
   }
 
   return { hasGoogleSid, hasLabsSession, warnings };

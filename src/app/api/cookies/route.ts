@@ -98,8 +98,9 @@ export async function POST(request: NextRequest) {
       updated_at: record.updatedAt,
       cookie_names: record.cookies.map((cookie) => cookie.name),
       warnings: coverage.warnings,
+      hasLabsSession: coverage.hasLabsSession,
       message: coverage.warnings.length
-        ? `Saved ${record.cookies.length} cookies, but New project may fail until Google SID cookies are included.`
+        ? `Saved ${record.cookies.length} cookies, but Flow may not stay signed in.`
         : "Cookies saved. Clients will get them after they sign in.",
     });
   } catch (error) {
