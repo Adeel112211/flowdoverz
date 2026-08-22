@@ -222,13 +222,12 @@ export async function GET(request: NextRequest) {
     const { getDb } = await import("@/lib/firebase-admin");
     const db = getDb();
     if (db) {
-      const lastSyncMs = Date.parse(String(userRecord?.lastSyncAt || ""));
+      const firstSync = !userRecord?.lastSyncAt;
       const slotChanged = String(userRecord?.lastSyncSlot || "") !== slot;
       const versionChanged = Boolean(extensionVersion) && String(userRecord?.extensionVersion || "") !== extensionVersion;
       const needsFlagClear =
         userRecord?.extensionTampered === true || userRecord?.extensionUpdateRequired === true;
-      const syncStale = !Number.isFinite(lastSyncMs) || Date.now() - lastSyncMs > 15 * 60 * 1000;
-      if (slotChanged || versionChanged || needsFlagClear || syncStale) {
+      if (firstSync || slotChanged || versionChanged || needsFlagClear) {
         await db.collection("users").doc(email).set(
           {
             lastSyncAt: now.toISOString(),
@@ -245,6 +244,8 @@ export async function GET(request: NextRequest) {
           { merge: true },
         );
         invalidateUserDocCache(email);
+        const { touchLive } = await import("@/lib/live-tick");
+        void touchLive({ topic: "user", action: "synced", id: email, userId: email });
       }
     }
   } catch {

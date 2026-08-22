@@ -1,9 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { Search } from "lucide-react";
-import { useAdminLiveRefresh } from "@/hooks/use-admin-live-refresh";
 
 type ClientHit = { email: string; name?: string };
 
@@ -11,41 +10,27 @@ export function AdminGlobalSearch() {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<ClientHit[]>([]);
   const [open, setOpen] = useState(false);
-  const [clients, setClients] = useState<ClientHit[]>([]);
   const ref = useRef<HTMLDivElement>(null);
 
-  const loadClients = useCallback(async () => {
-    try {
-      const res = await fetch("/api/admin/clients", { credentials: "same-origin" });
-      const d = await res.json();
-      if (d.success) setClients(d.clients || []);
-    } catch {
-      // ignore background refresh errors
-    }
-  }, []);
-
   useEffect(() => {
-    void loadClients();
-  }, [loadClients]);
-
-  useAdminLiveRefresh(loadClients, [loadClients]);
-
-  useEffect(() => {
-    const q = query.trim().toLowerCase();
-    if (!q) {
+    const q = query.trim();
+    if (q.length < 2) {
       setResults([]);
       return;
     }
-    setResults(
-      clients
-        .filter(
-          (c) =>
-            c.email.toLowerCase().includes(q) ||
-            (c.name || "").toLowerCase().includes(q),
-        )
-        .slice(0, 8),
-    );
-  }, [query, clients]);
+    const timer = window.setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/admin/clients?q=${encodeURIComponent(q)}&limit=8`, {
+          credentials: "same-origin",
+        });
+        const d = await res.json();
+        if (d.success) setResults((d.clients || []).slice(0, 8));
+      } catch {
+        // ignore background search errors
+      }
+    }, 250);
+    return () => window.clearTimeout(timer);
+  }, [query]);
 
   useEffect(() => {
     const onClick = (e: MouseEvent) => {
@@ -81,17 +66,12 @@ export function AdminGlobalSearch() {
                 setOpen(false);
                 setQuery("");
               }}
-              className="block px-4 py-3 hover:bg-white/5 border-b border-white/5 last:border-0"
+              className="block px-4 py-2.5 hover:bg-white/5"
             >
-              <p className="text-sm font-semibold text-slate-200 truncate">{c.name || c.email}</p>
-              <p className="text-xs text-slate-500 truncate">{c.email}</p>
+              <p className="text-sm font-semibold text-slate-200">{c.name || c.email}</p>
+              {c.name ? <p className="text-xs text-slate-500">{c.email}</p> : null}
             </Link>
           ))}
-        </div>
-      )}
-      {open && query.trim() && results.length === 0 && (
-        <div className="absolute top-full left-0 right-0 mt-2 rounded-xl border border-white/10 bg-[#0F172A] px-4 py-3 text-sm text-slate-500 z-50">
-          No clients found
         </div>
       )}
     </div>

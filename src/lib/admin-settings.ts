@@ -78,7 +78,11 @@ export async function saveSystemSettings(partial: Partial<SystemSettings>) {
     const topic = "maintenanceEnabled" in partial || "maintenanceMessage" in partial || "maintenanceUntil" in partial
       ? "maintenance"
       : "settings";
-    void touchLive(topic);
+    void touchLive({
+      topic,
+      action: "updated",
+      id: topic === "maintenance" ? "maintenance" : "settings",
+    });
   }
   return next;
 }

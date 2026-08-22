@@ -94,7 +94,7 @@ export async function POST(request: NextRequest) {
       createdAt: new Date().toISOString(),
     };
     
-    await paymentsRef.add(payload);
+    const added = await paymentsRef.add(payload);
 
     // Update user to pending status
     const userRef = db.collection("users").doc(normalizedEmail);
@@ -103,7 +103,10 @@ export async function POST(request: NextRequest) {
     });
 
     const { touchLive } = await import("@/lib/live-tick");
-    void touchLive("payments");
+    void touchLive({ topic: "payment", action: "created", id: added.id, userId: normalizedEmail });
+    void touchLive({ topic: "user", action: "updated", id: normalizedEmail, userId: normalizedEmail });
+    const { recordPaymentStatusChange } = await import("@/lib/admin-metrics");
+    void recordPaymentStatusChange({ to: "pending", planId });
 
     // Send emails synchronously to prevent Next.js from terminating the request early
     await sendPaymentPendingEmail(normalizedEmail).catch(console.error);

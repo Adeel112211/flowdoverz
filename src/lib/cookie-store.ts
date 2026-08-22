@@ -210,7 +210,7 @@ export async function saveSlotCookies(
 
   invalidateSlotsCache();
   const { touchLive } = await import("./live-tick");
-  void touchLive("cookies");
+  void touchLive({ topic: "cookies", action: "updated", id: slot });
   return record;
 }
 
@@ -257,7 +257,7 @@ export async function clearSlotCookies(ownerKey: string, slot: string): Promise<
   });
   invalidateSlotsCache();
   const { touchLive } = await import("./live-tick");
-  void touchLive("cookies");
+  void touchLive({ topic: "cookies", action: "cleared", id: slot });
 }
 
 export function emailFromSid(sid: string): string {

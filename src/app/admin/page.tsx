@@ -316,7 +316,11 @@ export default function AdminDashboard() {
     void fetchMetrics(false);
   }, [fetchMetrics]);
 
-  useAdminLiveRefresh(() => fetchMetrics(true), [fetchMetrics]);
+  useAdminLiveRefresh(() => fetchMetrics(true), [fetchMetrics], {
+    topics: ["user", "payment"],
+    debounceMs: 200,
+    ignoreActions: ["synced"],
+  });
 
   if (loading || !metrics) {
     return <AdminLoadingState />;

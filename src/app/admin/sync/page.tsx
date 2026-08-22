@@ -48,12 +48,20 @@ export default function SyncStatusPage() {
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<Filter>("all");
 
-  const load = useCallback(async (silent = false) => {
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
+
+  const load = useCallback(async (silent = false, append = false, cursor = "") => {
     if (!silent) setLoading(true);
     try {
-      const res = await fetch("/api/admin/sync-status", { credentials: "same-origin" });
+      const params = new URLSearchParams();
+      params.set("limit", "50");
+      if (append && cursor) params.set("cursor", cursor);
+      const res = await fetch(`/api/admin/sync-status?${params}`, { credentials: "same-origin" });
       const data = await res.json();
-      if (data.success) setClients(data.clients);
+      if (data.success) {
+        setClients((prev) => (append ? [...prev, ...(data.clients || [])] : data.clients || []));
+        setNextCursor(data.nextCursor || null);
+      }
     } finally {
       if (!silent) setLoading(false);
     }
@@ -63,7 +71,39 @@ export default function SyncStatusPage() {
     void load(false);
   }, [load]);
 
-  useAdminLiveRefresh(() => load(true), [load]);
+  useAdminLiveRefresh(
+    async (event) => {
+      if (event.type === "resync") {
+        void load(true);
+        return;
+      }
+      const id = String(event.userId || event.id || "").toLowerCase();
+      if (!id) {
+        void load(true);
+        return;
+      }
+      try {
+        const res = await fetch(`/api/admin/sync-status?email=${encodeURIComponent(id)}`, {
+          credentials: "same-origin",
+        });
+        const data = await res.json();
+        if (!data.success || !data.client) {
+          setClients((prev) => prev.filter((c) => c.email !== id));
+          return;
+        }
+        const row = data.client as SyncClient;
+        setClients((prev) => {
+          const exists = prev.some((c) => c.email === row.email);
+          if (exists) return prev.map((c) => (c.email === row.email ? row : c));
+          return [row, ...prev];
+        });
+      } catch {
+        // keep current page
+      }
+    },
+    [load],
+    { topics: ["user", "extension"] },
+  );
 
   const filtered = clients.filter((c) => filter === "all" || c.syncStatus === filter);
 
@@ -153,6 +193,17 @@ export default function SyncStatusPage() {
               <SyncMobileCard client={c} statusBadge={<StatusBadge status={c.syncStatus} />} />
             )}
           />
+        )}
+        {nextCursor && (
+          <div className="mt-4 flex justify-center">
+            <button
+              type="button"
+              onClick={() => void load(true, true, nextCursor)}
+              className="rounded-xl border border-white/10 px-4 py-2.5 text-sm font-bold text-slate-300 hover:bg-white/5"
+            >
+              Load more
+            </button>
+          </div>
         )}
       </div>
     </AdminPageLayout>

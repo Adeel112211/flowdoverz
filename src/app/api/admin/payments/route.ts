@@ -103,18 +103,29 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    const paymentsQuery = userEmail
+    const status = request.nextUrl.searchParams.get("status")?.trim();
+    const limit = Math.min(Number(request.nextUrl.searchParams.get("limit") || 100) || 100, 200);
+
+    let paymentsQuery = userEmail
       ? db!.collection("manual_payments").where("userEmail", "==", userEmail)
       : db!.collection("manual_payments");
+    if (status && ["pending", "approved", "rejected", "refunded"].includes(status)) {
+      paymentsQuery = paymentsQuery.where("status", "==", status);
+    }
 
-    const usersSnapshot = await db!.collection("users").get();
-    const userNames = new Map<string, string>();
-    usersSnapshot.docs.forEach(doc => {
-      const data = doc.data();
-      if (data.name) userNames.set(doc.id, data.name);
-    });
+    let snapshot;
+    try {
+      snapshot = await paymentsQuery.orderBy("createdAt", "desc").limit(limit).get();
+    } catch {
+      snapshot = await paymentsQuery.limit(limit).get();
+    }
 
-    const snapshot = await paymentsQuery.get();
+    const { getUserNamesByEmail } = await import("@/lib/admin-users-query");
+    const emails = snapshot.docs
+      .map((doc) => String((doc.data() || {}).userEmail || "").toLowerCase())
+      .filter(Boolean);
+    const userNames = await getUserNamesByEmail(db!, emails);
+
     const payments = snapshot.docs
       .map((doc) => {
         const raw = (doc.data() || {}) as Record<string, unknown>;
@@ -125,7 +136,7 @@ export async function GET(request: NextRequest) {
         );
         return {
           ...p,
-          userName: typeof raw.userEmail === 'string' ? userNames.get(raw.userEmail) || null : null
+          userName: typeof raw.userEmail === "string" ? userNames.get(raw.userEmail.toLowerCase()) || null : null,
         };
       })
       .sort((a, b) => {
@@ -235,7 +246,11 @@ export async function POST(request: NextRequest) {
       const { logAdminActivity } = await import("@/lib/admin-activity");
       await logAdminActivity({ action: "payment_approved", targetEmail: userEmail, detail: `Approved ${planId} payment` });
       const { touchLive } = await import("@/lib/live-tick");
-      void touchLive("payments");
+      void touchLive({ topic: "payment", action: "approved", id: paymentId, userId: userEmail });
+      void touchLive({ topic: "user", action: "updated", id: userEmail, userId: userEmail });
+      const { recordPaymentStatusChange, recordActiveSubscriptionDelta } = await import("@/lib/admin-metrics");
+      void recordPaymentStatusChange({ from: paymentData.status, to: "approved", planId: String(planId || "") });
+      void recordActiveSubscriptionDelta(1);
 
       return NextResponse.json({ success: true, message: "Payment approved and subscription activated." });
     }
@@ -254,7 +269,10 @@ export async function POST(request: NextRequest) {
       const { logAdminActivity } = await import("@/lib/admin-activity");
       await logAdminActivity({ action: "payment_rejected", targetEmail: userEmail });
       const { touchLive } = await import("@/lib/live-tick");
-      void touchLive("payments");
+      void touchLive({ topic: "payment", action: "rejected", id: paymentId, userId: userEmail });
+      void touchLive({ topic: "user", action: "updated", id: userEmail, userId: userEmail });
+      const { recordPaymentStatusChange } = await import("@/lib/admin-metrics");
+      void recordPaymentStatusChange({ from: paymentData.status, to: "rejected", planId: String(planId || "") });
 
       return NextResponse.json({ success: true, message: "Payment rejected." });
     }
@@ -301,7 +319,11 @@ export async function POST(request: NextRequest) {
     const { logAdminActivity } = await import("@/lib/admin-activity");
     await logAdminActivity({ action: "payment_refunded", targetEmail: userEmail });
     const { touchLive } = await import("@/lib/live-tick");
-    void touchLive("payments");
+    void touchLive({ topic: "payment", action: "refunded", id: paymentId, userId: userEmail });
+    void touchLive({ topic: "user", action: "updated", id: userEmail, userId: userEmail });
+    const { recordPaymentStatusChange, recordActiveSubscriptionDelta } = await import("@/lib/admin-metrics");
+    void recordPaymentStatusChange({ from: "approved", to: "refunded", planId });
+    void recordActiveSubscriptionDelta(-1);
 
     return NextResponse.json({ success: true, message: "Payment refunded, subscription revoked, and refund receipt sent." });
   } catch (error) {

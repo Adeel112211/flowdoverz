@@ -21,6 +21,7 @@ import { AdminGlassModal, AdminGlassPanel } from "@/components/admin-glass-modal
 import { AdminPlanSelect, normalizePlanValue } from "@/components/admin-plan-select";
 import { AdminDateTimeInput } from "@/components/admin-datetime-input";
 import { useAdminToast } from "@/components/admin-toast";
+import { useAdminLiveRefresh } from "@/hooks/use-admin-live-refresh";
 
 type Client = {
   email: string;
@@ -49,8 +50,8 @@ export default function ClientDetailPage() {
   const [editForm, setEditForm] = useState<Partial<Client>>({});
   const [saving, setSaving] = useState(false);
 
-  const load = async () => {
-    setLoading(true);
+  const load = async (silent = false) => {
+    if (!silent) setLoading(true);
     try {
       const res = await fetch(`/api/admin/clients?email=${encodeURIComponent(email)}`, {
         credentials: "same-origin",
@@ -58,16 +59,25 @@ export default function ClientDetailPage() {
       const data = await res.json();
       if (data.success) {
         setClient(data.client);
-        setEditForm(data.client);
+        if (!editing) setEditForm(data.client);
       }
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   };
 
   useEffect(() => {
-    if (email) load();
+    if (email) void load();
   }, [email]);
+
+  useAdminLiveRefresh(
+    (event) => {
+      const id = String(event.userId || event.id || "").toLowerCase();
+      if (event.type === "resync" || id === email.toLowerCase()) void load(true);
+    },
+    [email],
+    { topics: ["user"] },
+  );
 
   const saveClient = async () => {
     setSaving(true);

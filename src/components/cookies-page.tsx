@@ -5,6 +5,7 @@ import { ChevronDown } from "lucide-react";
 import { AdminPageHeader } from "@/components/admin-page-header";
 import { AdminPageLayout } from "@/components/admin-page-layout";
 import { AdminLoadingState } from "@/components/admin-loading-state";
+import { subscribeLive } from "@/lib/live-client";
 
 const SLOTS = ["C1", "C2", "C3", "C4", "C5"] as const;
 
@@ -113,6 +114,13 @@ export function CookiesPage() {
   useEffect(() => {
     if (admin) refreshMeta(slot);
   }, [slot, admin]);
+
+  useEffect(() => {
+    if (!admin) return;
+    return subscribeLive((event) => {
+      if (event.topic === "cookies" || event.type === "resync") void refreshMeta(slot);
+    });
+  }, [admin, slot]);
 
   async function saveCookies(raw: string, targetSlot = slot, skipPreview = false) {
     const text = raw.trim();

@@ -106,7 +106,10 @@ export default function ActivityPage() {
     void fetchActivity(false);
   }, [fetchActivity]);
 
-  useAdminLiveRefresh(() => fetchActivity(true), [fetchActivity]);
+  useAdminLiveRefresh(() => fetchActivity(true), [fetchActivity], {
+    topics: ["user", "payment", "activity"],
+    ignoreActions: ["synced"],
+  });
 
   const filteredItems = items.filter((item) => {
     if (!matchesActivityFilter(item.action, group, action)) return false;

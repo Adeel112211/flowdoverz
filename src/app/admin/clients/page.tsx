@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import {
   AlertCircle,
@@ -208,13 +208,30 @@ export default function ClientsPage() {
   const [deletingClient, setDeletingClient] = useState(false);
   const [filter, setFilter] = useState<Filter>("all");
   const [searchQuery, setSearchQuery] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const nextCursorRef = useRef<string | null>(null);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [billing, setBilling] = useState<BillingDefaults>(DEFAULT_BILLING);
 
-  const fetchClients = useCallback(async (silent = false) => {
+  useEffect(() => {
+    const timer = window.setTimeout(() => setDebouncedSearch(searchQuery.trim().toLowerCase()), 300);
+    return () => window.clearTimeout(timer);
+  }, [searchQuery]);
+
+  const fetchClients = useCallback(async (opts: { silent?: boolean; append?: boolean } = {}) => {
+    const silent = Boolean(opts.silent);
+    const append = Boolean(opts.append);
+    if (append) setLoadingMore(true);
     try {
-      const res = await fetch("/api/admin/clients", { credentials: "same-origin" });
+      const params = new URLSearchParams();
+      params.set("filter", filter);
+      params.set("limit", "50");
+      if (debouncedSearch) params.set("q", debouncedSearch);
+      if (append && nextCursorRef.current) params.set("cursor", nextCursorRef.current);
+      const res = await fetch(`/api/admin/clients?${params}`, { credentials: "same-origin" });
       const raw = await res.text();
-      let data: { success?: boolean; clients?: Client[]; error?: string } = {};
+      let data: { success?: boolean; clients?: Client[]; nextCursor?: string | null; error?: string } = {};
 
       try {
         data = raw ? JSON.parse(raw) : {};
@@ -226,7 +243,13 @@ export default function ClientsPage() {
       }
 
       if (data.success && data.clients) {
-        setClients(data.clients);
+        setClients((prev) => {
+          if (!append) return data.clients || [];
+          const seen = new Set(prev.map((c) => c.email));
+          return [...prev, ...(data.clients || []).filter((c) => !seen.has(c.email))];
+        });
+        setNextCursor(data.nextCursor || null);
+        nextCursorRef.current = data.nextCursor || null;
         setError("");
       } else if (!silent) {
         setError(data.error || `Failed to fetch clients (HTTP ${res.status}).`);
@@ -237,11 +260,18 @@ export default function ClientsPage() {
       }
     } finally {
       if (!silent) setLoading(false);
+      if (append) setLoadingMore(false);
     }
-  }, []);
+  }, [filter, debouncedSearch]);
 
   useEffect(() => {
-    void fetchClients(false);
+    setLoading(true);
+    void fetchClients({ silent: false, append: false });
+    // Reload when filter/search change; ignore pagination cursor.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filter, debouncedSearch]);
+
+  useEffect(() => {
     fetch("/api/admin/pricing", { credentials: "same-origin" })
       .then((res) => res.json())
       .then((data) => {
@@ -253,9 +283,58 @@ export default function ClientsPage() {
         });
       })
       .catch(() => {});
-  }, [fetchClients]);
+  }, []);
 
-  useAdminLiveRefresh(() => fetchClients(true), [fetchClients]);
+  useAdminLiveRefresh(
+    async (event) => {
+      if (event.type === "resync") {
+        void fetchClients({ silent: true, append: false });
+        return;
+      }
+      const id = String(event.userId || event.id || "").toLowerCase();
+      if (!id) {
+        void fetchClients({ silent: true, append: false });
+        return;
+      }
+      if (event.action === "deleted") {
+        setClients((prev) => prev.filter((c) => c.email !== id));
+        return;
+      }
+      try {
+        const res = await fetch(`/api/admin/clients?email=${encodeURIComponent(id)}`, {
+          credentials: "same-origin",
+        });
+        const data = await res.json();
+        const client = data.client as Client | undefined;
+        if (!client) {
+          setClients((prev) => prev.filter((c) => c.email !== id));
+          return;
+        }
+        setClients((prev) => {
+          const matchesSearch =
+            !debouncedSearch ||
+            client.email.toLowerCase().includes(debouncedSearch) ||
+            (client.name || "").toLowerCase().includes(debouncedSearch);
+          const matchesFilter =
+            filter === "all" ||
+            (filter === "pending" && client.subscriptionPlan === "pending") ||
+            (filter === "paid" &&
+              Boolean(client.subscriptionPlan && !["none", "trial", "pending"].includes(client.subscriptionPlan))) ||
+            (filter === "trial" &&
+              (!client.subscriptionPlan || client.subscriptionPlan === "none" || client.subscriptionPlan === "trial")) ||
+            (filter === "suspended" && Boolean(client.suspended));
+          if (!matchesSearch || !matchesFilter) return prev.filter((c) => c.email !== client.email);
+          const exists = prev.some((c) => c.email === client.email);
+          if (exists) return prev.map((c) => (c.email === client.email ? client : c));
+          return [client, ...prev];
+        });
+      } catch {
+        // keep current page
+      }
+    },
+    [filter, debouncedSearch, fetchClients],
+    { topics: ["user"] },
+  );
 
   const handleUpdate = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -270,7 +349,7 @@ export default function ClientsPage() {
       if (data.success) {
         toast("Client updated");
         setEditing(null);
-        fetchClients();
+        fetchClients({ silent: true });
       } else {
         toast(data.error || "Update failed", "error");
       }
@@ -292,7 +371,7 @@ export default function ClientsPage() {
         alert("Client created successfully");
         setCreating(false);
         setNewClient(emptyNewClient(billing));
-        fetchClients();
+        fetchClients({ silent: true });
       } else {
         alert("Create failed: " + data.error);
       }
@@ -430,7 +509,7 @@ export default function ClientsPage() {
       const data = await res.json();
       if (data.success) {
         setDeleteClient(null);
-        fetchClients();
+        fetchClients({ silent: true });
       } else {
         alert("Delete failed: " + data.error);
       }
@@ -656,6 +735,18 @@ export default function ClientsPage() {
           </div>
         }
       />
+      {nextCursor && !debouncedSearch && (
+        <div className="mt-4 flex justify-center">
+          <button
+            type="button"
+            disabled={loadingMore}
+            onClick={() => void fetchClients({ silent: true, append: true })}
+            className="rounded-xl border border-white/10 px-4 py-2.5 text-sm font-bold text-slate-300 hover:bg-white/5 disabled:opacity-60"
+          >
+            {loadingMore ? "Loading..." : "Load more"}
+          </button>
+        </div>
+      )}
 
       {deleteClient && (
         <AdminGlassModal open={Boolean(deleteClient)} maxWidth="md">

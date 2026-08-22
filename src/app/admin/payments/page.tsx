@@ -219,7 +219,35 @@ export default function PaymentsPage() {
     void fetchPayments(false);
   }, [fetchPayments]);
 
-  useAdminLiveRefresh(() => fetchPayments(true), [fetchPayments]);
+  useAdminLiveRefresh(
+    async (event) => {
+      if (event.type === "resync" || !event.id) {
+        void fetchPayments(true);
+        return;
+      }
+      if (event.topic !== "payment" && event.topic !== "payments") return;
+      try {
+        const res = await fetch(`/api/admin/payments?id=${encodeURIComponent(event.id)}`, {
+          credentials: "same-origin",
+        });
+        const data = await res.json();
+        if (!data.success || !data.payment) {
+          setPayments((prev) => prev.filter((p) => p.id !== event.id));
+          return;
+        }
+        const payment = data.payment as Payment;
+        setPayments((prev) => {
+          const exists = prev.some((p) => p.id === payment.id);
+          if (exists) return prev.map((p) => (p.id === payment.id ? { ...p, ...payment } : p));
+          return [payment, ...prev];
+        });
+      } catch {
+        void fetchPayments(true);
+      }
+    },
+    [fetchPayments],
+    { topics: ["payment"] },
+  );
 
   const openScreenshot = async (payment: Payment) => {
     if (payment.screenshot) {

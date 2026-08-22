@@ -220,16 +220,15 @@ export async function listAllPurchases(db: Firestore, scanUrl: string) {
   const { getPricingConfig } = await import("@/lib/pricing-store");
   const pricing = await getPricingConfig();
 
-  const [paymentsSnapshot, usersSnapshot] = await Promise.all([
-    db.collection("manual_payments").get(),
-    db.collection("users").get(),
+  const [paymentsSnapshot] = await Promise.all([
+    db.collection("manual_payments").limit(200).get(),
   ]);
 
-  const userNames = new Map<string, string>();
-  usersSnapshot.docs.forEach((doc) => {
-    const data = doc.data();
-    if (data.name) userNames.set(doc.id, String(data.name));
-  });
+  const { getUserNamesByEmail } = await import("./admin-users-query");
+  const emails = paymentsSnapshot.docs
+    .map((doc) => String((doc.data() || {}).userEmail || "").toLowerCase())
+    .filter(Boolean);
+  const userNames = await getUserNamesByEmail(db, emails);
 
   return paymentsSnapshot.docs
     .map((doc) => {

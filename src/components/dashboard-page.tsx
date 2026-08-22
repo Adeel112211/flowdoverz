@@ -140,9 +140,17 @@ export function DashboardPage() {
 
     const unsub = subscribeLive((event) => {
       if (!active) return;
-      if (event.topic === "cookies") return;
-      if (event.topic === "extension") void loadExtension();
-      void loadStatus();
+      const topic = String(event.topic || "");
+      const id = String(event.userId || event.id || "").toLowerCase();
+      const mine = id === String(session?.email || "").toLowerCase();
+      if (event.type === "resync") {
+        void loadStatus();
+        void loadExtension();
+        return;
+      }
+      if (topic === "extension") void loadExtension();
+      if (topic === "user" && mine) void loadStatus();
+      if (topic === "maintenance" || topic === "settings") void loadStatus();
     });
 
     return () => {

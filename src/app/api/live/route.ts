@@ -1,5 +1,6 @@
 import { connection } from "next/server";
-import { subscribeLiveTick, type LiveEvent } from "@/lib/live-tick";
+import { allowLiveEvent, publicLiveEnvelope, resolveLivePrincipal } from "@/lib/live-auth";
+import { getMissedLiveEvents, subscribeLiveTick, type LiveEvent } from "@/lib/live-tick";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -11,22 +12,35 @@ function encodeEvent(event: LiveEvent) {
 
 export async function GET(request: Request) {
   await connection();
+  const principal = await resolveLivePrincipal(request);
 
   let unsub = () => {};
   let ping: ReturnType<typeof setInterval> | undefined;
+  const since = Number(new URL(request.url).searchParams.get("since") || "");
 
   const stream = new ReadableStream({
     start(controller) {
       const send = (event: LiveEvent) => {
+        const payload = publicLiveEnvelope(event);
+        if (!allowLiveEvent(principal, payload)) return;
         try {
-          controller.enqueue(encodeEvent(event));
+          controller.enqueue(encodeEvent(payload));
         } catch {
           // stream closed
         }
       };
 
-      send({ type: "hello", rev: 0, at: new Date().toISOString() });
-      unsub = subscribeLiveTick(send);
+      unsub = subscribeLiveTick(send, { emitHello: true });
+      if (Number.isFinite(since) && since > 0) {
+        void getMissedLiveEvents(since).then(({ events, resync, rev, at }) => {
+          if (resync) {
+            send({ type: "resync", rev, at });
+            return;
+          }
+          for (const event of events) send(event);
+        });
+      }
+
       ping = setInterval(() => {
         send({ type: "ping", rev: 0, at: new Date().toISOString() });
       }, 25000);

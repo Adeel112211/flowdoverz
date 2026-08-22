@@ -10,6 +10,7 @@ import { AdminLoadingState } from "@/components/admin-loading-state";
 import { useAdminToast } from "@/components/admin-toast";
 import { AdminExtensionEditor } from "@/components/admin-extension-editor";
 import type { ExtensionConfig } from "@/lib/extension-config";
+import { useAdminLiveRefresh } from "@/hooks/use-admin-live-refresh";
 
 export default function AdminExtensionPage() {
   const { toast } = useAdminToast();
@@ -19,7 +20,7 @@ export default function AdminExtensionPage() {
   const [syncKey, setSyncKey] = useState("");
 
   const load = async () => {
-    setLoading(true);
+    if (!config) setLoading(true);
     try {
       const res = await fetch("/api/admin/extension", { credentials: "same-origin" });
       const data = await res.json();
@@ -34,6 +35,14 @@ export default function AdminExtensionPage() {
     const stored = sessionStorage.getItem("flowdoverz_admin_sync_key");
     if (stored) setSyncKey(stored);
   }, []);
+
+  useAdminLiveRefresh(
+    () => {
+      void load();
+    },
+    [],
+    { topics: ["extension"] },
+  );
 
   const saveDetails = async () => {
     if (!config) return;

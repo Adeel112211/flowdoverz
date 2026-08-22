@@ -450,6 +450,10 @@ export async function registerClientUser(
   };
 
   await usersRef.doc(emailCheck.email).set(newUser);
+  const { touchLive } = await import("./live-tick");
+  void touchLive({ topic: "user", action: "created", id: emailCheck.email, userId: emailCheck.email });
+  const { recordUserCreated } = await import("./admin-metrics");
+  void recordUserCreated(now, false);
 
   if (signupIp) {
     await recordSignupIpUsage(signupIp, emailCheck.email);
@@ -587,6 +591,8 @@ export async function createUserByAdmin(input: {
   };
 
   await usersRef.doc(normalized).set(newUser);
+  const { touchLive } = await import("./live-tick");
+  void touchLive({ topic: "user", action: "created", id: normalized, userId: normalized });
   return { ok: true };
 }
 
@@ -764,7 +770,7 @@ export async function markExtensionTampered(email: string, message?: string) {
   );
   invalidateUserDocCache(normalized);
   const { touchLive } = await import("./live-tick");
-  void touchLive("users");
+  void touchLive({ topic: "user", action: "updated", id: normalized, userId: normalized });
 }
 export async function clearExtensionTampered(email: string) {
   const db = getDb();
@@ -797,7 +803,10 @@ export async function markExtensionUpdateRequired(email: string, latestVersion?:
   );
   invalidateUserDocCache(normalized);
   const { touchLive } = await import("./live-tick");
-  void touchLive("users");
+  void touchLive({ topic: "user", action: "updated", id: normalized, userId: normalized });
+  if (latestVersion) {
+    void touchLive({ topic: "extension", action: "updated", id: String(latestVersion) });
+  }
 }
 
 export async function clearExtensionUpdateRequired(email: string) {

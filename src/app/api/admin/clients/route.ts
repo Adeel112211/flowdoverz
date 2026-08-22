@@ -54,23 +54,26 @@ export async function GET(request: NextRequest) {
   if (dbError) return dbError;
 
   const db = getDb()!;
-  const email = request.nextUrl.searchParams.get("email")?.trim().toLowerCase();
 
   try {
-    if (email) {
-      const doc = await db.collection("users").doc(email).get();
-      if (!doc.exists) {
-        return NextResponse.json({ success: false, error: "Client not found" }, { status: 404 });
-      }
-      return NextResponse.json({ success: true, client: { email: doc.id, ...doc.data() } });
+    const { listAdminClients } = await import("@/lib/admin-users-query");
+    const result = await listAdminClients(db, {
+      email: request.nextUrl.searchParams.get("email"),
+      emails: request.nextUrl.searchParams.get("emails"),
+      q: request.nextUrl.searchParams.get("q"),
+      filter: request.nextUrl.searchParams.get("filter"),
+      cursor: request.nextUrl.searchParams.get("cursor"),
+      limit: request.nextUrl.searchParams.get("limit"),
+    });
+    if (request.nextUrl.searchParams.get("email")?.trim() && !result.client && result.clients.length === 0) {
+      return NextResponse.json({ success: false, error: "Client not found" }, { status: 404 });
     }
-
-    const snapshot = await db.collection("users").get();
-    const clients = snapshot.docs.map((doc) => ({
-      email: doc.id,
-      ...doc.data(),
-    }));
-    return NextResponse.json({ success: true, clients });
+    return NextResponse.json({
+      success: true,
+      client: result.client,
+      clients: result.clients,
+      nextCursor: result.nextCursor ?? null,
+    });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : "Failed to fetch clients";
     return NextResponse.json({ success: false, error: message }, { status: 500 });
@@ -143,9 +146,25 @@ export async function PUT(request: NextRequest) {
     if (adminNotes !== undefined) updateData.adminNotes = String(adminNotes);
     if (assignedSlot !== undefined) updateData.assignedSlot = String(assignedSlot).toUpperCase();
 
+    const before = await db.collection("users").doc(email).get();
+    const beforeData = (before.data() || {}) as Record<string, unknown>;
     await db.collection("users").doc(email).update(updateData);
     const { touchLive } = await import("@/lib/live-tick");
-    void touchLive("users");
+    void touchLive({ topic: "user", action: "updated", id: email, userId: email });
+    const { isPaidPlanId, accessFromUserData } = await import("@/lib/admin-client-view");
+    const after = { ...beforeData, ...updateData };
+    const wasActive = accessFromUserData(beforeData).subscriptionActive;
+    const nowActive = accessFromUserData(after).subscriptionActive;
+    if (wasActive !== nowActive) {
+      const { recordActiveSubscriptionDelta } = await import("@/lib/admin-metrics");
+      void recordActiveSubscriptionDelta(nowActive ? 1 : -1);
+    } else if (
+      subscriptionPlan !== undefined &&
+      isPaidPlanId(String(subscriptionPlan)) !== isPaidPlanId(String(beforeData.subscriptionPlan || ""))
+    ) {
+      const { recordActiveSubscriptionDelta } = await import("@/lib/admin-metrics");
+      void recordActiveSubscriptionDelta(nowActive ? 1 : -1);
+    }
 
     if (subscriptionPlan && PAID_PLANS.includes(subscriptionPlan)) {
       const planName = planDisplayName(subscriptionPlan);
@@ -189,6 +208,10 @@ export async function POST(request: NextRequest) {
     if (!result.ok) {
       return NextResponse.json({ success: false, error: result.error }, { status: 400 });
     }
+
+    const { recordUserCreated } = await import("@/lib/admin-metrics");
+    const { isPaidPlanId } = await import("@/lib/admin-client-view");
+    void recordUserCreated(new Date(), isPaidPlanId(String(subscriptionPlan || "trial")));
 
     const plan = String(subscriptionPlan || "trial");
     if (PAID_PLANS.includes(plan)) {
@@ -259,9 +282,14 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json({ success: false, error: "Email is required" }, { status: 400 });
     }
 
+    const existing = await db.collection("users").doc(email).get();
+    const existingData = (existing.data() || {}) as Record<string, unknown>;
     await db.collection("users").doc(email).delete();
     const { touchLive } = await import("@/lib/live-tick");
-    void touchLive("users");
+    void touchLive({ topic: "user", action: "deleted", id: email, userId: email });
+    const { accessFromUserData } = await import("@/lib/admin-client-view");
+    const { recordUserDeleted } = await import("@/lib/admin-metrics");
+    void recordUserDeleted(accessFromUserData(existingData).subscriptionActive);
 
     await logAdminActivity({ action: "client_deleted", targetEmail: email });
 

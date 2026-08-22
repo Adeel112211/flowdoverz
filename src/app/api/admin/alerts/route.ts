@@ -2,10 +2,9 @@ import { NextResponse } from "next/server";
 import { isAdminUiRequest, WORKSPACE_OWNER } from "@/lib/admin";
 import { listSlots } from "@/lib/cookie-store";
 import { getDb } from "@/lib/firebase-admin";
+import { isPaidPlanId } from "@/lib/admin-client-view";
 
 export const dynamic = "force-dynamic";
-
-const PAID_PLANS = new Set(["solo", "studio", "team", "nano", "ultra"]);
 
 export async function GET() {
   if (!(await isAdminUiRequest())) {
@@ -21,6 +20,8 @@ export async function GET() {
   const weekFromNow = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
   const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   const endOfToday = new Date(startOfToday.getTime() + 24 * 60 * 60 * 1000);
+  const startIso = startOfToday.toISOString();
+  const endIso = endOfToday.toISOString();
 
   let pendingPayments = 0;
   let trialsExpiringToday = 0;
@@ -29,20 +30,32 @@ export async function GET() {
   const paymentsSnap = await db.collection("manual_payments").where("status", "==", "pending").get();
   pendingPayments = paymentsSnap.size;
 
-  const usersSnap = await db.collection("users").get();
-  usersSnap.forEach((doc) => {
-    const data = doc.data();
-    const plan = data.subscriptionPlan || "none";
-    const trialExp = data.trialExpiresAt ? new Date(data.trialExpiresAt) : null;
-    const subExp = data.subscriptionExpiresAt ? new Date(data.subscriptionExpiresAt) : null;
+  try {
+    const trialSnap = await db
+      .collection("users")
+      .where("trialExpiresAt", ">=", startIso)
+      .where("trialExpiresAt", "<", endIso)
+      .get();
+    trialSnap.forEach((doc) => {
+      const plan = String(doc.data().subscriptionPlan || "none");
+      if (!isPaidPlanId(plan) && plan !== "pending") trialsExpiringToday += 1;
+    });
+  } catch {
+    trialsExpiringToday = 0;
+  }
 
-    if (!PAID_PLANS.has(plan) && trialExp && trialExp >= startOfToday && trialExp < endOfToday) {
-      trialsExpiringToday++;
-    }
-    if (PAID_PLANS.has(plan) && subExp && subExp >= now && subExp <= weekFromNow) {
-      subsExpiringThisWeek++;
-    }
-  });
+  try {
+    const subSnap = await db
+      .collection("users")
+      .where("subscriptionExpiresAt", ">=", now.toISOString())
+      .where("subscriptionExpiresAt", "<=", weekFromNow.toISOString())
+      .get();
+    subSnap.forEach((doc) => {
+      if (isPaidPlanId(String(doc.data().subscriptionPlan || ""))) subsExpiringThisWeek += 1;
+    });
+  } catch {
+    subsExpiringThisWeek = 0;
+  }
 
   const slots = await listSlots(WORKSPACE_OWNER);
   const emptySlots = ["C1", "C2", "C3", "C4", "C5"].filter(

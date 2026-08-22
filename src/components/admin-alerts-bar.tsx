@@ -29,7 +29,11 @@ export function AdminAlertsBar() {
     void loadAlerts();
   }, [loadAlerts]);
 
-  useAdminLiveRefresh(loadAlerts, [loadAlerts], { intervalMs: 300_000 });
+  useAdminLiveRefresh(loadAlerts, [loadAlerts], {
+    topics: ["user", "payment", "cookies"],
+    debounceMs: 200,
+    ignoreActions: ["synced"],
+  });
 
   if (!alerts) return null;
 

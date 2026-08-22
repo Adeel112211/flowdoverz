@@ -73,7 +73,11 @@ export async function saveExtensionConfig(partial: Partial<ExtensionConfig>) {
   await db.collection(CONFIG_DOC.collection).doc(CONFIG_DOC.id).set(next, { merge: true });
   configCache = { value: next, at: Date.now() };
   const { touchLive } = await import("./live-tick");
-  void touchLive("extension");
+  void touchLive({
+    topic: "extension",
+    action: "updated",
+    id: next.activeVersion || current.activeVersion || undefined,
+  });
   return next;
 }
 
