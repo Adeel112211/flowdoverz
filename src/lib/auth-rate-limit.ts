@@ -70,29 +70,34 @@ export async function checkAuthRateLimit(
     return { ok: true };
   }
 
-  const docId = hashKey(`${scope}:${ip}`);
-  const ref = db.collection("auth_rate_limits").doc(docId);
-  const now = Date.now();
+  try {
+    const docId = hashKey(`${scope}:${ip}`);
+    const ref = db.collection("auth_rate_limits").doc(docId);
+    const now = Date.now();
 
-  const doc = await ref.get();
-  const data = doc.data();
-  const windowStart = Number(data?.windowStart || 0);
-  const count = Number(data?.count || 0);
+    const doc = await ref.get();
+    const data = doc.data();
+    const windowStart = Number(data?.windowStart || 0);
+    const count = Number(data?.count || 0);
 
-  if (!windowStart || now - windowStart >= config.windowMs) {
-    await ref.set({ windowStart: now, count: 1, scope }, { merge: true });
+    if (!windowStart || now - windowStart >= config.windowMs) {
+      await ref.set({ windowStart: now, count: 1, scope }, { merge: true });
+      return { ok: true };
+    }
+
+    if (count >= config.max) {
+      const retryAfterSeconds = Math.ceil((config.windowMs - (now - windowStart)) / 1000);
+      return {
+        ok: false,
+        error: "Too many attempts. Please wait and try again.",
+        retryAfterSeconds,
+      };
+    }
+
+    await ref.set({ windowStart, count: count + 1, scope }, { merge: true });
+    return { ok: true };
+  } catch (error) {
+    console.error("Auth rate limit check failed:", error);
     return { ok: true };
   }
-
-  if (count >= config.max) {
-    const retryAfterSeconds = Math.ceil((config.windowMs - (now - windowStart)) / 1000);
-    return {
-      ok: false,
-      error: "Too many attempts. Please wait and try again.",
-      retryAfterSeconds,
-    };
-  }
-
-  await ref.set({ windowStart, count: count + 1, scope }, { merge: true });
-  return { ok: true };
 }

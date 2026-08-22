@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
   classifyHost,
+  getAdminUrl,
   getAppUrl,
   isMultiDomainEnabled,
 } from "@/lib/site-urls";
@@ -15,6 +16,14 @@ function externalRedirect(base: string, path: string, request: NextRequest): Nex
   const target = new URL(path, `${base}/`);
   target.search = request.nextUrl.search;
   return NextResponse.redirect(target);
+}
+
+function adminHostFromUrl(): string {
+  try {
+    return new URL(getAdminUrl()).hostname.toLowerCase();
+  } catch {
+    return "";
+  }
 }
 
 export function middleware(request: NextRequest) {
@@ -51,11 +60,12 @@ export function middleware(request: NextRequest) {
   }
 
   if (zone === "client") {
-    if (isAdminRoute) {
-      if (path.startsWith("/api/")) {
-        return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
+    if (isAdminRoute && !path.startsWith("/api/")) {
+      const adminHost = adminHostFromUrl();
+      const currentHost = host.split(":")[0].toLowerCase();
+      if (adminHost && adminHost !== currentHost) {
+        return externalRedirect(getAdminUrl(), path, request);
       }
-      return NextResponse.redirect(new URL("/", request.url));
     }
     return NextResponse.next();
   }

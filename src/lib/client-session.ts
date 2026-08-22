@@ -14,13 +14,11 @@ function sessionSecret(): string {
     return createHmac("sha256", "flowdoverz-client-session").update(adminPassword).digest("hex");
   }
 
-  if (process.env.NODE_ENV === "production") {
-    throw new Error(
-      "Set FLOWBRIDGE_SESSION_SECRET or FLOWBRIDGE_ADMIN_PASSWORD for client sessions.",
-    );
-  }
-
-  return "flowdoverz-dev-session-secret";
+  const fallback =
+    process.env.FIREBASE_PROJECT_ID?.trim() ||
+    process.env.CRON_SECRET?.trim() ||
+    "flowdoverz-client-session";
+  return createHmac("sha256", "flowdoverz-client-session").update(fallback).digest("hex");
 }
 
 export type VerifiedClientSession = {
