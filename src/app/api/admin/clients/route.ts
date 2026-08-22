@@ -144,6 +144,8 @@ export async function PUT(request: NextRequest) {
     if (assignedSlot !== undefined) updateData.assignedSlot = String(assignedSlot).toUpperCase();
 
     await db.collection("users").doc(email).update(updateData);
+    const { touchLive } = await import("@/lib/live-tick");
+    void touchLive("users");
 
     if (subscriptionPlan && PAID_PLANS.includes(subscriptionPlan)) {
       const planName = planDisplayName(subscriptionPlan);
@@ -258,6 +260,8 @@ export async function DELETE(request: NextRequest) {
     }
 
     await db.collection("users").doc(email).delete();
+    const { touchLive } = await import("@/lib/live-tick");
+    void touchLive("users");
 
     await logAdminActivity({ action: "client_deleted", targetEmail: email });
 

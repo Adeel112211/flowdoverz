@@ -1,5 +1,5 @@
 import { randomBytes, scryptSync, timingSafeEqual } from "crypto";
-import { getDb } from "./firebase-admin";
+import { getDb, FIREBASE_QUOTA_MESSAGE, isFirebaseQuotaError } from "./firebase-admin";
 import { validateSignupEmail } from "./signup-email-policy";
 import { canonicalizeMailboxEmail } from "./signup-email-rules";
 import { getSignupSecuritySettings } from "./signup-security";
@@ -147,6 +147,7 @@ export async function releaseClientSession(email: string, sessionId: string) {
   // Solo/trial: any logout frees the only seat immediately.
   if (isSingleDeviceAccount(data)) {
     await userRef.set(clearedSoloSeatFields(), { merge: true });
+    invalidateUserDocCache(email);
     return;
   }
 
@@ -155,6 +156,7 @@ export async function releaseClientSession(email: string, sessionId: string) {
 
   if (next.length === 0) {
     await userRef.set(clearedSoloSeatFields(), { merge: true });
+    invalidateUserDocCache(email);
     return;
   }
 
@@ -165,6 +167,7 @@ export async function releaseClientSession(email: string, sessionId: string) {
     },
     { merge: true },
   );
+  invalidateUserDocCache(email);
 }
 
 /**
@@ -213,12 +216,14 @@ export async function claimClientSession(
       },
       { merge: true },
     );
+    invalidateUserDocCache(normalized);
     return { ok: true };
   }
 
   const max = maxClientSessionsForPlan(plan);
   if (previous.includes(sessionId)) {
     await userRef.set({ lastClientSeenAt: nowIso }, { merge: true });
+    invalidateUserDocCache(normalized);
     return { ok: true };
   }
 
@@ -241,6 +246,7 @@ export async function claimClientSession(
     },
     { merge: true },
   );
+  invalidateUserDocCache(normalized);
   return { ok: true };
 }
 
@@ -248,13 +254,63 @@ export async function bindActiveClientSession(email: string, sessionId: string) 
   await claimClientSession(email, sessionId);
 }
 
+const lastSeatTouchAt = new Map<string, number>();
+const SEAT_TOUCH_MIN_MS = 10 * 60 * 1000;
+const USER_DOC_TTL_MS = 20 * 1000;
+const userDocCache = new Map<
+  string,
+  { at: number; exists: boolean; data: Record<string, unknown> | null }
+>();
+
+function invalidateUserDocCache(email?: string) {
+  if (!email) {
+    userDocCache.clear();
+    return;
+  }
+  userDocCache.delete(normalizeEmail(email));
+}
+
+export { invalidateUserDocCache };
+
+export async function getUserRecord(email: string): Promise<Record<string, unknown> | null> {
+  const doc = await readUserDoc(email);
+  return doc.exists ? doc.data : null;
+}
+
+async function readUserDoc(email: string): Promise<{
+  exists: boolean;
+  data: Record<string, unknown> | null;
+}> {
+  const db = getDb();
+  const key = normalizeEmail(email);
+  if (!db) return { exists: false, data: null };
+  const cached = userDocCache.get(key);
+  if (cached && Date.now() - cached.at < USER_DOC_TTL_MS) {
+    return { exists: cached.exists, data: cached.data };
+  }
+  const snap = await db.collection("users").doc(key).get();
+  const entry = {
+    at: Date.now(),
+    exists: snap.exists,
+    data: snap.exists ? ((snap.data() || {}) as Record<string, unknown>) : null,
+  };
+  userDocCache.set(key, entry);
+  return entry;
+}
+
 export async function touchClientSessionActivity(email: string) {
   const db = getDb();
   if (!db) return;
-  await db.collection("users").doc(normalizeEmail(email)).set(
+  const key = normalizeEmail(email);
+  const now = Date.now();
+  const prev = lastSeatTouchAt.get(key) || 0;
+  if (now - prev < SEAT_TOUCH_MIN_MS) return;
+  lastSeatTouchAt.set(key, now);
+  await db.collection("users").doc(key).set(
     { lastClientSeenAt: new Date().toISOString() },
     { merge: true },
   );
+  invalidateUserDocCache(key);
 }
 
 /** Returns false when this browser is not the allowed Solo/trial session. */
@@ -265,10 +321,10 @@ export async function isActiveClientSession(
   const db = getDb();
   if (!db || !sessionId) return false;
 
-  const snap = await db.collection("users").doc(normalizeEmail(email)).get();
-  if (!snap.exists) return false;
+  const snap = await readUserDoc(email);
+  if (!snap.exists || !snap.data) return false;
 
-  const data = (snap.data() || {}) as Record<string, unknown>;
+  const data = snap.data;
   const plan = String(data.subscriptionPlan || "none");
   const max = maxClientSessionsForPlan(plan);
   const singleDevice = isSingleDeviceAccount(data);
@@ -579,45 +635,60 @@ export async function authenticateUser(
     return { ok: false, error: "Database not configured." };
   }
 
-  const normalized = normalizeEmail(email);
-  const users = db.collection("users");
-  let userDoc = await users.doc(normalized).get();
-  if (!userDoc.exists) {
-    const canonical = canonicalizeMailboxEmail(normalized);
-    if (canonical !== normalized) {
-      userDoc = await users.doc(canonical).get();
+  try {
+    const normalized = normalizeEmail(email);
+    const users = db.collection("users");
+    let userDoc = await users.doc(normalized).get();
+    if (!userDoc.exists) {
+      const canonical = canonicalizeMailboxEmail(normalized);
+      if (canonical !== normalized) {
+        userDoc = await users.doc(canonical).get();
+      }
     }
-  }
 
-  if (!userDoc.exists) {
-    return { ok: false, error: "Invalid email or password." };
-  }
+    if (!userDoc.exists) {
+      return { ok: false, error: "Invalid email or password." };
+    }
 
-  const user = userDoc.data() as StoredUser;
-  const nextHash = hashPassword(password, user.salt);
-  const a = Buffer.from(user.passwordHash, "hex");
-  const b = Buffer.from(nextHash, "hex");
-  
-  if (a.length !== b.length || !timingSafeEqual(a, b)) {
-    return { ok: false, error: "Invalid email or password." };
-  }
+    const user = userDoc.data() as StoredUser;
+    if (!user?.salt || !user?.passwordHash) {
+      return { ok: false, error: "Invalid email or password." };
+    }
 
-  const created = createClientSession(user.email);
-  const claimed = await claimClientSession(user.email, created.sessionId, {
-    existingSessionId: options?.existingSessionId,
-  });
-  if (!claimed.ok) {
-    return { ok: false, error: claimed.error, code: "MULTI_DEVICE_BLOCKED" };
-  }
+    const nextHash = hashPassword(password, user.salt);
+    const a = Buffer.from(user.passwordHash, "hex");
+    const b = Buffer.from(nextHash, "hex");
 
-  return {
-    ok: true,
-    user: {
-      email: user.email,
-      name: user.name,
-      sid: created.sid,
-    },
-  };
+    if (a.length !== b.length || !timingSafeEqual(a, b)) {
+      return { ok: false, error: "Invalid email or password." };
+    }
+
+    const created = createClientSession(user.email || normalized);
+    const claimed = await claimClientSession(user.email || normalized, created.sessionId, {
+      existingSessionId: options?.existingSessionId,
+    });
+    if (!claimed.ok) {
+      return { ok: false, error: claimed.error, code: "MULTI_DEVICE_BLOCKED" };
+    }
+
+    return {
+      ok: true,
+      user: {
+        email: user.email || normalized,
+        name: user.name,
+        sid: created.sid,
+      },
+    };
+  } catch (error) {
+    console.error("authenticateUser failed:", error);
+    return {
+      ok: false,
+      error: isFirebaseQuotaError(error)
+        ? FIREBASE_QUOTA_MESSAGE
+        : "Could not sign in. Try again.",
+      code: isFirebaseQuotaError(error) ? "QUOTA" : "AUTH_FAILED",
+    };
+  }
 }
 
 export async function getUserStatus(email: string): Promise<{
@@ -637,11 +708,11 @@ export async function getUserStatus(email: string): Promise<{
   if (!db) return null;
   
   const normalized = normalizeEmail(email);
-  const userDoc = await db.collection("users").doc(normalized).get();
+  const userDoc = await readUserDoc(normalized);
   
-  if (!userDoc.exists) return null;
+  if (!userDoc.exists || !userDoc.data) return null;
   
-  const user = userDoc.data() as StoredUser & {
+  const user = userDoc.data as StoredUser & {
     extensionTampered?: boolean;
     extensionTamperMessage?: string | null;
     extensionTamperedAt?: string | null;
@@ -691,9 +762,10 @@ export async function markExtensionTampered(email: string, message?: string) {
     },
     { merge: true },
   );
+  invalidateUserDocCache(normalized);
+  const { touchLive } = await import("./live-tick");
+  void touchLive("users");
 }
-
-/** Clear tamper flag after a successful official sync. */
 export async function clearExtensionTampered(email: string) {
   const db = getDb();
   if (!db) return;
@@ -706,6 +778,7 @@ export async function clearExtensionTampered(email: string) {
     },
     { merge: true },
   );
+  invalidateUserDocCache(normalized);
 }
 
 export async function markExtensionUpdateRequired(email: string, latestVersion?: string) {
@@ -722,6 +795,9 @@ export async function markExtensionUpdateRequired(email: string, latestVersion?:
     },
     { merge: true },
   );
+  invalidateUserDocCache(normalized);
+  const { touchLive } = await import("./live-tick");
+  void touchLive("users");
 }
 
 export async function clearExtensionUpdateRequired(email: string) {
@@ -737,6 +813,7 @@ export async function clearExtensionUpdateRequired(email: string) {
     },
     { merge: true },
   );
+  invalidateUserDocCache(normalized);
 }
 
 export type PlanActivationBlock = {

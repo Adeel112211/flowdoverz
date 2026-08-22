@@ -234,6 +234,8 @@ export async function POST(request: NextRequest) {
 
       const { logAdminActivity } = await import("@/lib/admin-activity");
       await logAdminActivity({ action: "payment_approved", targetEmail: userEmail, detail: `Approved ${planId} payment` });
+      const { touchLive } = await import("@/lib/live-tick");
+      void touchLive("payments");
 
       return NextResponse.json({ success: true, message: "Payment approved and subscription activated." });
     }
@@ -251,6 +253,8 @@ export async function POST(request: NextRequest) {
 
       const { logAdminActivity } = await import("@/lib/admin-activity");
       await logAdminActivity({ action: "payment_rejected", targetEmail: userEmail });
+      const { touchLive } = await import("@/lib/live-tick");
+      void touchLive("payments");
 
       return NextResponse.json({ success: true, message: "Payment rejected." });
     }
@@ -296,6 +300,8 @@ export async function POST(request: NextRequest) {
 
     const { logAdminActivity } = await import("@/lib/admin-activity");
     await logAdminActivity({ action: "payment_refunded", targetEmail: userEmail });
+    const { touchLive } = await import("@/lib/live-tick");
+    void touchLive("payments");
 
     return NextResponse.json({ success: true, message: "Payment refunded, subscription revoked, and refund receipt sent." });
   } catch (error) {

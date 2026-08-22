@@ -95,6 +95,21 @@ export function getFirebaseInitError() {
   return lastInitError;
 }
 
+export function isFirebaseQuotaError(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  const rec = error as { code?: number | string; details?: string; message?: string };
+  const code = String(rec.code ?? "");
+  const text = `${rec.details || ""} ${rec.message || ""}`;
+  return (
+    code === "8" ||
+    code === "RESOURCE_EXHAUSTED" ||
+    /quota exceeded/i.test(text)
+  );
+}
+
+export const FIREBASE_QUOTA_MESSAGE =
+  "Database quota is full. Wait a few minutes (or upgrade Firebase to Blaze), then try again. Do not keep retrying.";
+
 function initFirebaseCore() {
   if (coreInitAttempted) return;
   coreInitAttempted = true;

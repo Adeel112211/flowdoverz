@@ -9,7 +9,7 @@ export async function GET() {
     { success: true, ...status },
     {
       headers: {
-        "Cache-Control": "no-store, max-age=0",
+        "Cache-Control": "public, max-age=60, s-maxage=60",
       },
     },
   );

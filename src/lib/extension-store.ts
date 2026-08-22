@@ -10,6 +10,15 @@ import type { OfficialIntegrityProfile } from "./extension-official-from-zip";
 const CONFIG_DOC = { collection: "settings", id: "extension" };
 const FILES_COLLECTION = "extension_files";
 const INTEGRITY_COLLECTION = "extension_integrity";
+const CONFIG_TTL_MS = 5 * 60 * 1000;
+const INTEGRITY_TTL_MS = 5 * 60 * 1000;
+
+let configCache: { value: ExtensionConfig; at: number } | null = null;
+let integrityCache: { key: string; value: OfficialIntegrityProfile; at: number } | null = null;
+
+function clearExtensionCaches() {
+  integrityCache = null;
+}
 
 function mergeConfig(partial?: Partial<ExtensionConfig> | null): ExtensionConfig {
   if (!partial) {
@@ -38,15 +47,20 @@ function mergeConfig(partial?: Partial<ExtensionConfig> | null): ExtensionConfig
 }
 
 export async function getExtensionConfig(): Promise<ExtensionConfig> {
+  if (configCache && Date.now() - configCache.at < CONFIG_TTL_MS) {
+    return configCache.value;
+  }
+
   const db = getDb();
   if (!db) return mergeConfig(null);
 
   try {
     const doc = await db.collection(CONFIG_DOC.collection).doc(CONFIG_DOC.id).get();
-    if (!doc.exists) return mergeConfig(null);
-    return mergeConfig(doc.data() as Partial<ExtensionConfig>);
+    const value = !doc.exists ? mergeConfig(null) : mergeConfig(doc.data() as Partial<ExtensionConfig>);
+    configCache = { value, at: Date.now() };
+    return value;
   } catch {
-    return mergeConfig(null);
+    return configCache?.value || mergeConfig(null);
   }
 }
 
@@ -57,6 +71,9 @@ export async function saveExtensionConfig(partial: Partial<ExtensionConfig>) {
   const current = await getExtensionConfig();
   const next = mergeConfig({ ...current, ...partial });
   await db.collection(CONFIG_DOC.collection).doc(CONFIG_DOC.id).set(next, { merge: true });
+  configCache = { value: next, at: Date.now() };
+  const { touchLive } = await import("./live-tick");
+  void touchLive("extension");
   return next;
 }
 
@@ -176,6 +193,7 @@ export async function uploadExtensionRelease(input: {
     previousOfficialHashes,
   });
 
+  clearExtensionCaches();
   invalidateOfficialIntegrityCache();
   await syncMinExtensionVersion(version);
   return next;
@@ -204,6 +222,7 @@ export async function setActiveExtensionRelease(version: string) {
   });
 
   const { invalidateOfficialIntegrityCache } = await import("./extension-build");
+  clearExtensionCaches();
   invalidateOfficialIntegrityCache();
   await syncMinExtensionVersion(safe);
   return next;
@@ -232,6 +251,7 @@ export async function deleteExtensionRelease(version: string) {
 
   if (activeVersion) await syncMinExtensionVersion(activeVersion);
   const { invalidateOfficialIntegrityCache } = await import("./extension-build");
+  clearExtensionCaches();
   invalidateOfficialIntegrityCache();
   return next;
 }
@@ -259,27 +279,48 @@ export async function getActiveIntegrityProfile(): Promise<OfficialIntegrityProf
   const version = config.activeVersion;
   if (!version) return null;
 
+  const cacheKey = `${version}:${String(config.officialHash || "").toLowerCase()}`;
+  if (
+    integrityCache &&
+    integrityCache.key === cacheKey &&
+    Date.now() - integrityCache.at < INTEGRITY_TTL_MS
+  ) {
+    return integrityCache.value;
+  }
+
+  const db = getDb();
+  if (db) {
+    try {
+      const doc = await db.collection(INTEGRITY_COLLECTION).doc(sanitizeVersion(version)).get();
+      if (doc.exists) {
+        const data = doc.data() as Partial<OfficialIntegrityProfile>;
+        if (data.hash && data.payload && data.attestation) {
+          integrityCache = {
+            key: cacheKey,
+            value: data as OfficialIntegrityProfile,
+            at: Date.now(),
+          };
+          return integrityCache.value;
+        }
+      }
+    } catch {
+      // fall through to zip
+    }
+  }
+
   const zip = await getExtensionZip(version);
   if (zip) {
     try {
       const { profileFromExtensionZip } = await import("./extension-official-from-zip");
-      return await profileFromExtensionZip(zip.buffer, version);
+      const profile = await profileFromExtensionZip(zip.buffer, version);
+      if (profile?.hash && profile.payload && profile.attestation) {
+        integrityCache = { key: cacheKey, value: profile, at: Date.now() };
+        return profile;
+      }
     } catch {
-      // fall through to the stored profile from upload
+      // no sealed profile
     }
   }
 
-  const db = getDb();
-  if (!db) return null;
-  try {
-    const doc = await db.collection(INTEGRITY_COLLECTION).doc(sanitizeVersion(version)).get();
-    if (!doc.exists) return null;
-    const data = doc.data() as Partial<OfficialIntegrityProfile>;
-    if (data.hash && data.payload && data.attestation) {
-      return data as OfficialIntegrityProfile;
-    }
-  } catch {
-    return null;
-  }
-  return null;
+  return integrityCache?.key === cacheKey ? integrityCache.value : null;
 }

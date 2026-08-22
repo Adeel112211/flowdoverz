@@ -102,6 +102,9 @@ export async function POST(request: NextRequest) {
       subscriptionPlan: "pending",
     });
 
+    const { touchLive } = await import("@/lib/live-tick");
+    void touchLive("payments");
+
     // Send emails synchronously to prevent Next.js from terminating the request early
     await sendPaymentPendingEmail(normalizedEmail).catch(console.error);
     await sendAdminNotificationEmail(normalizedEmail, planId).catch(console.error);

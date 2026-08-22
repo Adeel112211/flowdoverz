@@ -126,7 +126,7 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  const { isActiveClientSession, SESSION_REPLACED_MESSAGE } = await import("@/lib/user-store");
+  const { isActiveClientSession, SESSION_REPLACED_MESSAGE, getUserRecord } = await import("@/lib/user-store");
   const sessionOk = await isActiveClientSession(email, verified.sessionId);
   if (!sessionOk) {
     return NextResponse.json(
@@ -139,7 +139,7 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  const { getUserStatus, resolveBillingPresentation } = await import("@/lib/user-store");
+  const { getUserStatus, resolveBillingPresentation, invalidateUserDocCache } = await import("@/lib/user-store");
   const status = await getUserStatus(email);
 
   if (!status) {
@@ -156,16 +156,12 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  const { getDb } = await import("@/lib/firebase-admin");
-  const dbCheck = getDb();
-  if (dbCheck) {
-    const userDoc = await dbCheck.collection("users").doc(email).get();
-    if (userDoc.exists && userDoc.data()?.suspended) {
-      return NextResponse.json(
-        { success: false, code: "ACCOUNT_SUSPENDED", message: "Account suspended. Contact support." },
-        { status: 403 },
-      );
-    }
+  const userRecord = await getUserRecord(email);
+  if (userRecord?.suspended) {
+    return NextResponse.json(
+      { success: false, code: "ACCOUNT_SUSPENDED", message: "Account suspended. Contact support." },
+      { status: 403 },
+    );
   }
 
   const slot = (searchParams.get("slot") || "C1").toUpperCase();
@@ -201,11 +197,8 @@ export async function GET(request: NextRequest) {
   );
 
   let userName = email.split("@")[0] || "Member";
-  if (dbCheck) {
-    const profileDoc = await dbCheck.collection("users").doc(email).get();
-    if (profileDoc.exists && profileDoc.data()?.name) {
-      userName = String(profileDoc.data()?.name);
-    }
+  if (userRecord?.name) {
+    userName = String(userRecord.name);
   }
 
   const planName = billing.planName;
@@ -229,22 +222,30 @@ export async function GET(request: NextRequest) {
     const { getDb } = await import("@/lib/firebase-admin");
     const db = getDb();
     if (db) {
-      // Official integrity already passed above — clear any stale tamper / force-update flags.
-      await db.collection("users").doc(email).set(
-        {
-          lastSyncAt: now.toISOString(),
-          lastSyncSlot: slot,
-          extensionTampered: false,
-          extensionTamperedAt: null,
-          extensionTamperMessage: null,
-          extensionUpdateRequired: false,
-          extensionRequiredVersion: null,
-          extensionUpdateRequiredAt: null,
-          extensionUpdateMessage: null,
-          ...(extensionVersion ? { extensionVersion } : {}),
-        },
-        { merge: true },
-      );
+      const lastSyncMs = Date.parse(String(userRecord?.lastSyncAt || ""));
+      const slotChanged = String(userRecord?.lastSyncSlot || "") !== slot;
+      const versionChanged = Boolean(extensionVersion) && String(userRecord?.extensionVersion || "") !== extensionVersion;
+      const needsFlagClear =
+        userRecord?.extensionTampered === true || userRecord?.extensionUpdateRequired === true;
+      const syncStale = !Number.isFinite(lastSyncMs) || Date.now() - lastSyncMs > 15 * 60 * 1000;
+      if (slotChanged || versionChanged || needsFlagClear || syncStale) {
+        await db.collection("users").doc(email).set(
+          {
+            lastSyncAt: now.toISOString(),
+            lastSyncSlot: slot,
+            extensionTampered: false,
+            extensionTamperedAt: null,
+            extensionTamperMessage: null,
+            extensionUpdateRequired: false,
+            extensionRequiredVersion: null,
+            extensionUpdateRequiredAt: null,
+            extensionUpdateMessage: null,
+            ...(extensionVersion ? { extensionVersion } : {}),
+          },
+          { merge: true },
+        );
+        invalidateUserDocCache(email);
+      }
     }
   } catch {
     // non-blocking

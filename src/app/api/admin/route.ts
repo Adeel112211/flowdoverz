@@ -11,6 +11,7 @@ import {
 } from "@/lib/admin";
 import { logAdminActivity } from "@/lib/admin-activity";
 import { checkAuthRateLimit, clientIpFromRequest } from "@/lib/auth-rate-limit";
+import { FIREBASE_QUOTA_MESSAGE, isFirebaseQuotaError } from "@/lib/firebase-admin";
 
 export async function GET() {
   const ok = await isAdminUiRequest();
@@ -73,8 +74,11 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     console.error("Admin unlock error:", error);
     return NextResponse.json(
-      { success: false, error: "Server error during admin unlock." },
-      { status: 500 },
+      {
+        success: false,
+        error: isFirebaseQuotaError(error) ? FIREBASE_QUOTA_MESSAGE : "Server error during admin unlock.",
+      },
+      { status: 503 },
     );
   }
 }

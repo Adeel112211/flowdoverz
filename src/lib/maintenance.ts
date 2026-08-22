@@ -56,9 +56,6 @@ export async function getPublicMaintenanceStatus(): Promise<PublicMaintenanceSta
   try {
     const settings = await getSystemSettings();
     const status = toPublicMaintenanceStatus(settings);
-    if (settings.maintenanceEnabled && !status.active && settings.maintenanceUntil) {
-      await saveSystemSettings({ maintenanceEnabled: false }).catch(() => undefined);
-    }
     return status;
   } catch {
     return { active: false, message: "", until: "" };

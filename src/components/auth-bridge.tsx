@@ -23,7 +23,7 @@ export function AuthBridge({ session, daysRemaining = 14 }: AuthBridgeProps) {
       void fetch("/api/auth/me", { credentials: "include", cache: "no-store" }).catch(() => {});
     };
     pingSeat();
-    const heartbeat = window.setInterval(pingSeat, 25_000);
+    const heartbeat = window.setInterval(pingSeat, 10 * 60 * 1000);
     return () => window.clearInterval(heartbeat);
   }, [session]);
 

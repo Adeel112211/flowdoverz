@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import { subscribeLive } from "@/lib/live-client";
 
 type AdminLiveRefreshOptions = {
   intervalMs?: number;
@@ -9,39 +10,35 @@ type AdminLiveRefreshOptions = {
 };
 
 /**
- * Light live refresh for admin pages.
- * Default: every 60s, paused while the tab is hidden.
+ * Live refresh over a shared WebSocket (SSE fallback in local `next dev`).
+ * Pages refetch only when server data actually changes.
  */
 export function useAdminLiveRefresh(
   refresh: () => void | Promise<void>,
   deps: unknown[] = [],
   options: AdminLiveRefreshOptions = {},
 ) {
-  const { intervalMs = 60_000, enabled = true, pauseWhenHidden = true } = options;
+  const { enabled = true, pauseWhenHidden = true } = options;
   const refreshRef = useRef(refresh);
   refreshRef.current = refresh;
 
   useEffect(() => {
     if (!enabled) return;
 
-    let active = true;
-
     const run = () => {
-      if (!active) return;
       if (pauseWhenHidden && document.hidden) return;
       void refreshRef.current();
     };
 
-    const id = window.setInterval(run, intervalMs);
+    const unsub = subscribeLive(() => run());
     const onVisible = () => {
       if (document.visibilityState === "visible") run();
     };
     document.addEventListener("visibilitychange", onVisible);
 
     return () => {
-      active = false;
-      window.clearInterval(id);
+      unsub();
       document.removeEventListener("visibilitychange", onVisible);
     };
-  }, [enabled, intervalMs, pauseWhenHidden, ...deps]);
+  }, [enabled, pauseWhenHidden, ...deps]);
 }

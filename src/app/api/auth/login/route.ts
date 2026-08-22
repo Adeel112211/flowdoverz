@@ -4,6 +4,7 @@ import { CLIENT_SID_COOKIE, getClientSessionFromRequest } from "@/lib/client-ses
 import { clientSessionCookieOptions } from "@/lib/site-urls";
 import { checkAuthRateLimit, clientIpFromRequest } from "@/lib/auth-rate-limit";
 import { publicMaintenanceResponse } from "@/lib/maintenance";
+import { FIREBASE_QUOTA_MESSAGE, isFirebaseQuotaError } from "@/lib/firebase-admin";
 
 export async function POST(request: NextRequest) {
   try {
@@ -66,8 +67,12 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     console.error("Client login error:", error);
     return NextResponse.json(
-      { success: false, error: "Could not sign in. Try again." },
-      { status: 500 },
+      {
+        success: false,
+        error: isFirebaseQuotaError(error) ? FIREBASE_QUOTA_MESSAGE : "Could not sign in. Try again.",
+        code: isFirebaseQuotaError(error) ? "QUOTA" : "AUTH_FAILED",
+      },
+      { status: 503 },
     );
   }
 }

@@ -7,6 +7,7 @@ import {
   MAINTENANCE_EVENT,
   type MaintenanceNotice,
 } from "@/lib/maintenance-client";
+import { subscribeLive } from "@/lib/live-client";
 import type { PublicMaintenanceStatus } from "@/lib/maintenance";
 
 function formatUntil(iso: string) {
@@ -69,7 +70,7 @@ export function MaintenanceGate({
 
     const refresh = async () => {
       try {
-        const res = await fetch("/api/maintenance", { cache: "no-store" });
+        const res = await fetch("/api/maintenance");
         const data = await res.json();
         if (data?.success) {
           apply({
@@ -94,14 +95,25 @@ export function MaintenanceGate({
       void refresh();
     };
 
-    void refresh();
     window.addEventListener(MAINTENANCE_EVENT, onNotice);
-    const poll = window.setInterval(refresh, 20_000);
+    const unsub = subscribeLive((event) => {
+      if (event.topic === "maintenance" || event.topic === "settings") {
+        void refresh();
+      }
+    });
+    if (!initial.active) {
+      return () => {
+        window.removeEventListener(MAINTENANCE_EVENT, onNotice);
+        unsub();
+      };
+    }
+
+    void refresh();
     return () => {
       window.removeEventListener(MAINTENANCE_EVENT, onNotice);
-      window.clearInterval(poll);
+      unsub();
     };
-  }, [isAdmin]);
+  }, [isAdmin, initial.active]);
 
   useEffect(() => {
     if (isAdmin || !status.active) return;

@@ -172,6 +172,14 @@ export function parseCookieJson(input: string): FlowCookie[] {
   return cookies;
 }
 
+const SLOTS_TTL_MS = 30 * 1000;
+let slotsCache: { ownerKey: string; at: number; value: Array<{ key: string; record: SlotRecord }> } | null =
+  null;
+
+function invalidateSlotsCache() {
+  slotsCache = null;
+}
+
 export async function saveSlotCookies(
   ownerKey: string,
   slot: string,
@@ -200,26 +208,38 @@ export async function saveSlotCookies(
     transaction.set(docRef, sanitizeForFirestore(data!), { merge: true });
   });
 
+  invalidateSlotsCache();
+  const { touchLive } = await import("./live-tick");
+  void touchLive("cookies");
   return record;
 }
 
 export async function getSlotCookies(ownerKey: string, slot: string): Promise<SlotRecord | null> {
-  const db = getDb();
-  if (!db) return null;
-  const doc = await db.collection("cookies").doc(ownerKey).get();
-  if (!doc.exists) return null;
-  const data = doc.data();
-  return data?.slots?.[slot] ?? null;
+  const slots = await listSlots(ownerKey);
+  return slots.find((item) => item.key === slot)?.record ?? null;
 }
 
 export async function listSlots(ownerKey: string): Promise<Array<{ key: string; record: SlotRecord }>> {
+  if (
+    slotsCache &&
+    slotsCache.ownerKey === ownerKey &&
+    Date.now() - slotsCache.at < SLOTS_TTL_MS
+  ) {
+    return slotsCache.value;
+  }
+
   const db = getDb();
   if (!db) return [];
   const doc = await db.collection("cookies").doc(ownerKey).get();
-  if (!doc.exists) return [];
+  if (!doc.exists) {
+    slotsCache = { ownerKey, at: Date.now(), value: [] };
+    return [];
+  }
   const data = doc.data();
   const slots = data?.slots || {};
-  return Object.entries(slots).map(([key, record]) => ({ key, record: record as SlotRecord }));
+  const value = Object.entries(slots).map(([key, record]) => ({ key, record: record as SlotRecord }));
+  slotsCache = { ownerKey, at: Date.now(), value };
+  return value;
 }
 
 export async function clearSlotCookies(ownerKey: string, slot: string): Promise<void> {
@@ -235,6 +255,9 @@ export async function clearSlotCookies(ownerKey: string, slot: string): Promise<
       transaction.set(docRef, data);
     }
   });
+  invalidateSlotsCache();
+  const { touchLive } = await import("./live-tick");
+  void touchLive("cookies");
 }
 
 export function emailFromSid(sid: string): string {

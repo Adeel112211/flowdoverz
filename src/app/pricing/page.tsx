@@ -84,7 +84,7 @@ export default function PricingPage() {
       });
 
     if (session) {
-      fetch("/api/user/status")
+      fetch("/api/user/status?billing=1")
         .then((r) => r.json())
         .then((d) => {
           if (!active) return;

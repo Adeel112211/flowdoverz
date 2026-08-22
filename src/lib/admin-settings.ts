@@ -40,17 +40,27 @@ export const DEFAULT_SYSTEM_SETTINGS: SystemSettings = {
 };
 
 const DOC_PATH = { collection: "settings", id: "system" };
+const SETTINGS_TTL_MS = 10 * 60 * 1000;
+
+let settingsCache: { value: SystemSettings; at: number } | null = null;
 
 export async function getSystemSettings(): Promise<SystemSettings> {
+  if (settingsCache && Date.now() - settingsCache.at < SETTINGS_TTL_MS) {
+    return settingsCache.value;
+  }
+
   const db = getDb();
   if (!db) return DEFAULT_SYSTEM_SETTINGS;
 
   try {
     const doc = await db.collection(DOC_PATH.collection).doc(DOC_PATH.id).get();
-    if (!doc.exists) return DEFAULT_SYSTEM_SETTINGS;
-    return { ...DEFAULT_SYSTEM_SETTINGS, ...(doc.data() as Partial<SystemSettings>) };
+    const value = !doc.exists
+      ? DEFAULT_SYSTEM_SETTINGS
+      : { ...DEFAULT_SYSTEM_SETTINGS, ...(doc.data() as Partial<SystemSettings>) };
+    settingsCache = { value, at: Date.now() };
+    return value;
   } catch {
-    return DEFAULT_SYSTEM_SETTINGS;
+    return settingsCache?.value || DEFAULT_SYSTEM_SETTINGS;
   }
 }
 
@@ -61,6 +71,15 @@ export async function saveSystemSettings(partial: Partial<SystemSettings>) {
   const current = await getSystemSettings();
   const next = { ...current, ...partial };
   await db.collection(DOC_PATH.collection).doc(DOC_PATH.id).set(next, { merge: true });
+  settingsCache = { value: next, at: Date.now() };
+  const silent = Object.keys(partial).every((key) => key === "cronLastRun" || key === "cronLastResult");
+  if (!silent) {
+    const { touchLive } = await import("./live-tick");
+    const topic = "maintenanceEnabled" in partial || "maintenanceMessage" in partial || "maintenanceUntil" in partial
+      ? "maintenance"
+      : "settings";
+    void touchLive(topic);
+  }
   return next;
 }
 

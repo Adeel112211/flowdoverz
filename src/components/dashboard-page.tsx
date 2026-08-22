@@ -9,6 +9,7 @@ import { BrandLogo } from "@/components/brand-logo";
 import { useClientSession } from "@/hooks/use-client-session";
 import { signOut, restoreSessionFromCookie } from "@/lib/auth";
 import { applyMaintenanceFromPayload } from "@/lib/maintenance-client";
+import { subscribeLive } from "@/lib/live-client";
 import { DownloadCloud, Timer, Rocket, CheckCircle2, AlertCircle, User, LogOut, MonitorSmartphone, Receipt, X, Sparkles, BookOpen, Zap } from "lucide-react";
 import { InstallGuideModal } from "@/components/install-guide-modal";
 
@@ -137,14 +138,16 @@ export function DashboardPage() {
     void loadStatus();
     void loadExtension();
 
-    const statusPoll = window.setInterval(() => {
+    const unsub = subscribeLive((event) => {
+      if (!active) return;
+      if (event.topic === "cookies") return;
+      if (event.topic === "extension") void loadExtension();
       void loadStatus();
-      void loadExtension();
-    }, 8000);
+    });
 
     return () => {
       active = false;
-      window.clearInterval(statusPoll);
+      unsub();
     };
   }, [router, session, sessionReady]);
 

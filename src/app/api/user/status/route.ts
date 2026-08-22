@@ -27,7 +27,8 @@ export async function GET(request: NextRequest) {
     }
   }
 
-  const activationBlock = await getPlanActivationBlock(gate.email);
+  const wantBilling = request.nextUrl.searchParams.get("billing") === "1";
+  const activationBlock = wantBilling ? await getPlanActivationBlock(gate.email) : null;
 
   return NextResponse.json({ success: true, status, activationBlock });
 }

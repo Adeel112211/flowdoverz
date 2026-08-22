@@ -62,7 +62,7 @@ export default function CheckoutPage() {
       .catch(() => router.push("/pricing"))
       .finally(() => setPlanLoading(false));
 
-    fetch("/api/user/status")
+    fetch("/api/user/status?billing=1")
       .then((r) => r.json())
       .then((data) => {
         if (applyMaintenanceFromPayload(data)) return;

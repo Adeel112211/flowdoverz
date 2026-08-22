@@ -1,5 +1,4 @@
 import { createHash } from "crypto";
-import { getDb } from "./firebase-admin";
 import { clientIpFromRequest } from "./signup-security";
 
 export type AuthRateLimitScope =
@@ -13,12 +12,14 @@ type RateLimitResult =
 
 const LIMITS: Record<
   AuthRateLimitScope,
-  { max: number; windowMs: number; failClosedInProduction: boolean }
+  { max: number; windowMs: number }
 > = {
-  admin_login: { max: 8, windowMs: 15 * 60 * 1000, failClosedInProduction: true },
-  admin_reset_confirm: { max: 8, windowMs: 15 * 60 * 1000, failClosedInProduction: true },
-  client_login: { max: 30, windowMs: 60 * 60 * 1000, failClosedInProduction: false },
+  admin_login: { max: 8, windowMs: 15 * 60 * 1000 },
+  admin_reset_confirm: { max: 8, windowMs: 15 * 60 * 1000 },
+  client_login: { max: 30, windowMs: 60 * 60 * 1000 },
 };
+
+const memoryWindows = new Map<string, { windowStart: number; count: number }>();
 
 function pepper() {
   return (
@@ -29,11 +30,7 @@ function pepper() {
 }
 
 function hashKey(value: string) {
-  const secret = pepper();
-  if (!secret && process.env.NODE_ENV === "production") {
-    return createHash("sha256").update(value).digest("hex");
-  }
-  return createHash("sha256").update(`${value}:${secret}`).digest("hex");
+  return createHash("sha256").update(`${value}:${pepper()}`).digest("hex");
 }
 
 function isLocalIp(ip: string) {
@@ -59,45 +56,24 @@ export async function checkAuthRateLimit(
     return { ok: true };
   }
 
-  const db = getDb();
-  if (!db) {
-    if (config.failClosedInProduction && process.env.NODE_ENV === "production") {
-      return {
-        ok: false,
-        error: "Service temporarily unavailable. Try again shortly.",
-      };
-    }
+  const key = hashKey(`${scope}:${ip}`);
+  const now = Date.now();
+  const prev = memoryWindows.get(key);
+
+  if (!prev || now - prev.windowStart >= config.windowMs) {
+    memoryWindows.set(key, { windowStart: now, count: 1 });
     return { ok: true };
   }
 
-  try {
-    const docId = hashKey(`${scope}:${ip}`);
-    const ref = db.collection("auth_rate_limits").doc(docId);
-    const now = Date.now();
-
-    const doc = await ref.get();
-    const data = doc.data();
-    const windowStart = Number(data?.windowStart || 0);
-    const count = Number(data?.count || 0);
-
-    if (!windowStart || now - windowStart >= config.windowMs) {
-      await ref.set({ windowStart: now, count: 1, scope }, { merge: true });
-      return { ok: true };
-    }
-
-    if (count >= config.max) {
-      const retryAfterSeconds = Math.ceil((config.windowMs - (now - windowStart)) / 1000);
-      return {
-        ok: false,
-        error: "Too many attempts. Please wait and try again.",
-        retryAfterSeconds,
-      };
-    }
-
-    await ref.set({ windowStart, count: count + 1, scope }, { merge: true });
-    return { ok: true };
-  } catch (error) {
-    console.error("Auth rate limit check failed:", error);
-    return { ok: true };
+  if (prev.count >= config.max) {
+    const retryAfterSeconds = Math.ceil((config.windowMs - (now - prev.windowStart)) / 1000);
+    return {
+      ok: false,
+      error: "Too many attempts. Please wait and try again.",
+      retryAfterSeconds,
+    };
   }
+
+  prev.count += 1;
+  return { ok: true };
 }
