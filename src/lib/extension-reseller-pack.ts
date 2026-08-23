@@ -1,7 +1,7 @@
 import JSZip from "jszip";
 import { getDb } from "@/lib/firebase-admin";
 import { sanitizeForFirestore } from "@/lib/cookie-store";
-import { getAppUrl } from "@/lib/site-urls";
+import { getAppUrl, getResellerUrl } from "@/lib/site-urls";
 import { getReseller } from "@/lib/reseller-store";
 import { getActiveExtensionDownload, getExtensionConfig, isPreviousOfficialHash } from "@/lib/extension-store";
 import {
@@ -130,15 +130,37 @@ function normalizePublicUrl(raw: string) {
   }
 }
 
-function replaceDashboardUrls(text: string, websiteUrl: string, appUrl: string) {
-  if (!websiteUrl) return text;
+function replaceDashboardUrls(text: string, dashboardUrl: string, appUrl: string) {
+  if (!dashboardUrl) return text;
   const app = String(appUrl || "").replace(/\/$/, "");
   let out = String(text || "");
   if (app) {
     const escaped = app.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    out = out.replace(new RegExp(`${escaped}/dashboard/?`, "gi"), websiteUrl);
+    out = out.replace(new RegExp(`${escaped}/dashboard/?`, "gi"), dashboardUrl);
   }
-  out = out.replace(/https?:\/\/(?:www\.)?flowdoverz\.[a-z.]+\/dashboard\/?/gi, websiteUrl);
+  out = out.replace(/https?:\/\/(?:www\.)?flowdoverz\.[a-z.]+\/dashboard\/?/gi, dashboardUrl);
+  return out;
+}
+
+/** Popup Dashboard button currently opens portalRoot/dashboard at runtime — pin it to the reseller panel. */
+function rewriteDashboardOpen(text: string, dashboardUrl: string) {
+  const url = String(dashboardUrl || "").trim();
+  if (!url) return text;
+  let out = String(text || "");
+  if (!/RESELLER_DASHBOARD_URL/.test(out) && /DEFAULT_PORTAL_URL\s*=/.test(out)) {
+    out = out.replace(
+      /^([ \t]*)const DEFAULT_PORTAL_URL\s*=\s*(['"])[^'"]*\2\s*;/m,
+      (full, indent: string) => `${full}\n${indent}const RESELLER_DASHBOARD_URL = ${JSON.stringify(url)};`,
+    );
+  }
+  out = out.replace(
+    /`\$\{portalRoot\.replace\(\/\\\/\+\$\/,\s*""\)\}\/dashboard`/g,
+    "RESELLER_DASHBOARD_URL",
+  );
+  out = out.replace(
+    /chrome\.tabs\.create\(\s*\{\s*url:\s*`\$\{[^`]*\}\/dashboard`\s*\}\s*\)/g,
+    "chrome.tabs.create({ url: RESELLER_DASHBOARD_URL })",
+  );
   return out;
 }
 
@@ -364,6 +386,7 @@ async function brandOfficialZip(
     displayName: string;
     supportEmail: string;
     websiteUrl?: string;
+    dashboardUrl?: string;
     logo?: { buffer: Buffer; mime: string } | null;
     version: string;
   },
@@ -383,6 +406,8 @@ async function brandOfficialZip(
   const email = String(branding.supportEmail || "").trim().toLowerCase();
   if (email && !email.includes("@")) throw new Error("Enter a valid support email.");
   const websiteUrl = normalizePublicUrl(String(branding.websiteUrl || ""));
+  const dashboardUrl =
+    normalizePublicUrl(String(branding.dashboardUrl || "")) || websiteUrl || getResellerUrl();
   const appUrl = getAppUrl();
 
   for (const file of Object.values(zip.files)) {
@@ -395,7 +420,8 @@ async function brandOfficialZip(
     if (email && overlayFileName(file.name)) {
       text = replaceVisibleEmails(text, email);
     }
-    text = replaceDashboardUrls(text, websiteUrl, appUrl);
+    text = rewriteDashboardOpen(text, dashboardUrl);
+    text = replaceDashboardUrls(text, dashboardUrl, appUrl);
     zip.file(file.name, text);
   }
 
@@ -409,8 +435,8 @@ async function brandOfficialZip(
   manifest.name = name;
   manifest.short_name = chromeShortName(name);
   manifest.description = `${name} helper for Google Flow.`;
-  if (websiteUrl) {
-    manifest.homepage_url = websiteUrl;
+  if (dashboardUrl) {
+    manifest.homepage_url = dashboardUrl;
   }
   if (branding.version) {
     manifest.version = branding.version;
@@ -604,6 +630,7 @@ export async function generateResellerExtensionPack(
     displayName,
     supportEmail,
     websiteUrl: String(reseller.websiteUrl || ""),
+    dashboardUrl: getResellerUrl(),
     logo,
     version,
   });

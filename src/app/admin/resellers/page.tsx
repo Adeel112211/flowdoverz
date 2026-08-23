@@ -790,7 +790,7 @@ export default function AdminResellersPage() {
       header={
         <AdminPageHeader
           title="Resellers"
-          description="Every reseller uses the same /reseller link. They sign in with their email and panel password to see only their dashboard, clients, and password page."
+          description="Every official reseller uses the same panel at resellerflow.doverz.com. They sign in with their email and panel password to see only their dashboard, clients, and password page."
           actions={
             <div className="flex w-full flex-col gap-3 sm:w-auto sm:flex-row">
               <button
@@ -950,7 +950,7 @@ export default function AdminResellersPage() {
             </div>
             ) : (
               <p className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 px-4 py-3 text-sm text-emerald-100">
-                Send every reseller the same /reseller link plus their email and panel password. After they sign in they see only their seats and clients. Unused seats stay until they register someone. The 30-day timer starts then.
+                Send every reseller the same https://resellerflow.doverz.com link plus their email and panel password. After they sign in they see only their seats and clients. Unused seats stay until they register someone. The 30-day timer starts then.
               </p>
             )}
             <div>
@@ -1287,7 +1287,7 @@ export default function AdminResellersPage() {
               <div>
                 <h2 className="text-xl font-black text-white">Build branded extension</h2>
                 <p className="mt-1 text-sm text-slate-400">
-                  These values replace FlowDoverz name, logo, and contact email inside the Chrome ZIP and the fake credits overlay. Sync still uses your FlowDoverz server.
+                  These values replace FlowDoverz name, logo, and contact email inside the Chrome ZIP and the fake credits overlay. The popup Dashboard button opens the reseller panel at resellerflow.doverz.com. Sync still uses your FlowDoverz server. Rebuild the ZIP after changing this.
                 </p>
               </div>
               <div>

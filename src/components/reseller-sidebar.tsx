@@ -5,16 +5,17 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { KeyRound, LayoutDashboard, LogOut, Menu, Users, X } from "lucide-react";
 import { BrandLogo } from "@/components/brand-logo";
-
-const navItems = [
-  { name: "Dashboard", href: "/reseller", icon: LayoutDashboard },
-  { name: "Clients", href: "/reseller/clients", icon: Users },
-  { name: "Password", href: "/reseller/password", icon: KeyRound },
-];
+import { useResellerNav } from "@/components/reseller-nav";
 
 export function ResellerSidebar({ brandName }: { brandName: string }) {
   const pathname = usePathname();
+  const nav = useResellerNav();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const navItems = [
+    { name: "Dashboard", href: nav.home, icon: LayoutDashboard },
+    { name: "Clients", href: nav.clients, icon: Users },
+    { name: "Password", href: nav.password, icon: KeyRound },
+  ];
 
   useEffect(() => {
     setMobileOpen(false);
@@ -43,13 +44,13 @@ export function ResellerSidebar({ brandName }: { brandName: string }) {
     } catch {
       // still leave the panel
     }
-    window.location.href = "/reseller";
+    window.location.href = nav.home;
   };
 
   return (
     <>
       <div className="admin-mobile-topbar z-50 flex shrink-0 items-center justify-between border-b border-white/5 bg-[#0F172A] px-4 pb-3 pt-[max(0.75rem,env(safe-area-inset-top))] lg:hidden">
-        <Link href="/reseller" className="min-w-0">
+        <Link href={nav.home} className="min-w-0">
           <BrandLogo size="md" className="gap-2 [&_img]:!h-10 [&_img]:!w-10" />
         </Link>
         <button
@@ -79,7 +80,7 @@ export function ResellerSidebar({ brandName }: { brandName: string }) {
         } top-[var(--admin-mobile-topbar-height,4.5rem)] lg:top-0`}
       >
         <div className="hidden border-b border-white/5 p-6 lg:block">
-          <Link href="/reseller">
+          <Link href={nav.home}>
             <BrandLogo size="md" className="gap-2 [&_img]:!h-11 [&_img]:!w-11" />
           </Link>
         </div>
@@ -87,7 +88,10 @@ export function ResellerSidebar({ brandName }: { brandName: string }) {
         <div className="flex flex-1 flex-col gap-1 overflow-y-auto py-6">
           <div className="mb-2 px-6 text-xs font-bold uppercase tracking-wider text-slate-500">Reseller panel</div>
           {navItems.map((item) => {
-            const active = pathname === item.href;
+            const active =
+              pathname === item.href ||
+              pathname === `/reseller${item.href === "/" ? "" : item.href}` ||
+              (item.href === "/reseller" && pathname === "/");
             const Icon = item.icon;
             return (
               <Link

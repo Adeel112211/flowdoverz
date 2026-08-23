@@ -1,7 +1,7 @@
 import { createHash, randomBytes, scryptSync, timingSafeEqual } from "crypto";
 import { getDb } from "@/lib/firebase-admin";
 import { sanitizeForFirestore } from "@/lib/cookie-store";
-import { getAppUrl } from "@/lib/site-urls";
+import { getAppUrl, getResellerUrl } from "@/lib/site-urls";
 
 export const RESELLER_SLOTS = ["C1", "C2", "C3", "C4", "C5"] as const;
 export type ResellerSlot = (typeof RESELLER_SLOTS)[number];
@@ -30,7 +30,7 @@ export type ResellerRecord = {
   kind: ResellerKind;
   /** Public signup code for official partners. Users join at /signup?ref=CODE */
   signupCode: string;
-  /** Legacy unique path. All resellers now share /reseller and log in with email + password. */
+  /** Legacy unique path. Official resellers now share the dedicated panel host. */
   panelSlug: string;
   assignedSlots: ResellerSlot[];
   maxUsers: number;
@@ -287,7 +287,7 @@ export function subscriptionExpiryFromNow(seatDays = DEFAULT_SEAT_DAYS) {
 
 export function panelUrlForReseller(_record?: Pick<ResellerRecord, "kind" | "panelSlug">) {
   void _record;
-  return `${getAppUrl()}/reseller`;
+  return getResellerUrl();
 }
 
 export function signupUrlForReseller(record: Pick<ResellerRecord, "kind" | "signupCode" | "panelSlug">) {

@@ -49,7 +49,7 @@ export function ResellerLogin() {
           </div>
           <h1 className="text-center text-2xl font-black tracking-tight text-white">Reseller panel</h1>
           <p className="mt-2 text-center text-sm text-slate-400">
-            All resellers use this same link. Sign in with the email and password you were given.
+            All resellers use this same host. Sign in with the email and password you were given.
           </p>
           {error ? (
             <p className="mt-4 rounded-xl border border-rose-500/20 bg-rose-500/10 px-3 py-2 text-sm text-rose-200">

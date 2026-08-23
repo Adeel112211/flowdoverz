@@ -4,11 +4,13 @@ import { FormEvent, useState } from "react";
 import { Eye, EyeOff } from "lucide-react";
 import { AdminPageHeader } from "@/components/admin-page-header";
 import { AdminPageLayout } from "@/components/admin-page-layout";
+import { useResellerNav } from "@/components/reseller-nav";
 
 const INPUT_CLASS =
   "w-full rounded-xl border border-white/10 bg-[#080810] px-4 py-3 text-sm text-white outline-none focus:border-cyan-400 focus:ring-1 focus:ring-cyan-400";
 
 export default function ResellerPasswordPage() {
+  const nav = useResellerNav();
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -40,7 +42,7 @@ export default function ResellerPasswordPage() {
       }
       setMessage(data.message || "Password updated. Sign in again.");
       setTimeout(() => {
-        window.location.href = "/reseller";
+        window.location.href = nav.home;
       }, 800);
     } catch {
       setError("Could not update password.");

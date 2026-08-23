@@ -1,12 +1,18 @@
 import { ReactNode } from "react";
+import { headers } from "next/headers";
 import { getResellerSession } from "@/lib/reseller-session";
 import { ResellerLogin } from "@/components/reseller-login";
 import { ResellerSidebar } from "@/components/reseller-sidebar";
+import { ResellerNavProvider } from "@/components/reseller-nav";
 import { AdminShell } from "@/components/admin-shell";
+import { isResellerPanelHost } from "@/lib/site-urls";
 
 export const dynamic = "force-dynamic";
 
 export default async function ResellerLayout({ children }: { children: ReactNode }) {
+  const host = (await headers()).get("host") ?? "";
+  const atDedicatedHost = isResellerPanelHost(host);
+
   let reseller = null;
   try {
     reseller = await getResellerSession();
@@ -15,20 +21,26 @@ export default async function ResellerLayout({ children }: { children: ReactNode
   }
 
   if (!reseller) {
-    return <ResellerLogin />;
+    return (
+      <ResellerNavProvider atDedicatedHost={atDedicatedHost}>
+        <ResellerLogin />
+      </ResellerNavProvider>
+    );
   }
 
   return (
-    <div className="fixed inset-0 z-40 flex min-w-0 flex-col overflow-hidden overscroll-none bg-[#080810] font-sans text-slate-200 selection:bg-cyan-500/30 lg:flex-row">
-      <div className="pointer-events-none absolute inset-0 z-0 overflow-hidden">
-        <div className="absolute right-[-10%] top-[-20%] h-[600px] w-[800px] rounded-full bg-cyan-500/10 blur-[120px]" />
-      </div>
-      <ResellerSidebar brandName={reseller.brandName} />
-      <main className="relative z-10 flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden overscroll-none">
-        <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden overscroll-none p-3 max-lg:px-0 max-lg:pb-0 max-lg:pt-0 sm:p-5 lg:overflow-x-hidden lg:overflow-y-auto lg:p-8 lg:pb-0">
-          <AdminShell>{children}</AdminShell>
+    <ResellerNavProvider atDedicatedHost={atDedicatedHost}>
+      <div className="fixed inset-0 z-40 flex min-w-0 flex-col overflow-hidden overscroll-none bg-[#080810] font-sans text-slate-200 selection:bg-cyan-500/30 lg:flex-row">
+        <div className="pointer-events-none absolute inset-0 z-0 overflow-hidden">
+          <div className="absolute right-[-10%] top-[-20%] h-[600px] w-[800px] rounded-full bg-cyan-500/10 blur-[120px]" />
         </div>
-      </main>
-    </div>
+        <ResellerSidebar brandName={reseller.brandName} />
+        <main className="relative z-10 flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden overscroll-none">
+          <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden overscroll-none p-3 max-lg:px-0 max-lg:pb-0 max-lg:pt-0 sm:p-5 lg:overflow-x-hidden lg:overflow-y-auto lg:p-8 lg:pb-0">
+            <AdminShell>{children}</AdminShell>
+          </div>
+        </main>
+      </div>
+    </ResellerNavProvider>
   );
 }

@@ -141,7 +141,7 @@ export async function authenticateReseller(request: NextRequest): Promise<
         {
           success: false,
           error:
-            "This partner sells FlowDoverz under our name. They sign in at /reseller and register clients there, not through this API.",
+            "This partner sells FlowDoverz under our name. They sign in at the reseller panel and register clients there, not through this API.",
         },
         { status: 403, headers },
       ),

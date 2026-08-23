@@ -1,4 +1,8 @@
-/** Multi-domain config: marketing site, client app, and admin panel on separate hosts. */
+/** Multi-domain config: marketing site, client app, admin, and reseller panel on separate hosts. */
+
+/** Dedicated official reseller panel. Not served on flow.doverz.com. */
+export const DEFAULT_RESELLER_HOST = "resellerflow.doverz.com";
+export const DEFAULT_RESELLER_URL = `https://${DEFAULT_RESELLER_HOST}`;
 
 function normalizeHost(host: string): string {
   return host.toLowerCase().split(":")[0];
@@ -46,6 +50,28 @@ export function getAdminHosts(): string[] {
   );
 }
 
+export function getResellerHosts(): string[] {
+  return mergeHosts(
+    parseHosts(process.env.RESELLER_HOSTS || process.env.RESELLER_HOST),
+    hostsFromUrl(process.env.NEXT_PUBLIC_RESELLER_URL || process.env.RESELLER_URL),
+    [DEFAULT_RESELLER_HOST],
+  );
+}
+
+export function isLocalRequestHost(host: string): boolean {
+  const normalized = normalizeHost(host);
+  return (
+    normalized === "localhost" ||
+    normalized === "127.0.0.1" ||
+    normalized === "0.0.0.0" ||
+    normalized.endsWith(".local")
+  );
+}
+
+export function isResellerPanelHost(host: string): boolean {
+  return getResellerHosts().includes(normalizeHost(host));
+}
+
 export function stripTrailingSlash(url: string): string {
   return url.replace(/\/$/, "");
 }
@@ -69,6 +95,21 @@ export function getAdminUrl(): string {
   const configured = process.env.NEXT_PUBLIC_ADMIN_URL || process.env.ADMIN_URL;
   if (configured) return stripTrailingSlash(configured);
   return `${getMarketingUrl()}/admin`;
+}
+
+/** Origin of the dedicated reseller panel (no /reseller path). */
+export function getResellerOrigin(): string {
+  const configured = process.env.NEXT_PUBLIC_RESELLER_URL || process.env.RESELLER_URL;
+  if (configured?.trim()) return stripTrailingSlash(configured);
+  return DEFAULT_RESELLER_URL;
+}
+
+/** Link to send resellers. Production uses the dedicated host; local stays on /reseller. */
+export function getResellerUrl(): string {
+  const configured = process.env.NEXT_PUBLIC_RESELLER_URL || process.env.RESELLER_URL;
+  if (configured?.trim()) return stripTrailingSlash(configured);
+  if (process.env.NODE_ENV === "production") return DEFAULT_RESELLER_URL;
+  return `${getAppUrl()}/reseller`;
 }
 
 /** Optional: `.flowdoverz.app` — only set if you need cookies shared across subdomains. */
@@ -100,8 +141,9 @@ export function sessionCookieOptions(maxAge: number) {
   };
 }
 
-export function classifyHost(host: string): "client" | "admin" | "unknown" {
+export function classifyHost(host: string): "client" | "admin" | "reseller" | "unknown" {
   const normalized = normalizeHost(host);
+  if (getResellerHosts().includes(normalized)) return "reseller";
   if (getAdminHosts().includes(normalized)) return "admin";
   if (getAppHosts().includes(normalized) || getMarketingHosts().includes(normalized)) {
     return "client";

@@ -6,6 +6,7 @@ import { Users, UserPlus, Timer, Wallet } from "lucide-react";
 import { AdminPageHeader } from "@/components/admin-page-header";
 import { AdminPageLayout } from "@/components/admin-page-layout";
 import { AdminLoadingState } from "@/components/admin-loading-state";
+import { useResellerNav } from "@/components/reseller-nav";
 
 type Stats = {
   seatsPurchased: number;
@@ -33,6 +34,7 @@ function daysLeft(iso: string | null | undefined) {
 }
 
 export default function ResellerDashboardPage() {
+  const nav = useResellerNav();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [brandName, setBrandName] = useState("");
@@ -104,7 +106,7 @@ export default function ResellerDashboardPage() {
       <div className="mt-6 rounded-2xl border border-white/10 bg-[#0F172A]/80 p-5">
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
           <h2 className="text-lg font-black text-white">Recent clients</h2>
-          <Link href="/reseller/clients" className="shrink-0 text-sm font-semibold text-cyan-400 hover:text-cyan-300">
+          <Link href={nav.clients} className="shrink-0 text-sm font-semibold text-cyan-400 hover:text-cyan-300">
             Open clients
           </Link>
         </div>
