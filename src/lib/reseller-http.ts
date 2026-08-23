@@ -110,7 +110,8 @@ export async function authenticateReseller(request: NextRequest): Promise<
     };
   }
 
-  const allowedOrigins = originsForReseller(reseller);
+  const found = reseller;
+  const allowedOrigins = originsForReseller(found);
   const headers = corsHeaders(request, allowedOrigins);
   const site = websiteFromResellerRequest(request);
   const expected =
@@ -119,7 +120,7 @@ export async function authenticateReseller(request: NextRequest): Promise<
 
   async function recordUse(blocked: boolean) {
     await logResellerApiUse({
-      resellerId: reseller.id,
+      resellerId: found.id,
       request,
       blocked,
       expected: blocked ? false : expected,
