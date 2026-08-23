@@ -18,7 +18,7 @@ type AdminDataTableProps<T> = {
   rowKey: (row: T) => string;
   emptyState: ReactNode;
   renderMobileActions?: (row: T) => ReactNode;
-  /** Optional mobile-only card (< md). Desktop/tablet card list unchanged. */
+  /** Optional phone/tablet card (below xl table). Generic cards used from lg until xl when this is set. */
   renderMobileCard?: (row: T) => ReactNode;
   headerActions?: ReactNode;
 };
@@ -57,7 +57,7 @@ export function AdminDataTable<T>({
           <div className="flex w-full max-w-full min-w-0 flex-col gap-3 pb-4 xl:hidden">
             {data.map((row) =>
               renderMobileCard ? (
-                <div key={rowKey(row)} className="w-full min-w-0 md:hidden">
+                <div key={rowKey(row)} className="w-full min-w-0 lg:hidden">
                   {renderMobileCard(row)}
                 </div>
               ) : null,
@@ -65,7 +65,7 @@ export function AdminDataTable<T>({
             {data.map((row) => (
               <article
                 key={renderMobileCard ? `${rowKey(row)}-md` : rowKey(row)}
-                className={`w-full max-w-full min-w-0 overflow-hidden rounded-xl border border-white/10 bg-[#0F172A]/80 p-3 shadow-lg backdrop-blur-xl sm:p-4 ${renderMobileCard ? "hidden md:block" : ""}`}
+                className={`w-full max-w-full min-w-0 overflow-hidden rounded-xl border border-white/10 bg-[#0F172A]/80 p-3 shadow-lg backdrop-blur-xl sm:p-4 ${renderMobileCard ? "hidden lg:block" : ""}`}
               >
                 <dl className="space-y-2.5 sm:space-y-3">
                   {mobileColumns.map((col) => (
@@ -73,14 +73,14 @@ export function AdminDataTable<T>({
                       <dt className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
                         {col.mobileLabel || col.header}
                       </dt>
-                      <dd className="mt-1 overflow-x-auto text-sm text-slate-200 [-ms-overflow-style:none] [scrollbar-width:none] max-md:[&_span]:max-w-none max-md:[&_span]:whitespace-normal max-md:[&_span]:break-words [&::-webkit-scrollbar]:hidden">
+                      <dd className="mt-1 overflow-x-auto text-sm text-slate-200 [-ms-overflow-style:none] [scrollbar-width:none] max-lg:[&_span]:max-w-none max-lg:[&_span]:whitespace-normal max-lg:[&_span]:break-words [&::-webkit-scrollbar]:hidden">
                         {col.render(row)}
                       </dd>
                     </div>
                   ))}
                 </dl>
                 {renderMobileActions && (
-                  <div className="mt-3 flex flex-wrap gap-2 border-t border-white/10 pt-3 sm:mt-4 sm:pt-4 md:flex-nowrap md:overflow-x-auto">
+                  <div className="mt-3 flex flex-wrap gap-2 border-t border-white/10 pt-3 sm:mt-4 sm:pt-4">
                     {renderMobileActions(row)}
                   </div>
                 )}

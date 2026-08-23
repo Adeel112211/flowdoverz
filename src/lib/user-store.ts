@@ -22,6 +22,8 @@ export type StoredUser = {
   emailVerificationExpiresAt?: string | null;
   emailVerificationSentAt?: string | null;
   signupIpHash?: string | null;
+  resellerId?: string;
+  assignedSlot?: string;
 };
 
 export function normalizeEmail(email: string) {
@@ -364,6 +366,7 @@ export async function registerClientUser(
   name: string,
   verificationCode: string,
   signupIp?: string,
+  partnerCode?: string,
 ): Promise<
   | { ok: true; user: { email: string; name: string; sid: string }; trialGranted: boolean }
   | { ok: false; error: string }
@@ -430,10 +433,32 @@ export async function registerClientUser(
   const settings = await getSystemSettings();
   const { getTrialDurationMs } = await import("./admin-settings");
 
-  const trialGranted = await isTrialEligibleForIp(signupIp);
-  const trialExpiresAt = trialGranted
-    ? new Date(now.getTime() + getTrialDurationMs(settings)).toISOString()
-    : null;
+  const partner = String(partnerCode || "").trim();
+  let trialGranted = false;
+  let trialExpiresAt: string | null = null;
+  let subscriptionPlan = "none";
+  let subscriptionExpiresAt: string | null = null;
+  let resellerId: string | undefined;
+  let assignedSlot: string | undefined;
+
+  if (partner) {
+    const { resolveOfficialSignup, subscriptionExpiryFromNow } = await import("./reseller-store");
+    const resolved = await resolveOfficialSignup(partner);
+    if (!resolved.ok) {
+      return { ok: false, error: resolved.error };
+    }
+    trialGranted = false;
+    trialExpiresAt = now.toISOString();
+    subscriptionPlan = "solo";
+    subscriptionExpiresAt = subscriptionExpiryFromNow(resolved.reseller.seatDays);
+    resellerId = resolved.reseller.id;
+    assignedSlot = resolved.slot;
+  } else {
+    trialGranted = await isTrialEligibleForIp(signupIp);
+    trialExpiresAt = trialGranted
+      ? new Date(now.getTime() + getTrialDurationMs(settings)).toISOString()
+      : null;
+  }
 
   const newUser: StoredUser = {
     email: emailCheck.email,
@@ -443,17 +468,19 @@ export async function registerClientUser(
     passwordHash: hashPassword(password, salt),
     createdAt: now.toISOString(),
     trialExpiresAt,
-    subscriptionPlan: "none",
-    subscriptionExpiresAt: null,
+    subscriptionPlan,
+    subscriptionExpiresAt,
     emailVerified: true,
     signupIpHash: signupIp ? hashSignupIp(signupIp) : null,
+    ...(resellerId ? { resellerId } : {}),
+    ...(assignedSlot ? { assignedSlot } : {}),
   };
 
   await usersRef.doc(emailCheck.email).set(newUser);
   const { touchLive } = await import("./live-tick");
   void touchLive({ topic: "user", action: "created", id: emailCheck.email, userId: emailCheck.email });
   const { recordUserCreated } = await import("./admin-metrics");
-  void recordUserCreated(now, false);
+  void recordUserCreated(now, Boolean(partner));
 
   if (signupIp) {
     await recordSignupIpUsage(signupIp, emailCheck.email);
@@ -531,6 +558,8 @@ export async function createUserByAdmin(input: {
   subscriptionPlan: string;
   trialExpiresAt?: string;
   subscriptionExpiresAt?: string;
+  resellerId?: string;
+  assignedSlot?: string;
 }): Promise<{ ok: true } | { ok: false; error: string }> {
   const db = getDb();
   if (!db) {
@@ -588,6 +617,8 @@ export async function createUserByAdmin(input: {
     subscriptionPlan,
     subscriptionExpiresAt,
     emailVerified: true,
+    ...(input.resellerId ? { resellerId: input.resellerId } : {}),
+    ...(input.assignedSlot ? { assignedSlot: input.assignedSlot } : {}),
   };
 
   await usersRef.doc(normalized).set(newUser);

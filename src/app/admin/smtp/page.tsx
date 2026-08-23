@@ -280,7 +280,7 @@ export default function SmtpPage() {
               const list = id === "client" ? clientTemplates : id === "owner" ? ownerTemplates : [];
               if (list[0]) setActiveTemplate(list[0].id);
             }}
-            className={`inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-bold transition-colors ${
+            className={`inline-flex min-h-11 items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-bold transition-colors ${
               tab === id
                 ? "bg-cyan-500 text-slate-950"
                 : "border border-white/10 bg-[#0F172A] text-slate-400 hover:border-cyan-500/30 hover:text-slate-200"

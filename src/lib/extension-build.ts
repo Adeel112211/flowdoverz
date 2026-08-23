@@ -191,16 +191,61 @@ export function buildExtensionProof(
  * Validate sync integrity headers.
  * Requires matching file hash AND challenge proof of payload + live function sources.
  */
-export async function validateExtensionIntegrityHeaders(headers: {
-  integrity?: string | null;
-  challenge?: string | null;
-  proof?: string | null;
-}): Promise<{ ok: true } | { ok: false; code: "EXTENSION_TAMPERED"; message: string }> {
+export async function validateExtensionIntegrityHeaders(
+  headers: {
+    integrity?: string | null;
+    challenge?: string | null;
+    proof?: string | null;
+  },
+  options?: { email?: string | null },
+): Promise<{ ok: true } | { ok: false; code: "EXTENSION_TAMPERED"; message: string }> {
   const fail = {
     ok: false as const,
     code: "EXTENSION_TAMPERED" as const,
     message: EXTENSION_TAMPER_MESSAGE,
   };
+
+  const incomingHash = String(headers.integrity || "")
+    .trim()
+    .toLowerCase();
+  const incomingProof = String(headers.proof || "")
+    .trim()
+    .toLowerCase();
+  const parsed = parseChallenge(headers.challenge);
+
+  if (!incomingHash || incomingHash.length < 32 || incomingHash === "placeholder") {
+    return fail;
+  }
+  if (!parsed || !incomingProof || incomingProof.length < 32) {
+    return fail;
+  }
+
+  const email = String(options?.email || "").trim();
+  if (email) {
+    try {
+      const { getBrandedExtensionForUserEmail } = await import("@/lib/extension-reseller-pack");
+      const pack = await getBrandedExtensionForUserEmail(email);
+      if (pack?.profile?.hash && pack.profile.payload && pack.profile.attestation) {
+        const packHash = pack.profile.hash.toLowerCase();
+        const attestation = pack.profile.attestation;
+        if (
+          incomingHash === packHash &&
+          attestation.enforce.length >= 80 &&
+          attestation.isBlockedCookieExtension.length >= 80 &&
+          attestation.computeLivePayload.length >= 80 &&
+          attestation.proveForSync.length >= 80
+        ) {
+          const expectedProof = buildExtensionProof(parsed.nonce, pack.profile.payload, attestation);
+          if (safeEqualHex(incomingProof, expectedProof)) {
+            return { ok: true };
+          }
+        }
+        return fail;
+      }
+    } catch {
+      // fall through to official profile
+    }
+  }
 
   const profile = await resolveOfficialProfile();
   const expectedHash = profile.hash.toLowerCase();
@@ -219,20 +264,6 @@ export async function validateExtensionIntegrityHeaders(headers: {
     return fail;
   }
 
-  const incomingHash = String(headers.integrity || "")
-    .trim()
-    .toLowerCase();
-  const incomingProof = String(headers.proof || "")
-    .trim()
-    .toLowerCase();
-  const parsed = parseChallenge(headers.challenge);
-
-  if (!incomingHash || incomingHash.length < 32 || incomingHash === "placeholder") {
-    return fail;
-  }
-  if (!parsed || !incomingProof || incomingProof.length < 32) {
-    return fail;
-  }
   let activeHash = expectedHash;
   try {
     const { getExtensionConfig } = await import("@/lib/extension-store");

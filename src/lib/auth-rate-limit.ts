@@ -4,7 +4,8 @@ import { clientIpFromRequest } from "./signup-security";
 export type AuthRateLimitScope =
   | "admin_login"
   | "admin_reset_confirm"
-  | "client_login";
+  | "client_login"
+  | "reseller_login";
 
 type RateLimitResult =
   | { ok: true }
@@ -17,6 +18,7 @@ const LIMITS: Record<
   admin_login: { max: 8, windowMs: 15 * 60 * 1000 },
   admin_reset_confirm: { max: 8, windowMs: 15 * 60 * 1000 },
   client_login: { max: 30, windowMs: 60 * 60 * 1000 },
+  reseller_login: { max: 12, windowMs: 15 * 60 * 1000 },
 };
 
 const memoryWindows = new Map<string, { windowStart: number; count: number }>();

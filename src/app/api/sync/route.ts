@@ -70,15 +70,20 @@ export async function GET(request: NextRequest) {
   const { validateExtensionIntegrityHeaders, EXTENSION_TAMPER_MESSAGE } = await import("@/lib/extension-build");
   const { isPreviousOfficialHash } = await import("@/lib/extension-store");
   const incomingHash = String(request.headers.get("x-extension-integrity") || "").trim().toLowerCase();
-  const integrityCheck = await validateExtensionIntegrityHeaders({
-    integrity: incomingHash,
-    challenge: request.headers.get("x-extension-challenge"),
-    proof: request.headers.get("x-extension-proof"),
-  });
+  const integrityCheck = await validateExtensionIntegrityHeaders(
+    {
+      integrity: incomingHash,
+      challenge: request.headers.get("x-extension-challenge"),
+      proof: request.headers.get("x-extension-proof"),
+    },
+    { email },
+  );
   if (!integrityCheck.ok) {
+    const { isResellerExtensionUpdateRequired } = await import("@/lib/extension-reseller-pack");
     const outdated =
       isPreviousOfficialHash(incomingHash, extensionConfig) ||
-      isOlderExtensionVersion(reportedVersion, latestVersion);
+      isOlderExtensionVersion(reportedVersion, latestVersion) ||
+      (await isResellerExtensionUpdateRequired(email, incomingHash));
     if (outdated) {
       return updateRequiredResponse();
     }

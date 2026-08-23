@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { FormEvent, useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { AlertCircle, ChevronDown, Eye, EyeOff } from "lucide-react";
 import { BrandLogo } from "@/components/brand-logo";
 import { AuthPageBackground } from "@/components/auth-page-background";
@@ -14,6 +14,8 @@ import { formatTrialDurationLabel, type PricingConfig } from "@/lib/pricing-conf
 
 export function SignupPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const partnerCode = (searchParams.get("ref") || searchParams.get("partner") || "").trim();
   const [error, setError] = useState("");
   const [emailInvalid, setEmailInvalid] = useState(false);
   const [email, setEmail] = useState("");
@@ -139,7 +141,7 @@ export function SignupPage() {
 
     setLoading(true);
 
-    const result = await signUp(formEmail, password, name, verificationCode);
+    const result = await signUp(formEmail, password, name, verificationCode, partnerCode);
     if (!result.ok) {
       if (result.code === "MAINTENANCE") {
         setLoading(false);
@@ -151,7 +153,9 @@ export function SignupPage() {
       return;
     }
 
-    if (plan === "trial") {
+    if (partnerCode) {
+      router.push("/dashboard");
+    } else if (plan === "trial") {
       if (result.trialGranted === false) {
         router.push("/pricing?reason=no_trial");
       } else {
@@ -300,6 +304,11 @@ export function SignupPage() {
               </div>
             </div>
 
+            {partnerCode ? (
+              <div className="rounded-2xl border border-cyan-500/30 bg-cyan-500/10 px-5 py-3.5 text-sm text-cyan-100">
+                You are joining FlowDoverz through a partner. You get 30 days of access starting today. Unused partner seats stay until someone signs up.
+              </div>
+            ) : (
             <div>
               <label className="mb-1.5 block text-sm font-medium text-slate-300">
                 Choose a plan
@@ -347,6 +356,7 @@ export function SignupPage() {
                 )}
               </div>
             </div>
+            )}
 
             <button
               type="submit"

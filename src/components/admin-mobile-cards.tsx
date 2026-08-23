@@ -1,6 +1,6 @@
 "use client";
 
-import { CreditCard, Eye, ImageIcon, KeyRound, Pencil, Trash2 } from "lucide-react";
+import { CirclePlus, Copy, CreditCard, Eye, ImageIcon, KeyRound, Link2, Pause, Pencil, Play, Puzzle, Trash2, Users } from "lucide-react";
 import type { ReactNode } from "react";
 import {
   AdminMobileActionButton,
@@ -32,12 +32,14 @@ type ClientRow = {
 
 export function ClientMobileCard({
   client,
+  resellerName,
   onEdit,
   onPassword,
   onPayments,
   onDelete,
 }: {
   client: ClientRow;
+  resellerName?: string;
   onEdit: () => void;
   onPassword: () => void;
   onPayments: () => void;
@@ -51,7 +53,12 @@ export function ClientMobileCard({
       <AdminMobileCardBody href={profileHref}>
         <AdminMobileCardHeader
           title={<span className="text-cyan-400">{client.name || "N/A"}</span>}
-          subtitle={client.email}
+          subtitle={
+            <span>
+              {client.email}
+              {resellerName ? <span className="mt-0.5 block text-[11px] font-semibold text-emerald-400">{resellerName}</span> : null}
+            </span>
+          }
           badge={<AdminMobilePlanBadge plan={plan} />}
         />
         <AdminMobileMetaGrid cols={3}>
@@ -377,6 +384,123 @@ export function SyncMobileCard({
           <AdminMobileMetaTile label="Extension" value={client.extensionVersion || "—"} />
         </AdminMobileMetaGrid>
       </AdminMobileCardBody>
+    </AdminMobileCardShell>
+  );
+}
+
+type ResellerRow = {
+  id: string;
+  brandName: string;
+  contactEmail: string;
+  websiteUrl: string;
+  status: "active" | "paused" | "disabled";
+  assignedSlots: string[];
+  userCount: number;
+  maxUsers: number;
+  seatsPurchased?: number;
+  remainingSeats?: number;
+  kind?: "white_label" | "official";
+  signupUrl?: string;
+  panelUrl?: string;
+};
+
+function ResellerStatusBadge({ status }: { status: ResellerRow["status"] }) {
+  const styles = {
+    active: "bg-emerald-500/10 text-emerald-400 border-emerald-500/20",
+    paused: "bg-amber-500/10 text-amber-400 border-amber-500/20",
+    disabled: "bg-slate-500/10 text-slate-400 border-slate-500/20",
+  };
+  return (
+    <span className={`inline-flex rounded-full border px-2.5 py-1 text-[10px] font-semibold capitalize ${styles[status]}`}>
+      {status}
+    </span>
+  );
+}
+
+export function ResellerMobileCard({
+  reseller,
+  onEdit,
+  onKit,
+  onUsers,
+  onAddSeats,
+  onRotate,
+  onTogglePause,
+  onDelete,
+  onCopySignup,
+  onBuildExtension,
+}: {
+  reseller: ResellerRow;
+  onEdit: () => void;
+  onKit: () => void;
+  onUsers: () => void;
+  onAddSeats: () => void;
+  onRotate: () => void;
+  onTogglePause: () => void;
+  onDelete: () => void;
+  onCopySignup?: () => void;
+  onBuildExtension?: () => void;
+}) {
+  const paused = reseller.status === "paused";
+  return (
+    <AdminMobileCardShell>
+      <AdminMobileCardBody>
+        <AdminMobileCardHeader
+          title={<span className="text-cyan-400">{reseller.brandName}</span>}
+          subtitle={reseller.contactEmail}
+          badge={<ResellerStatusBadge status={reseller.status} />}
+        />
+        <AdminMobileMetaGrid cols={2}>
+          <AdminMobileMetaTile label="Website" value={reseller.websiteUrl || "—"} />
+          <AdminMobileMetaTile
+            label="Slots"
+            value={reseller.assignedSlots.join(", ") || "None"}
+            valueClassName="font-mono text-[11px]"
+          />
+          <AdminMobileMetaTile
+            label="Seats"
+            value={`${reseller.userCount} / ${reseller.seatsPurchased || reseller.maxUsers || 0}`}
+          />
+          <AdminMobileMetaTile
+            label="Left"
+            value={String(reseller.remainingSeats ?? Math.max(0, (reseller.seatsPurchased || reseller.maxUsers || 0) - reseller.userCount))}
+            valueClassName={(reseller.remainingSeats ?? 0) > 0 ? "text-emerald-400" : "text-amber-400"}
+          />
+        </AdminMobileMetaGrid>
+      </AdminMobileCardBody>
+      <AdminMobileCardFooter>
+        <AdminMobileActionGrid>
+          <AdminMobileActionButton label="Edit reseller" shortLabel="Edit" icon={Pencil} onClick={onEdit} bgClass="bg-cyan-500/10" colorClass="text-cyan-400" />
+          {reseller.kind === "official" ? (
+            <AdminMobileActionButton label="Copy reseller panel link" shortLabel="Panel" icon={Link2} onClick={onCopySignup || onKit} bgClass="bg-emerald-500/10" colorClass="text-emerald-400" />
+          ) : (
+            <AdminMobileActionButton label="Copy integration kit" shortLabel="Kit" icon={Copy} onClick={onKit} bgClass="bg-emerald-500/10" colorClass="text-emerald-400" />
+          )}
+          <AdminMobileActionButton label="View users" shortLabel="Users" icon={Users} onClick={onUsers} bgClass="bg-violet-500/10" colorClass="text-violet-400" />
+          <AdminMobileActionButton label="Add paid seats" shortLabel="Seats" icon={CirclePlus} onClick={onAddSeats} bgClass="bg-emerald-500/10" colorClass="text-emerald-300" />
+          {reseller.kind === "official" ? null : onBuildExtension ? (
+            <AdminMobileActionButton
+              label="Build branded extension"
+              shortLabel="Ext"
+              icon={Puzzle}
+              onClick={onBuildExtension}
+              bgClass="bg-fuchsia-500/10"
+              colorClass="text-fuchsia-300"
+            />
+          ) : null}
+          {reseller.kind === "official" ? null : (
+            <AdminMobileActionButton label="Rotate API key" shortLabel="Key" icon={KeyRound} onClick={onRotate} bgClass="bg-amber-500/10" colorClass="text-amber-400" />
+          )}
+          <AdminMobileActionButton
+            label={paused ? "Activate reseller" : "Pause reseller"}
+            shortLabel={paused ? "Activate" : "Pause"}
+            icon={paused ? Play : Pause}
+            onClick={onTogglePause}
+            bgClass="bg-slate-500/10"
+            colorClass="text-slate-300"
+          />
+          <AdminMobileActionButton label="Delete reseller" shortLabel="Delete" icon={Trash2} onClick={onDelete} bgClass="bg-rose-500/10" colorClass="text-rose-400" />
+        </AdminMobileActionGrid>
+      </AdminMobileCardFooter>
     </AdminMobileCardShell>
   );
 }

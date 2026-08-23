@@ -51,6 +51,8 @@ export function DashboardPage() {
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [extensionDownloadUrl, setExtensionDownloadUrl] = useState<string | null>(null);
   const [extensionVersion, setExtensionVersion] = useState<string | null>(null);
+  const [extensionName, setExtensionName] = useState<string | null>(null);
+  const [extensionBranded, setExtensionBranded] = useState(false);
   const [showInstallGuide, setShowInstallGuide] = useState(false);
   const [installSteps, setInstallSteps] = useState<string[]>([]);
   const [mobileInstallSteps, setMobileInstallSteps] = useState<string[]>([]);
@@ -126,6 +128,8 @@ export function DashboardPage() {
         if (data.success) {
           setExtensionDownloadUrl(data.extension.downloadUrl);
           setExtensionVersion(data.extension.activeVersion);
+          setExtensionName(data.extension.name || null);
+          setExtensionBranded(Boolean(data.extension.branded));
           setInstallSteps(data.extension.installSteps || []);
           setMobileInstallSteps(data.extension.mobileInstallSteps || []);
         }
@@ -492,7 +496,7 @@ export function DashboardPage() {
               <h3 className="font-bold text-cyan-100 text-lg mb-1">Extension update required</h3>
               <p className="text-cyan-100/85 text-sm">{updateExtensionMessage}</p>
               <p className="mt-2 text-cyan-200/70 text-xs">
-                Remove the old FlowDoverz extension, then install the latest ZIP from this page. Google Flow will not work until you do.
+                Remove the old {extensionBranded && extensionName ? extensionName : "FlowDoverz"} extension, then install the latest ZIP from this page. Google Flow will not work until you do.
               </p>
             </div>
             <button
@@ -560,7 +564,7 @@ export function DashboardPage() {
               Launch Google Flow AI
             </h2>
             <p className="text-slate-400 text-sm sm:text-base max-w-xl">
-              Install the official FlowDoverz extension and keep it connected. Then open Flow — we keep your session signed in automatically.
+              Install the {extensionBranded && extensionName ? extensionName : "official FlowDoverz"} extension and keep it connected. Then open Flow — we keep your session signed in automatically.
             </p>
             <a
               href="https://labs.google/fx/tools/flow"

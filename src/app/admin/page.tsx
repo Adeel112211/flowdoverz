@@ -340,12 +340,12 @@ export default function AdminDashboard() {
     >
       <div className="flex w-full min-w-0 max-w-full flex-col gap-4 overflow-visible lg:gap-5">
         <div className="flex flex-col gap-3 overflow-visible pt-1 sm:gap-4 sm:pt-2">
-          <div className="grid grid-cols-1 gap-3 overflow-visible sm:grid-cols-3 sm:gap-4">
+          <div className="grid grid-cols-1 gap-3 overflow-visible sm:grid-cols-2 lg:grid-cols-3 sm:gap-4">
             <MetricCard title="Total Users" value={metrics.totalUsers} icon={Users} color="text-emerald-400" bg="bg-emerald-400/10" />
             <MetricCard title="Active Plan" value={metrics.activeSubscriptions} icon={Activity} color="text-cyan-400" bg="bg-cyan-400/10" />
             <MetricCard title="Total Revenue" value={formatPkrDisplay(metrics.totalRevenue)} icon={Banknote} color="text-purple-400" bg="bg-purple-400/10" />
           </div>
-          <div className="grid grid-cols-2 gap-3 overflow-visible sm:grid-cols-4 sm:gap-4">
+          <div className="grid grid-cols-2 gap-3 overflow-visible lg:grid-cols-4 sm:gap-4">
             <MetricCard title="Pending" value={metrics.pendingApprovals} icon={Clock} color="text-amber-400" bg="bg-amber-400/10" />
             <MetricCard title="Signups Today" value={metrics.signupsToday ?? 0} icon={UserPlus} color="text-teal-400" bg="bg-teal-400/10" />
             <MetricCard title="Expiring Week" value={metrics.expiringThisWeek ?? 0} icon={AlertTriangle} color="text-rose-400" bg="bg-rose-400/10" />
@@ -509,7 +509,7 @@ function MetricCard({
       <div className="absolute -top-20 -right-20 w-48 h-48 bg-gradient-to-br from-white/10 to-transparent rounded-full blur-2xl transition-transform group-hover:scale-150 duration-700" />
 
       {/* Mobile: compact grid — icon beside title/value, no wide empty gap */}
-      <div className="relative z-10 grid grid-cols-[minmax(0,1fr)_auto] grid-rows-[auto_auto] gap-x-2.5 gap-y-1 sm:hidden">
+      <div className="relative z-10 grid grid-cols-[minmax(0,1fr)_auto] grid-rows-[auto_auto] gap-x-2.5 gap-y-1 lg:hidden">
         <p className="col-start-1 row-start-1 text-[10px] font-bold uppercase tracking-wider text-slate-400 leading-tight">
           {title}
         </p>
@@ -522,7 +522,7 @@ function MetricCard({
       </div>
 
       {/* sm+: original layout */}
-      <div className="relative z-10 hidden min-h-[102px] flex-col justify-between sm:flex">
+      <div className="relative z-10 hidden min-h-[102px] flex-col justify-between lg:flex">
         <div className="flex items-start justify-between gap-3">
           <p className="text-xs font-bold uppercase tracking-wider text-slate-400 sm:text-sm">{title}</p>
           <div className={`shrink-0 rounded-xl p-2 shadow-inner ring-1 ring-white/10 sm:p-3 ${bg}`}>
@@ -531,7 +531,7 @@ function MetricCard({
         </div>
         <div className="mt-4 min-w-0 sm:mt-6">
           {typeof value === "string" || typeof value === "number" ? (
-            <p className="text-3xl font-black tracking-tight text-white drop-shadow-md tabular-nums sm:text-4xl lg:text-5xl">
+            <p className="text-3xl font-black tracking-tight text-white drop-shadow-md tabular-nums lg:text-4xl xl:text-5xl">
               {value}
             </p>
           ) : (

@@ -17,7 +17,14 @@ export type ActivityAction =
   | "settings_updated"
   | "email_sent"
   | "cron_run"
-  | "maintenance_updated";
+  | "maintenance_updated"
+  | "reseller_created"
+  | "reseller_updated"
+  | "reseller_deleted"
+  | "reseller_key_rotated"
+  | "reseller_seats_added"
+  | "reseller_user_created"
+  | "reseller_extension_generated";
 
 export async function logAdminActivity(input: {
   action: ActivityAction;

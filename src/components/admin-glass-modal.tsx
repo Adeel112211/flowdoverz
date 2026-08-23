@@ -91,7 +91,7 @@ export function AdminPanel({
     <div
       // shrink-0: overflow-hidden flex children otherwise get min-height:0 and
       // collapse to the viewport, clipping content so the page cannot scroll.
-      className={`shrink-0 overflow-hidden rounded-2xl border border-white/10 bg-[#0F172A] p-6 sm:p-8 max-md:p-4 ${className}`}
+      className={`shrink-0 overflow-hidden rounded-2xl border border-white/10 bg-[#0F172A] p-6 sm:p-8 max-lg:p-4 ${className}`}
     >
       {children}
     </div>
@@ -147,7 +147,7 @@ export function AdminGlassModal({
 
       {/* Shell owns radius + border so corners clip cleanly */}
       <div
-        className={`relative z-10 flex w-full min-h-0 flex-col overflow-hidden border border-white/10 bg-[#06080d] ${WIDTH_CLASS[maxWidth]} max-h-[min(90dvh,100%)] rounded-t-3xl rounded-b-none sm:rounded-3xl`}
+        className={`relative z-10 flex w-full min-h-0 min-w-0 flex-col overflow-hidden border border-white/10 bg-[#06080d] ${WIDTH_CLASS[maxWidth]} max-h-[min(92dvh,100%)] rounded-t-3xl rounded-b-none sm:rounded-3xl`}
       >
         <div
           className={`min-h-0 flex-1 overscroll-contain [-webkit-overflow-scrolling:touch] touch-pan-y ${

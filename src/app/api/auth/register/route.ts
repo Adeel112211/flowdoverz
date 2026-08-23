@@ -28,7 +28,7 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  let body: { email?: string; password?: string; name?: string; verificationCode?: string };
+  let body: { email?: string; password?: string; name?: string; verificationCode?: string; partnerCode?: string; ref?: string };
   try {
     body = await request.json();
   } catch {
@@ -44,6 +44,7 @@ export async function POST(request: NextRequest) {
     String(body.name || ""),
     String(body.verificationCode || ""),
     ip,
+    String(body.partnerCode || body.ref || ""),
   );
 
   if (!result.ok) {
@@ -56,9 +57,10 @@ export async function POST(request: NextRequest) {
   const response = NextResponse.json({
     success: true,
     trialGranted: result.trialGranted,
-    notice: result.trialGranted
-      ? undefined
-      : "A free trial was already used on this network. Upgrade to Solo or Team to activate FlowDoverz.",
+    notice:
+      result.trialGranted || Boolean(String(body.partnerCode || body.ref || "").trim())
+        ? undefined
+        : "A free trial was already used on this network. Upgrade to Solo or Team to activate FlowDoverz.",
     user: {
       email: result.user.email,
       name: result.user.name,

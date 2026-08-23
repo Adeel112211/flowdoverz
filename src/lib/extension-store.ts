@@ -200,6 +200,9 @@ export async function uploadExtensionRelease(input: {
   clearExtensionCaches();
   invalidateOfficialIntegrityCache();
   await syncMinExtensionVersion(version);
+  void import("./extension-reseller-pack")
+    .then((mod) => mod.rebuildResellerExtensionPacks())
+    .catch((error) => console.warn("Branded reseller extension rebuild failed:", error));
   return next;
 }
 
@@ -229,6 +232,9 @@ export async function setActiveExtensionRelease(version: string) {
   clearExtensionCaches();
   invalidateOfficialIntegrityCache();
   await syncMinExtensionVersion(safe);
+  void import("./extension-reseller-pack")
+    .then((mod) => mod.rebuildResellerExtensionPacks())
+    .catch((error) => console.warn("Branded reseller extension rebuild failed:", error));
   return next;
 }
 

@@ -61,7 +61,7 @@ export function AdminMobileMetaGrid({
   children: ReactNode;
 }) {
   const colClass =
-    cols === 2 ? "grid-cols-2" : cols === 4 ? "grid-cols-2 sm:grid-cols-4" : "grid-cols-3";
+    cols === 2 ? "grid-cols-2" : cols === 4 ? "grid-cols-2 sm:grid-cols-4" : "grid-cols-2 min-[400px]:grid-cols-3";
   return <div className={`mt-3 grid ${colClass} gap-2`}>{children}</div>;
 }
 

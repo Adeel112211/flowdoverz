@@ -121,6 +121,7 @@ export async function signUp(
   password: string,
   name: string,
   verificationCode: string,
+  partnerCode?: string,
 ): Promise<AuthResult> {
   if (password.length < 8) {
     return { ok: false, error: "Password must be at least 8 characters." };
@@ -134,6 +135,7 @@ export async function signUp(
     password,
     name: name.trim(),
     verificationCode: verificationCode.replace(/\D/g, ""),
+    ...(partnerCode ? { partnerCode: partnerCode.trim() } : {}),
   });
 }
 

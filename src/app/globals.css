@@ -38,8 +38,15 @@ html.admin-app-active body {
 }
 
 .admin-app-active {
-  /* admin header logo row + padding + notch inset */
+  /* header logo row + padding + notch inset (phones + tablets in hamburger mode) */
   --admin-mobile-topbar-height: calc(4.25rem + env(safe-area-inset-top, 0px));
+}
+
+@media (max-width: 1023px) {
+  .admin-app-active .admin-panel-scroll {
+    padding-left: max(0.75rem, env(safe-area-inset-left, 0px));
+    padding-right: max(0.75rem, env(safe-area-inset-right, 0px));
+  }
 }
 
 .admin-panel-scroll {

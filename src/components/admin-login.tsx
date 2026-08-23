@@ -274,7 +274,7 @@ export function AdminLogin() {
     "w-full rounded-xl border border-white/10 bg-black/40 px-4 py-3 text-sm text-white placeholder-slate-500 transition-all duration-300 focus:border-cyan-400 focus:bg-black/60 focus:shadow-[0_0_15px_rgba(34,211,238,0.2)] focus:outline-none";
 
   const digitInputClass =
-    "h-14 w-12 sm:h-16 sm:w-14 rounded-2xl border border-white/10 bg-black/40 text-center text-2xl font-black text-white outline-none transition-all focus:border-cyan-400 focus:shadow-[0_0_15px_rgba(34,211,238,0.25)] disabled:opacity-60";
+    "h-12 w-9 min-[380px]:h-14 min-[380px]:w-11 sm:h-16 sm:w-14 rounded-2xl border border-white/10 bg-black/40 text-center text-xl min-[380px]:text-2xl font-black text-white outline-none transition-all focus:border-cyan-400 focus:shadow-[0_0_15px_rgba(34,211,238,0.25)] disabled:opacity-60";
 
   const renderDigitRow = (
     digits: string[],
@@ -283,7 +283,7 @@ export function AdminLogin() {
     opts?: { disabled?: boolean; autoFocusFirst?: boolean; label?: string },
   ) => (
     <div
-      className="flex justify-center gap-2.5 sm:gap-3"
+      className="flex justify-center gap-1.5 min-[380px]:gap-2.5 sm:gap-3"
       onPaste={(e) => handleDigitPaste(e, setter, refs)}
       role="group"
       aria-label={opts?.label || "PIN"}

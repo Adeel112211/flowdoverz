@@ -7,6 +7,7 @@ export const ACTIVITY_GROUPS = [
   "clients",
   "payments",
   "cookies",
+  "resellers",
   "admin",
 ] as const;
 
@@ -17,6 +18,7 @@ const GROUP_LABELS: Record<ActivityGroup, string> = {
   clients: "Clients",
   payments: "Payments",
   cookies: "Cookies",
+  resellers: "Resellers",
   admin: "Admin",
 };
 
@@ -31,6 +33,15 @@ export const GROUP_ACTIONS: Record<ActivityGroup, readonly string[]> = {
   ],
   payments: ["payment_approved", "payment_rejected", "payment_refunded"],
   cookies: ["cookies_saved", "cookies_cleared"],
+  resellers: [
+    "reseller_created",
+    "reseller_updated",
+    "reseller_deleted",
+    "reseller_key_rotated",
+    "reseller_seats_added",
+    "reseller_user_created",
+    "reseller_extension_generated",
+  ],
   admin: ["admin_login", "admin_logout", "password_changed", "maintenance_updated"],
 };
 
@@ -50,6 +61,13 @@ export function formatActivityActionShort(action: string) {
     payment_refunded: "Refunded",
     cookies_saved: "Saved",
     cookies_cleared: "Cleared",
+    reseller_created: "Created",
+    reseller_updated: "Updated",
+    reseller_deleted: "Deleted",
+    reseller_key_rotated: "Key rotated",
+    reseller_seats_added: "Seats added",
+    reseller_user_created: "User created",
+    reseller_extension_generated: "Extension built",
     admin_login: "Login",
     admin_logout: "Logout",
     password_changed: "Password",
@@ -74,7 +92,7 @@ export function AdminActivityFilters({
   const subActions = GROUP_ACTIONS[group];
 
   return (
-    <div className="flex flex-col items-end gap-3">
+    <div className="flex w-full min-w-0 flex-col items-stretch gap-3 sm:items-end">
       <AdminFilterPills
         options={ACTIVITY_GROUPS}
         value={group}

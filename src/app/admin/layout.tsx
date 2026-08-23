@@ -29,14 +29,14 @@ export default async function AdminLayout({ children }: { children: ReactNode })
 
   return (
     // fixed inset-0 keeps chrome pinned in installed/PWA WebViews where document scroll bypasses nested overflow
-    <div className="fixed inset-0 z-40 flex flex-col overflow-hidden overscroll-none bg-[#080810] text-slate-200 selection:bg-cyan-500/30 font-sans md:flex-row">
+    <div className="fixed inset-0 z-40 flex min-w-0 flex-col overflow-hidden overscroll-none bg-[#080810] text-slate-200 selection:bg-cyan-500/30 font-sans lg:flex-row">
       <div className="pointer-events-none absolute inset-0 z-0 overflow-hidden">
         <div className="absolute top-[-20%] right-[-10%] h-[600px] w-[800px] rounded-full bg-cyan-500/10 blur-[120px]" />
       </div>
 
       <AdminSidebar />
       <main className="relative z-10 flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden overscroll-none">
-        <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden overscroll-none max-md:px-0 max-md:pt-0 max-md:pb-0 p-3 sm:p-6 md:overflow-x-hidden md:overflow-y-auto md:p-8 md:pb-0">
+        <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden overscroll-none max-lg:px-0 max-lg:pt-0 max-lg:pb-0 p-3 sm:p-5 lg:overflow-x-hidden lg:overflow-y-auto lg:p-8 lg:pb-0">
           <AdminShell>{children}</AdminShell>
         </div>
       </main>

@@ -43,6 +43,7 @@ type Client = {
   adminNotes?: string;
   assignedSlot?: string;
   lastSyncAt?: string;
+  resellerId?: string;
 };
 
 type ClientPayment = {
@@ -56,7 +57,7 @@ type ClientPayment = {
   hasScreenshot?: boolean;
 };
 
-const FILTERS = ["all", "pending", "paid", "trial", "suspended"] as const;
+const FILTERS = ["all", "pending", "paid", "trial", "suspended", "reseller"] as const;
 type Filter = (typeof FILTERS)[number];
 
 const PAID_PLANS = ["solo", "team"];
@@ -81,6 +82,12 @@ const DEFAULT_BILLING: BillingDefaults = {
   trialMinutes: 0,
   subscriptionDays: 30,
 };
+
+function resellerLabel(client: Pick<Client, "resellerId">, names: Record<string, string>) {
+  const id = String(client.resellerId || "").trim();
+  if (!id) return "";
+  return names[id] || "Reseller";
+}
 
 function defaultExpiryForPlan(plan: string, billing: BillingDefaults = DEFAULT_BILLING) {
   const now = Date.now();
@@ -213,11 +220,28 @@ export default function ClientsPage() {
   const nextCursorRef = useRef<string | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
   const [billing, setBilling] = useState<BillingDefaults>(DEFAULT_BILLING);
+  const [resellerNames, setResellerNames] = useState<Record<string, string>>({});
 
   useEffect(() => {
     const timer = window.setTimeout(() => setDebouncedSearch(searchQuery.trim().toLowerCase()), 300);
     return () => window.clearTimeout(timer);
   }, [searchQuery]);
+
+  useEffect(() => {
+    void fetch("/api/admin/resellers", { credentials: "same-origin" })
+      .then((res) => res.json())
+      .then((data) => {
+        if (!data.success || !Array.isArray(data.resellers)) return;
+        const names: Record<string, string> = {};
+        for (const row of data.resellers as { id?: string; brandName?: string }[]) {
+          if (row.id) names[row.id] = String(row.brandName || "Reseller");
+        }
+        setResellerNames(names);
+      })
+      .catch(() => {
+        // Clients still load without reseller names.
+      });
+  }, []);
 
   const fetchClients = useCallback(async (opts: { silent?: boolean; append?: boolean } = {}) => {
     const silent = Boolean(opts.silent);
@@ -322,7 +346,8 @@ export default function ClientsPage() {
               Boolean(client.subscriptionPlan && !["none", "trial", "pending"].includes(client.subscriptionPlan))) ||
             (filter === "trial" &&
               (!client.subscriptionPlan || client.subscriptionPlan === "none" || client.subscriptionPlan === "trial")) ||
-            (filter === "suspended" && Boolean(client.suspended));
+            (filter === "suspended" && Boolean(client.suspended)) ||
+            (filter === "reseller" && Boolean(client.resellerId));
           if (!matchesSearch || !matchesFilter) return prev.filter((c) => c.email !== client.email);
           const exists = prev.some((c) => c.email === client.email);
           if (exists) return prev.map((c) => (c.email === client.email ? client : c));
@@ -539,6 +564,7 @@ export default function ClientsPage() {
       return !c.subscriptionPlan || c.subscriptionPlan === "none" || c.subscriptionPlan === "trial";
     }
     if (filter === "suspended") return Boolean(c.suspended);
+    if (filter === "reseller") return Boolean(c.resellerId);
     return true;
   });
 
@@ -548,6 +574,7 @@ export default function ClientsPage() {
     if (filter === "paid") return "Paid Accounts";
     if (filter === "trial") return "Trial Accounts";
     if (filter === "suspended") return "Suspended Clients";
+    if (filter === "reseller") return "Reseller Clients";
     return "Clients";
   };
 
@@ -637,6 +664,19 @@ export default function ClientsPage() {
       },
     },
     {
+      key: "reseller",
+      header: "Reseller",
+      hideOnMobile: true,
+      render: (client) => {
+        const name = resellerLabel(client, resellerNames);
+        return name ? (
+          <span className="text-emerald-400 font-medium">{name}</span>
+        ) : (
+          <span className="text-slate-600">Direct</span>
+        );
+      },
+    },
+    {
       key: "trial",
       header: "Trial Expiry",
       render: (client) => (
@@ -672,7 +712,7 @@ export default function ClientsPage() {
       header={
         <AdminPageHeader
           title="Client Manager"
-          description="Manage all of your active, pending, and trial client accounts."
+          description="Every client is here — including people your resellers register. Direct signups show as Direct."
           actions={
             <div className="flex w-full flex-col gap-3 sm:w-auto sm:flex-row">
               <button
@@ -686,7 +726,12 @@ export default function ClientsPage() {
                 <Plus size={16} />
                 Add Client
               </button>
-              <AdminFilterPills options={FILTERS} value={filter} onChange={setFilter} />
+              <AdminFilterPills
+                options={FILTERS}
+                value={filter}
+                onChange={setFilter}
+                formatLabel={(option) => (option === "reseller" ? "Reseller" : option)}
+              />
             </div>
           }
         />
@@ -711,6 +756,7 @@ export default function ClientsPage() {
         renderMobileCard={(client) => (
           <ClientMobileCard
             client={client}
+            resellerName={resellerLabel(client, resellerNames)}
             onEdit={() =>
               setEditing({
                 ...client,

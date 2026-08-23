@@ -22,7 +22,7 @@ export function AdminFilterPills<T extends string>({
           key={option}
           type="button"
           onClick={() => onChange(option)}
-          className={`flex-none rounded-xl px-3 py-2 text-xs font-bold capitalize leading-tight transition-all whitespace-nowrap max-md:min-h-10 sm:px-4 sm:py-2.5 sm:text-sm ${
+          className={`flex-none rounded-xl px-3 py-2 text-xs font-bold capitalize leading-tight transition-all whitespace-nowrap max-lg:min-h-10 sm:px-4 sm:py-2.5 sm:text-sm ${
             value === option
               ? "bg-cyan-500 text-slate-900 shadow-[0_0_20px_-3px_rgba(34,211,238,0.4)]"
               : "text-slate-400 hover:text-white hover:bg-white/5"
