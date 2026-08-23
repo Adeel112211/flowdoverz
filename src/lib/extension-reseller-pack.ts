@@ -32,6 +32,7 @@ const EMAIL_OVERLAY_FILES = new Set([
 export type ResellerExtensionBranding = {
   displayName: string;
   supportEmail: string;
+  dashboardUrl?: string;
   logoBase64?: string;
   logoMime?: string;
   keepLogo?: boolean;
@@ -42,6 +43,7 @@ export type ResellerExtensionMeta = {
   brandName: string;
   displayName: string;
   supportEmail: string;
+  dashboardUrl?: string;
   hasLogo: boolean;
   version: string;
   officialVersion: string;
@@ -128,6 +130,29 @@ function normalizePublicUrl(raw: string) {
   } catch {
     return "";
   }
+}
+
+function portalOriginFromUrl(raw: string) {
+  const full = normalizePublicUrl(raw);
+  if (!full) return "";
+  try {
+    const url = new URL(full);
+    return `${url.protocol}//${url.host}`;
+  } catch {
+    return full.replace(/\/+(login|signup|dashboard)\/?$/i, "").replace(/\/$/, "");
+  }
+}
+
+function rewritePortalOrigin(text: string, portalOrigin: string) {
+  const origin = String(portalOrigin || "").replace(/\/$/, "");
+  if (!origin) return text;
+  let out = String(text || "");
+  out = out.replace(
+    /const DEFAULT_PORTAL_URL\s*=\s*["']https:\/\/flow\.doverz\.com["']/g,
+    `const DEFAULT_PORTAL_URL = ${JSON.stringify(origin)}`,
+  );
+  out = out.replace(/https:\/\/flow\.doverz\.com/g, origin);
+  return out;
 }
 
 function replaceDashboardUrls(text: string, dashboardUrl: string, appUrl: string) {
@@ -408,6 +433,7 @@ async function brandOfficialZip(
   const websiteUrl = normalizePublicUrl(String(branding.websiteUrl || ""));
   const dashboardUrl =
     normalizePublicUrl(String(branding.dashboardUrl || "")) || websiteUrl || getResellerUrl();
+  const portalOrigin = portalOriginFromUrl(dashboardUrl);
   const appUrl = getAppUrl();
 
   for (const file of Object.values(zip.files)) {
@@ -420,6 +446,7 @@ async function brandOfficialZip(
     if (email && overlayFileName(file.name)) {
       text = replaceVisibleEmails(text, email);
     }
+    text = rewritePortalOrigin(text, portalOrigin);
     text = rewriteDashboardOpen(text, dashboardUrl);
     text = replaceDashboardUrls(text, dashboardUrl, appUrl);
     zip.file(file.name, text);
@@ -437,6 +464,14 @@ async function brandOfficialZip(
   manifest.description = `${name} helper for Google Flow.`;
   if (dashboardUrl) {
     manifest.homepage_url = dashboardUrl;
+  }
+  if (portalOrigin) {
+    const perms = Array.isArray(manifest.host_permissions) ? [...(manifest.host_permissions as string[])] : [];
+    const perm = `${portalOrigin}/*`;
+    if (!perms.includes(perm) && !perms.some((item) => item === "https://*/*" || item === "*://*/*")) {
+      perms.push(perm);
+      manifest.host_permissions = perms;
+    }
   }
   if (branding.version) {
     manifest.version = branding.version;
@@ -465,6 +500,7 @@ function asMeta(id: string, data: Record<string, unknown>): ResellerExtensionMet
     brandName: String(data.brandName || ""),
     displayName: String(data.displayName || data.brandName || ""),
     supportEmail: String(data.supportEmail || ""),
+    dashboardUrl: String(data.dashboardUrl || ""),
     hasLogo: Boolean(data.hasLogo || data.logoBase64),
     version,
     officialVersion: String(data.officialVersion || version),
@@ -487,10 +523,11 @@ async function savedBrandingFor(resellerId: string) {
   const pack = (packSnap.exists ? packSnap.data() : {}) as Record<string, unknown>;
   const displayName = String(branding.displayName || pack.displayName || "");
   const supportEmail = String(branding.supportEmail || pack.supportEmail || "");
+  const dashboardUrl = String(branding.dashboardUrl || pack.dashboardUrl || "");
   const logoBase64 = String(branding.logoBase64 || pack.logoBase64 || "");
   const logoMime = String(branding.logoMime || pack.logoMime || "image/png");
-  if (!displayName && !supportEmail && !logoBase64) return null;
-  return { displayName, supportEmail, logoBase64, logoMime };
+  if (!displayName && !supportEmail && !logoBase64 && !dashboardUrl) return null;
+  return { displayName, supportEmail, dashboardUrl, logoBase64, logoMime };
 }
 
 export async function getResellerExtensionPackMeta(resellerId: string): Promise<ResellerExtensionMeta | null> {
@@ -562,7 +599,7 @@ async function saveResellerBrandedMeta(
   resellerId: string,
   meta: Pick<
     ResellerExtensionMeta,
-    "version" | "fileName" | "generatedAt" | "displayName" | "officialVersion" | "supportEmail" | "hasLogo"
+    "version" | "fileName" | "generatedAt" | "displayName" | "officialVersion" | "supportEmail" | "dashboardUrl" | "hasLogo"
   >,
 ) {
   const db = requireDb();
@@ -575,6 +612,7 @@ async function saveResellerBrandedMeta(
         displayName: meta.displayName,
         officialVersion: meta.officialVersion,
         supportEmail: meta.supportEmail,
+        dashboardUrl: meta.dashboardUrl || "",
         hasLogo: meta.hasLogo,
       },
       updatedAt: new Date().toISOString(),
@@ -606,6 +644,15 @@ export async function generateResellerExtensionPack(
     pickInputString(inputRec, ["supportEmail"]) || saved?.supportEmail || "",
   ).trim().toLowerCase();
   if (supportEmail && !supportEmail.includes("@")) throw new Error("Enter a valid support email.");
+  const dashboardUrl = normalizePublicUrl(
+    pickInputString(inputRec, ["dashboardUrl", "dashboardLink"]) ||
+      saved?.dashboardUrl ||
+      reseller.websiteUrl ||
+      "",
+  );
+  if (!dashboardUrl) {
+    throw new Error("Enter the dashboard link clients should open from the extension popup.");
+  }
 
   const keepLogo = input?.keepLogo !== false && inputRec.keepLogo !== "false";
   let logo = parseLogoInput(
@@ -630,7 +677,7 @@ export async function generateResellerExtensionPack(
     displayName,
     supportEmail,
     websiteUrl: String(reseller.websiteUrl || ""),
-    dashboardUrl: getResellerUrl(),
+    dashboardUrl,
     logo,
     version,
   });
@@ -648,6 +695,7 @@ export async function generateResellerExtensionPack(
     brandName: String(reseller.brandName || displayName),
     displayName: displayName.slice(0, 75),
     supportEmail,
+    dashboardUrl,
     hasLogo: Boolean(logo),
     version,
     officialVersion: version,
@@ -664,6 +712,7 @@ export async function generateResellerExtensionPack(
       sanitizeForFirestore({
         displayName: meta.displayName,
         supportEmail,
+        dashboardUrl,
         logoBase64: logo?.base64 || (keepLogo ? saved?.logoBase64 || "" : ""),
         logoMime: logo?.mime || (keepLogo ? saved?.logoMime || "" : ""),
         updatedAt: generatedAt,

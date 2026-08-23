@@ -78,6 +78,7 @@ type Reseller = {
     displayName: string;
     downloadUrl?: string;
     supportEmail?: string;
+    dashboardUrl?: string;
     hasLogo?: boolean;
   } | null;
 };
@@ -310,6 +311,7 @@ export default function AdminResellersPage() {
   const [brandTarget, setBrandTarget] = useState<Reseller | null>(null);
   const [brandName, setBrandName] = useState("");
   const [brandEmail, setBrandEmail] = useState("");
+  const [brandDashboardUrl, setBrandDashboardUrl] = useState("");
   const [brandLogoDataUrl, setBrandLogoDataUrl] = useState("");
   const [brandLogoName, setBrandLogoName] = useState("");
   const [brandLogoError, setBrandLogoError] = useState("");
@@ -440,6 +442,7 @@ export default function AdminResellersPage() {
     setBrandTarget(row);
     setBrandName(row.brandedExtension?.displayName || row.brandName || "");
     setBrandEmail(row.brandedExtension?.supportEmail || row.contactEmail || "");
+    setBrandDashboardUrl(row.brandedExtension?.dashboardUrl || row.websiteUrl || "");
     setBrandLogoDataUrl("");
     setBrandLogoName("");
     setBrandLogoError("");
@@ -489,6 +492,7 @@ export default function AdminResellersPage() {
       form.set("action", "generate_extension");
       form.set("displayName", brandName.trim());
       form.set("supportEmail", brandEmail.trim());
+      form.set("dashboardUrl", brandDashboardUrl.trim());
       if (file) {
         form.set("logo", file);
         form.set("keepLogo", "false");
@@ -1224,7 +1228,11 @@ export default function AdminResellersPage() {
               {usageLoading ? (
                 <p className="text-sm text-slate-400">Loading usage…</p>
               ) : usageDomains.length === 0 && usageEvents.length === 0 ? (
-                <p className="text-sm text-slate-400">No API calls recorded yet. After they use the key, domains appear here.</p>
+                <p className="text-sm text-slate-400">
+                  No API calls recorded yet. That means this key has not hit{" "}
+                  <span className="font-mono text-slate-300">/api/reseller/v1</span> with a valid key.
+                  A frontend-only page, the wrong URL, or a truncated key will not show up here.
+                </p>
               ) : (
                 <>
                   <h3 className="mb-2 text-xs font-bold uppercase tracking-wider text-slate-500">Domains</h3>
@@ -1287,7 +1295,7 @@ export default function AdminResellersPage() {
               <div>
                 <h2 className="text-xl font-black text-white">Build branded extension</h2>
                 <p className="mt-1 text-sm text-slate-400">
-                  These values replace FlowDoverz name, logo, and contact email inside the Chrome ZIP and the fake credits overlay. The popup Dashboard button opens the reseller panel at resellerflow.doverz.com. Sync still uses your FlowDoverz server. Rebuild the ZIP after changing this.
+                  These values replace FlowDoverz name, logo, and contact email inside the Chrome ZIP and the fake credits overlay. The site URL below is used for Dashboard and Sync in the extension. Clients must sign in on that site. Rebuild the ZIP after changing this.
                 </p>
               </div>
               <div>
@@ -1313,6 +1321,20 @@ export default function AdminResellersPage() {
                   placeholder="support@theirbrand.com"
                 />
                 <p className="mt-1 text-xs text-slate-500">Replaces contact emails in the fake credits overlay.</p>
+              </div>
+              <div>
+                <label className="mb-2 block text-sm font-bold text-slate-400">Client site / Dashboard link</label>
+                <input
+                  required
+                  type="url"
+                  value={brandDashboardUrl}
+                  onChange={(e) => setBrandDashboardUrl(e.target.value)}
+                  className={INPUT_CLASS}
+                  placeholder="https://their-site.com/dashboard"
+                />
+                <p className="mt-1 text-xs text-slate-500">
+                  Dashboard opens this page. Sync talks to the same website (login cookie and /api/sync).
+                </p>
               </div>
               <div>
                 <p className="mb-2 text-sm font-bold text-white">Logo</p>

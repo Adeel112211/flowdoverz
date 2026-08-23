@@ -260,6 +260,7 @@ export async function PUT(request: NextRequest) {
       const result = await generateResellerExtensionPack(id, {
         displayName: String(body.displayName || ""),
         supportEmail: String(body.supportEmail || ""),
+        dashboardUrl: String(body.dashboardUrl || body.dashboardLink || ""),
         logoBase64: logoValue || undefined,
         logoMime: body.logoMime ? String(body.logoMime) : undefined,
         keepLogo: body.keepLogo !== false && body.keepLogo !== "false",

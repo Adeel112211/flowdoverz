@@ -40,8 +40,14 @@ export function jsonSafe(data: unknown, init?: { status?: number; headers?: Head
 
 export function readResellerApiKey(request: NextRequest) {
   const header = request.headers.get("authorization") || "";
-  if (header.toLowerCase().startsWith("bearer ")) return header.slice(7).trim();
-  return (request.headers.get("x-reseller-key") || "").trim();
+  const lower = header.toLowerCase();
+  if (lower.startsWith("bearer ")) return header.slice(7).trim();
+  if (lower.startsWith("token ")) return header.slice(6).trim();
+  return (
+    request.headers.get("x-reseller-key") ||
+    request.headers.get("x-api-key") ||
+    ""
+  ).trim();
 }
 
 export function corsHeaders(request: NextRequest, allowedOrigins: string[]): Record<string, string> {
@@ -106,17 +112,27 @@ export async function authenticateReseller(request: NextRequest): Promise<
 
   const allowedOrigins = originsForReseller(reseller);
   const headers = corsHeaders(request, allowedOrigins);
-  const foreign = rejectForeignWebsite(request, allowedOrigins, headers);
-  if (foreign) {
-    void logResellerApiUse({
+  const site = websiteFromResellerRequest(request);
+  const expected =
+    site.source === "server" ||
+    allowedOrigins.some((item) => item.toLowerCase() === site.origin.toLowerCase());
+
+  async function recordUse(blocked: boolean) {
+    await logResellerApiUse({
       resellerId: reseller.id,
       request,
-      blocked: true,
-      expected: false,
+      blocked,
+      expected: blocked ? false : expected,
     });
+  }
+
+  const foreign = rejectForeignWebsite(request, allowedOrigins, headers);
+  if (foreign) {
+    await recordUse(true);
     return { ok: false, response: foreign };
   }
   if (reseller.status === "disabled") {
+    await recordUse(true);
     return {
       ok: false,
       response: jsonSafe(
@@ -126,6 +142,7 @@ export async function authenticateReseller(request: NextRequest): Promise<
     };
   }
   if (reseller.status === "paused") {
+    await recordUse(true);
     return {
       ok: false,
       response: jsonSafe(
@@ -135,6 +152,7 @@ export async function authenticateReseller(request: NextRequest): Promise<
     };
   }
   if (reseller.kind === "official") {
+    await recordUse(true);
     return {
       ok: false,
       response: jsonSafe(
@@ -148,6 +166,7 @@ export async function authenticateReseller(request: NextRequest): Promise<
     };
   }
   if (resellerIsExpired(reseller) || !resellerCanServe(reseller)) {
+    await recordUse(true);
     return {
       ok: false,
       response: jsonSafe(
@@ -158,16 +177,7 @@ export async function authenticateReseller(request: NextRequest): Promise<
   }
 
   void touchResellerUsage(reseller.id);
-  const site = websiteFromResellerRequest(request);
-  const expected =
-    site.source === "server" ||
-    allowedOrigins.some((item) => item.toLowerCase() === site.origin.toLowerCase());
-  void logResellerApiUse({
-    resellerId: reseller.id,
-    request,
-    blocked: false,
-    expected,
-  });
+  await recordUse(false);
   return { ok: true, reseller, headers };
 }
 

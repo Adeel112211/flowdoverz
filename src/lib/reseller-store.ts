@@ -16,6 +16,7 @@ export type ResellerBrandedExtension = {
   displayName: string;
   officialVersion: string;
   supportEmail: string;
+  dashboardUrl?: string;
   hasLogo: boolean;
 };
 
@@ -217,6 +218,7 @@ function parseBrandedExtension(raw: unknown): ResellerBrandedExtension | null {
     displayName: String(data.displayName || ""),
     officialVersion: String(data.officialVersion || version),
     supportEmail: String(data.supportEmail || ""),
+    dashboardUrl: String(data.dashboardUrl || ""),
     hasLogo: Boolean(data.hasLogo),
   };
 }
