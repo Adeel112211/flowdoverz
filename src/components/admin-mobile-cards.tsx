@@ -1,6 +1,6 @@
 "use client";
 
-import { CirclePlus, Copy, CreditCard, Eye, ImageIcon, KeyRound, Link2, Pause, Pencil, Play, Puzzle, Trash2, Users } from "lucide-react";
+import { CirclePlus, Copy, CreditCard, Eye, Globe, ImageIcon, KeyRound, Link2, Pause, Pencil, Play, Puzzle, Trash2, Users } from "lucide-react";
 import type { ReactNode } from "react";
 import {
   AdminMobileActionButton,
@@ -422,6 +422,7 @@ export function ResellerMobileCard({
   onEdit,
   onKit,
   onUsers,
+  onUsage,
   onAddSeats,
   onRotate,
   onTogglePause,
@@ -433,6 +434,7 @@ export function ResellerMobileCard({
   onEdit: () => void;
   onKit: () => void;
   onUsers: () => void;
+  onUsage?: () => void;
   onAddSeats: () => void;
   onRotate: () => void;
   onTogglePause: () => void;
@@ -476,6 +478,9 @@ export function ResellerMobileCard({
             <AdminMobileActionButton label="Copy integration kit" shortLabel="Kit" icon={Copy} onClick={onKit} bgClass="bg-emerald-500/10" colorClass="text-emerald-400" />
           )}
           <AdminMobileActionButton label="View users" shortLabel="Users" icon={Users} onClick={onUsers} bgClass="bg-violet-500/10" colorClass="text-violet-400" />
+          {onUsage ? (
+            <AdminMobileActionButton label="Where this API key was used" shortLabel="Used" icon={Globe} onClick={onUsage} bgClass="bg-sky-500/10" colorClass="text-sky-300" />
+          ) : null}
           <AdminMobileActionButton label="Add paid seats" shortLabel="Seats" icon={CirclePlus} onClick={onAddSeats} bgClass="bg-emerald-500/10" colorClass="text-emerald-300" />
           {reseller.kind === "official" ? null : onBuildExtension ? (
             <AdminMobileActionButton

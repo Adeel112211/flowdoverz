@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
   getResellerByApiKey,
+  logResellerApiUse,
   originsForReseller,
   resellerCanServe,
   resellerIsExpired,
   touchResellerUsage,
+  websiteFromResellerRequest,
   type ResellerRecord,
 } from "@/lib/reseller-store";
 import { getAppUrl } from "@/lib/site-urls";
@@ -55,6 +57,24 @@ export function corsHeaders(request: NextRequest, allowedOrigins: string[]): Rec
   };
 }
 
+function originAllowed(origin: string, allowedOrigins: string[]) {
+  return allowedOrigins.some((item) => item.toLowerCase() === origin.toLowerCase());
+}
+
+/** Browser calls must come from this reseller's website. Server calls have no Origin and still work. */
+function rejectForeignWebsite(request: NextRequest, allowedOrigins: string[], headers: Record<string, string>) {
+  const origin = (request.headers.get("origin") || "").trim();
+  if (!origin) return null;
+  if (originAllowed(origin, allowedOrigins)) return null;
+  return jsonSafe(
+    {
+      success: false,
+      error: "This API key is locked to the reseller website. Other websites cannot use it.",
+    },
+    { status: 403, headers: { ...headers, Vary: "Origin" } },
+  );
+}
+
 export async function authenticateReseller(request: NextRequest): Promise<
   | { ok: true; reseller: ResellerRecord; headers: Record<string, string> }
   | { ok: false; response: NextResponse }
@@ -84,7 +104,18 @@ export async function authenticateReseller(request: NextRequest): Promise<
     };
   }
 
-  const headers = corsHeaders(request, originsForReseller(reseller));
+  const allowedOrigins = originsForReseller(reseller);
+  const headers = corsHeaders(request, allowedOrigins);
+  const foreign = rejectForeignWebsite(request, allowedOrigins, headers);
+  if (foreign) {
+    void logResellerApiUse({
+      resellerId: reseller.id,
+      request,
+      blocked: true,
+      expected: false,
+    });
+    return { ok: false, response: foreign };
+  }
   if (reseller.status === "disabled") {
     return {
       ok: false,
@@ -127,6 +158,16 @@ export async function authenticateReseller(request: NextRequest): Promise<
   }
 
   void touchResellerUsage(reseller.id);
+  const site = websiteFromResellerRequest(request);
+  const expected =
+    site.source === "server" ||
+    allowedOrigins.some((item) => item.toLowerCase() === site.origin.toLowerCase());
+  void logResellerApiUse({
+    resellerId: reseller.id,
+    request,
+    blocked: false,
+    expected,
+  });
   return { ok: true, reseller, headers };
 }
 
@@ -196,6 +237,7 @@ export async function buildResellerIntegration(reseller: {
     brandedExtension: branded,
     rules: [
       "Call this API from your server. Never put the API key in frontend JavaScript.",
+      "This API key is tied to your website origin. Other websites cannot call it from the browser.",
       "This API never returns Google Flow cookies.",
       branded
         ? "Users install the branded ZIP generated in Admin → Resellers. It is sealed by FlowDoverz. Never ship a ZIP you built yourself."

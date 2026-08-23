@@ -18,6 +18,7 @@ import {
   Trash2,
   Users,
   Puzzle,
+  Globe,
   type LucideIcon,
 } from "lucide-react";
 import { AdminDataTable, type AdminTableColumn } from "@/components/admin-data-table";
@@ -175,6 +176,36 @@ function daysLeft(iso: string | null | undefined) {
   return { label: `${days}d left`, className: "text-emerald-400" };
 }
 
+type ResellerApiUseDomain = {
+  domain: string;
+  origin: string;
+  hits: number;
+  blockedHits: number;
+  lastAt: string;
+  lastIp: string;
+  lastPath: string;
+  expected: boolean;
+};
+
+type ResellerApiUseEvent = {
+  id: string;
+  domain: string;
+  origin: string;
+  ip: string;
+  path: string;
+  blocked: boolean;
+  expected: boolean;
+  source: "origin" | "referer" | "server";
+  createdAt: string;
+};
+
+function formatUseTime(iso: string) {
+  if (!iso) return "—";
+  const ms = Date.parse(iso);
+  if (!Number.isFinite(ms)) return iso;
+  return new Date(ms).toLocaleString();
+}
+
 function StatusBadge({ status }: { status: ResellerStatus }) {
   const styles = {
     active: "bg-emerald-500/10 text-emerald-400 border-emerald-500/20",
@@ -265,6 +296,10 @@ export default function AdminResellersPage() {
   const [kit, setKit] = useState<{ reseller: Reseller; integration: Integration } | null>(null);
   const [usersFor, setUsersFor] = useState<Reseller | null>(null);
   const [users, setUsers] = useState<ResellerUser[]>([]);
+  const [usageFor, setUsageFor] = useState<Reseller | null>(null);
+  const [usageDomains, setUsageDomains] = useState<ResellerApiUseDomain[]>([]);
+  const [usageEvents, setUsageEvents] = useState<ResellerApiUseEvent[]>([]);
+  const [usageLoading, setUsageLoading] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<Reseller | null>(null);
   const [seatsTarget, setSeatsTarget] = useState<Reseller | null>(null);
   const [seatCount, setSeatCount] = useState("10");
@@ -554,6 +589,25 @@ export default function AdminResellersPage() {
     setUsers(data.users || []);
   };
 
+  const openUsage = async (row: Reseller) => {
+    setUsageFor(row);
+    setUsageLoading(true);
+    try {
+      const res = await fetch(`/api/admin/resellers?id=${encodeURIComponent(row.id)}&usage=1`, {
+        credentials: "same-origin",
+      });
+      const data = await res.json();
+      if (!data.success) {
+        toast(data.error || "Could not load API usage", "error");
+        return;
+      }
+      setUsageDomains(data.usage?.domains || []);
+      setUsageEvents(data.usage?.events || []);
+    } finally {
+      setUsageLoading(false);
+    }
+  };
+
   const removeReseller = async () => {
     if (!deleteTarget) return;
     const res = await fetch(`/api/admin/resellers?id=${encodeURIComponent(deleteTarget.id)}`, {
@@ -638,6 +692,9 @@ export default function AdminResellersPage() {
         />
       )}
       <ActionIconButton label="Users" icon={Users} onClick={() => void openUsers(row)} bgClass="bg-violet-500/10" colorClass="text-violet-400" />
+      {row.kind === "official" ? null : (
+        <ActionIconButton label="Where this API key was used" icon={Globe} onClick={() => void openUsage(row)} bgClass="bg-sky-500/10" colorClass="text-sky-300" />
+      )}
       <ActionIconButton label="Add paid seats" icon={CirclePlus} onClick={() => { setSeatCount("10"); setSeatNote(""); setSeatPayment(""); setSeatsTarget(row); }} bgClass="bg-emerald-500/10" colorClass="text-emerald-300" />
       {row.kind === "official" ? null : (
         <ActionIconButton label="Rotate API key" icon={KeyRound} onClick={() => void rotateKey(row)} bgClass="bg-amber-500/10" colorClass="text-amber-400" />
@@ -781,6 +838,7 @@ export default function AdminResellersPage() {
             onEdit={() => openEdit(row)}
             onKit={() => void openKit(row)}
             onUsers={() => void openUsers(row)}
+            onUsage={row.kind === "official" ? undefined : () => void openUsage(row)}
             onAddSeats={() => { setSeatCount("10"); setSeatNote(""); setSeatPayment(""); setSeatsTarget(row); }}
             onRotate={() => void rotateKey(row)}
             onBuildExtension={row.kind === "official" ? undefined : () => openBrandModal(row)}
@@ -1147,6 +1205,74 @@ export default function AdminResellersPage() {
                 </ul>
               )}
               <button type="button" onClick={() => setUsersFor(null)} className="mt-4 w-full rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-bold text-slate-300">
+                Close
+              </button>
+            </>
+          ) : null}
+        </AdminGlassPanel>
+      </AdminGlassModal>
+
+      <AdminGlassModal open={Boolean(usageFor)} maxWidth="2xl" align="end" scrollable closeOnBackdrop onClose={() => setUsageFor(null)}>
+        <AdminGlassPanel accent="cyan" sheet>
+          {usageFor ? (
+            <>
+              <h2 className="mb-1 text-xl font-black text-white">API use — {usageFor.brandName}</h2>
+              <p className="mb-4 text-sm text-slate-400">
+                Websites and IPs that called this key. Allowed site: {usageFor.websiteUrl || "not set"}.
+                Server calls (curl, Node, PHP) show as “server (no website)” — that is normal.
+              </p>
+              {usageLoading ? (
+                <p className="text-sm text-slate-400">Loading usage…</p>
+              ) : usageDomains.length === 0 && usageEvents.length === 0 ? (
+                <p className="text-sm text-slate-400">No API calls recorded yet. After they use the key, domains appear here.</p>
+              ) : (
+                <>
+                  <h3 className="mb-2 text-xs font-bold uppercase tracking-wider text-slate-500">Domains</h3>
+                  <ul className="mb-5 divide-y divide-white/10 rounded-xl border border-white/10">
+                    {usageDomains.map((row) => {
+                      const otherSite = !row.expected || row.blockedHits > 0;
+                      return (
+                        <li key={row.domain} className="flex items-start justify-between gap-3 px-3 py-3">
+                          <div className="min-w-0">
+                            <p className={`truncate font-semibold ${otherSite ? "text-rose-300" : "text-white"}`}>{row.domain}</p>
+                            <p className="truncate text-xs text-slate-500">{row.origin || "No Origin header"}</p>
+                            <p className="mt-1 text-xs text-slate-400">Last IP {row.lastIp || "unknown"}</p>
+                          </div>
+                          <div className="shrink-0 text-right text-xs text-slate-400">
+                            <p className="tabular-nums text-slate-200">{row.hits} call{row.hits === 1 ? "" : "s"}</p>
+                            {row.blockedHits > 0 ? <p className="text-rose-400">{row.blockedHits} blocked</p> : null}
+                            <p>{formatUseTime(row.lastAt)}</p>
+                            <p className={otherSite ? "text-rose-400" : "text-emerald-400"}>
+                              {otherSite ? "Other website" : "Expected"}
+                            </p>
+                          </div>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                  {usageEvents.length > 0 ? (
+                    <>
+                      <h3 className="mb-2 text-xs font-bold uppercase tracking-wider text-slate-500">Recent calls</h3>
+                      <ul className="max-h-64 divide-y divide-white/10 overflow-y-auto rounded-xl border border-white/10">
+                        {usageEvents.map((row) => (
+                          <li key={row.id} className="px-3 py-2.5 text-xs">
+                            <div className="flex items-start justify-between gap-3">
+                              <p className={`min-w-0 truncate font-semibold ${row.blocked || !row.expected ? "text-rose-300" : "text-slate-200"}`}>
+                                {row.domain}
+                              </p>
+                              <p className="shrink-0 text-slate-500">{formatUseTime(row.createdAt)}</p>
+                            </div>
+                            <p className="mt-0.5 truncate font-mono text-slate-500">
+                              {row.ip} · {row.path || "—"} {row.blocked ? "· blocked" : ""}
+                            </p>
+                          </li>
+                        ))}
+                      </ul>
+                    </>
+                  ) : null}
+                </>
+              )}
+              <button type="button" onClick={() => setUsageFor(null)} className="mt-4 w-full rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-bold text-slate-300">
                 Close
               </button>
             </>

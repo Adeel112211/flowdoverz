@@ -645,6 +645,186 @@ export async function touchResellerUsage(id: string) {
   }
 }
 
+export type ResellerApiUseDomain = {
+  domain: string;
+  origin: string;
+  hits: number;
+  blockedHits: number;
+  lastAt: string;
+  lastIp: string;
+  lastPath: string;
+  expected: boolean;
+};
+
+export type ResellerApiUseEvent = {
+  id: string;
+  domain: string;
+  origin: string;
+  ip: string;
+  path: string;
+  blocked: boolean;
+  expected: boolean;
+  source: "origin" | "referer" | "server";
+  createdAt: string;
+};
+
+function parsePublicSite(value: string): { origin: string; domain: string } | null {
+  try {
+    const url = new URL(value);
+    if (url.protocol !== "http:" && url.protocol !== "https:") return null;
+    return { origin: url.origin, domain: url.host };
+  } catch {
+    return null;
+  }
+}
+
+export function websiteFromResellerRequest(request: Request): {
+  origin: string;
+  domain: string;
+  source: "origin" | "referer" | "server";
+} {
+  const fromOrigin = parsePublicSite((request.headers.get("origin") || "").trim());
+  if (fromOrigin) return { ...fromOrigin, source: "origin" };
+  const fromReferer = parsePublicSite((request.headers.get("referer") || "").trim());
+  if (fromReferer) return { ...fromReferer, source: "referer" };
+  return { origin: "", domain: "server (no website)", source: "server" };
+}
+
+function callerIpFromRequest(request: Request) {
+  const candidates = [
+    request.headers.get("cf-connecting-ip"),
+    request.headers.get("x-real-ip"),
+    request.headers.get("x-vercel-forwarded-for")?.split(",")[0],
+    request.headers.get("x-forwarded-for")?.split(",")[0],
+  ];
+  for (const raw of candidates) {
+    const value = raw?.trim();
+    if (value) return value.slice(0, 80);
+  }
+  return "unknown";
+}
+
+function normalizeUseDomain(raw: unknown): ResellerApiUseDomain | null {
+  if (!raw || typeof raw !== "object") return null;
+  const row = raw as Record<string, unknown>;
+  const domain = String(row.domain || "").trim();
+  if (!domain) return null;
+  return {
+    domain,
+    origin: String(row.origin || ""),
+    hits: Math.max(0, Number(row.hits) || 0),
+    blockedHits: Math.max(0, Number(row.blockedHits) || 0),
+    lastAt: String(row.lastAt || ""),
+    lastIp: String(row.lastIp || ""),
+    lastPath: String(row.lastPath || ""),
+    expected: row.expected !== false,
+  };
+}
+
+/** Records which website/IP used this reseller API key. Never stores the key or cookies. */
+export async function logResellerApiUse(input: {
+  resellerId: string;
+  request: Request;
+  blocked: boolean;
+  expected: boolean;
+}) {
+  try {
+    const db = getDb();
+    if (!db) return;
+    const site = websiteFromResellerRequest(input.request);
+    const ip = callerIpFromRequest(input.request);
+    let path = "";
+    try {
+      path = new URL(input.request.url).pathname.slice(0, 180);
+    } catch {
+      path = "";
+    }
+    const now = new Date().toISOString();
+    const ref = db.collection(COLLECTION).doc(input.resellerId);
+    const snap = await ref.get();
+    if (!snap.exists) return;
+    const current = Array.isArray(snap.data()?.apiUseByDomain)
+      ? (snap.data()?.apiUseByDomain as unknown[]).map(normalizeUseDomain).filter(Boolean) as ResellerApiUseDomain[]
+      : [];
+    const index = current.findIndex((row) => row.domain === site.domain);
+    const nextRow: ResellerApiUseDomain = {
+      domain: site.domain,
+      origin: site.origin,
+      hits: (index >= 0 ? current[index].hits : 0) + 1,
+      blockedHits: (index >= 0 ? current[index].blockedHits : 0) + (input.blocked ? 1 : 0),
+      lastAt: now,
+      lastIp: ip,
+      lastPath: path,
+      expected: input.expected,
+    };
+    const next =
+      index >= 0
+        ? current.map((row, i) => (i === index ? nextRow : row))
+        : [nextRow, ...current];
+    next.sort((a, b) => Date.parse(b.lastAt) - Date.parse(a.lastAt));
+    await ref.set(
+      sanitizeForFirestore({
+        apiUseByDomain: next.slice(0, 40),
+        lastUsedAt: now,
+        updatedAt: now,
+      }),
+      { merge: true },
+    );
+    await ref.collection("api_usage").add(
+      sanitizeForFirestore({
+        domain: site.domain,
+        origin: site.origin,
+        ip,
+        path,
+        blocked: input.blocked,
+        expected: input.expected,
+        source: site.source,
+        createdAt: now,
+      }),
+    );
+  } catch {
+    // non-blocking
+  }
+}
+
+export async function listResellerApiUse(id: string): Promise<{
+  domains: ResellerApiUseDomain[];
+  events: ResellerApiUseEvent[];
+}> {
+  const db = requireDb();
+  const ref = db.collection(COLLECTION).doc(id);
+  const snap = await ref.get();
+  if (!snap.exists) throw new Error("Reseller not found.");
+  const domains = (
+    Array.isArray(snap.data()?.apiUseByDomain) ? (snap.data()?.apiUseByDomain as unknown[]) : []
+  )
+    .map(normalizeUseDomain)
+    .filter(Boolean) as ResellerApiUseDomain[];
+  domains.sort((a, b) => Date.parse(b.lastAt || "") - Date.parse(a.lastAt || ""));
+
+  let events: ResellerApiUseEvent[] = [];
+  try {
+    const logs = await ref.collection("api_usage").orderBy("createdAt", "desc").limit(80).get();
+    events = logs.docs.map((doc) => {
+      const data = doc.data() || {};
+      return {
+        id: doc.id,
+        domain: String(data.domain || "server (no website)"),
+        origin: String(data.origin || ""),
+        ip: String(data.ip || "unknown"),
+        path: String(data.path || ""),
+        blocked: Boolean(data.blocked),
+        expected: data.expected !== false,
+        source: data.source === "referer" || data.source === "origin" ? data.source : "server",
+        createdAt: String(data.createdAt || ""),
+      };
+    });
+  } catch {
+    events = [];
+  }
+  return { domains, events };
+}
+
 export async function createReseller(input: ResellerInput): Promise<{
   reseller: PublicReseller;
   apiKey: string;

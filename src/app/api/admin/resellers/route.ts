@@ -7,6 +7,7 @@ import {
   createReseller,
   deleteReseller,
   getReseller,
+  listResellerApiUse,
   listResellerUsers,
   listResellers,
   rotateResellerKey,
@@ -73,12 +74,14 @@ export async function GET(request: NextRequest) {
       const reseller = toPublicReseller(record, await countResellerUsers(id));
       const users = await listResellerUsers(id);
       const integration = await buildResellerIntegration(reseller);
+      const usage = request.nextUrl.searchParams.get("usage") === "1" ? await listResellerApiUse(id) : null;
       return NextResponse.json({
         success: true,
         reseller,
         users,
         slots,
         integration,
+        usage,
       });
     }
 
