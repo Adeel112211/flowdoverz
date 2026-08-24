@@ -1333,7 +1333,7 @@ export default function AdminResellersPage() {
                   placeholder="https://their-site.com/dashboard"
                 />
                 <p className="mt-1 text-xs text-slate-500">
-                  Dashboard opens this page. Sync talks to the same website (login cookie and /api/sync).
+                  Clients sign in on this website. The extension uses that site&apos;s login cookie and /api/sync — it does not open flow.doverz.com.
                 </p>
               </div>
               <div>
@@ -1345,7 +1345,9 @@ export default function AdminResellersPage() {
                   className="block w-full max-w-full cursor-pointer rounded-xl border border-white/15 bg-[#080810] px-3 py-3 text-sm text-white file:mb-2 file:mr-3 file:rounded-lg file:border-0 file:bg-fuchsia-500 file:px-3 file:py-2 file:text-sm file:font-bold file:text-white hover:file:bg-fuchsia-400 sm:file:mb-0 sm:file:mr-4 sm:file:px-4"
                   onChange={(e) => onBrandLogoPicked(e.target.files?.[0] || null)}
                 />
-                <p className="mt-2 text-xs text-slate-500">PNG, JPG, WEBP, or SVG. Max 400 KB.</p>
+                <p className="mt-2 text-xs text-slate-500">
+                  Required. Replaces the FlowDoverz play icon in the popup and the Chrome extension icon. PNG, JPG, WEBP, or SVG. Max 400 KB.
+                </p>
                 {brandLogoError ? <p className="mt-2 text-sm font-semibold text-rose-400">{brandLogoError}</p> : null}
                 {brandLogoName && !brandLogoError ? (
                   <p className="mt-2 text-sm font-semibold text-cyan-300">Selected: {brandLogoName}</p>

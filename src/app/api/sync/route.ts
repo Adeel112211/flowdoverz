@@ -10,6 +10,29 @@ function resolveSessionEmail(cookieSid: string | undefined) {
   return verified?.email ?? null;
 }
 
+async function brandedSyncIdentity(email: string) {
+  const fallback = {
+    site_name: "FlowDoverz",
+    primary_color: "#06b6d4",
+    accent_color: "#14b8a6",
+    logo_url: `${getAppUrl().replace(/\/$/, "")}/logo.png`,
+  };
+  try {
+    const { getBrandedExtensionForUserEmail } = await import("@/lib/extension-reseller-pack");
+    const pack = await getBrandedExtensionForUserEmail(email);
+    if (!pack?.displayName) return fallback;
+    return {
+      site_name: pack.displayName,
+      primary_color: fallback.primary_color,
+      accent_color: fallback.accent_color,
+      logo_url: fallback.logo_url,
+      support_email: pack.supportEmail || "",
+    };
+  } catch {
+    return fallback;
+  }
+}
+
 /**
  * Admin saves cookies on /cookies (password locked).
  * Logged-in clients receive those cookies via extension sync.
@@ -275,11 +298,6 @@ export async function GET(request: NextRequest) {
       plan_name: planName,
       user_type: billing.userType,
     },
-    branding: {
-      site_name: "FlowDoverz",
-      primary_color: "#06b6d4",
-      accent_color: "#14b8a6",
-      logo_url: `${getAppUrl().replace(/\/$/, "")}/logo.png`,
-    },
+    branding: await brandedSyncIdentity(email),
   });
 }

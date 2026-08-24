@@ -58,7 +58,7 @@ export function corsHeaders(request: NextRequest, allowedOrigins: string[]): Rec
   return {
     "Access-Control-Allow-Origin": match,
     "Access-Control-Allow-Headers": "Authorization, Content-Type, X-Reseller-Key",
-    "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+    "Access-Control-Allow-Methods": "GET, POST, DELETE, OPTIONS",
     Vary: "Origin",
   };
 }

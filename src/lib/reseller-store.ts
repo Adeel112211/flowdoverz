@@ -386,6 +386,33 @@ export async function listResellerUsers(resellerId: string, limit = 200): Promis
     .sort((a, b) => a.email.localeCompare(b.email));
 }
 
+export async function deleteResellerUser(
+  resellerId: string,
+  email: string,
+): Promise<{ ok: true } | { ok: false; error: string; status: number }> {
+  const normalized = email.trim().toLowerCase();
+  if (!normalized || !normalized.includes("@")) {
+    return { ok: false, error: "Email is required.", status: 400 };
+  }
+
+  const db = getDb();
+  if (!db) return { ok: false, error: "Database not configured.", status: 503 };
+
+  const ref = db.collection("users").doc(normalized);
+  const snap = await ref.get();
+  if (!snap.exists) {
+    return { ok: false, error: "Client not found.", status: 404 };
+  }
+
+  const data = (snap.data() || {}) as Record<string, unknown>;
+  if (String(data.resellerId || "") !== resellerId) {
+    return { ok: false, error: "This client does not belong to this reseller.", status: 403 };
+  }
+
+  await ref.delete();
+  return { ok: true };
+}
+
 export async function listResellers(): Promise<PublicReseller[]> {
   const db = requireDb();
   const snap = await db.collection(COLLECTION).get();
@@ -749,6 +776,16 @@ export async function logResellerApiUse(input: {
       ? (snap.data()?.apiUseByDomain as unknown[]).map(normalizeUseDomain).filter(Boolean) as ResellerApiUseDomain[]
       : [];
     const index = current.findIndex((row) => row.domain === site.domain);
+    const previous = index >= 0 ? current[index] : null;
+    const lastMs = Date.parse(previous?.lastAt || "");
+    const duplicate =
+      Boolean(previous) &&
+      previous?.lastPath === path &&
+      previous?.lastIp === ip &&
+      Number.isFinite(lastMs) &&
+      Date.now() - lastMs < 10 * 60 * 1000;
+    if (duplicate && !input.blocked) return;
+
     const nextRow: ResellerApiUseDomain = {
       domain: site.domain,
       origin: site.origin,

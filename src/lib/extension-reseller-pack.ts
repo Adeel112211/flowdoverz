@@ -115,9 +115,13 @@ export function brandedExtensionDownloadPath(resellerId: string) {
 }
 
 function replaceVisibleBrand(text: string, displayName: string) {
+  const name = String(displayName || "").trim();
+  if (!name) return text;
   return String(text || "")
-    .replace(/Flow[\s-]*Doverz/g, displayName)
-    .replace(/FLOW[\s-]*DOVERZ(?!_)/g, displayName.toUpperCase());
+    .replace(/Flow[\s-]*Doverz/g, name)
+    .replace(/FLOW[\s-]*DOVERZ(?!_)/g, name.toUpperCase())
+    .replace(/Google Flow Workspace/gi, `${name} workspace`)
+    .replace(/GOOGLE FLOW WORKSPACE/g, `${name.toUpperCase()} WORKSPACE`);
 }
 
 function normalizePublicUrl(raw: string) {
@@ -143,6 +147,9 @@ function portalOriginFromUrl(raw: string) {
   }
 }
 
+/**
+ * Branded ZIP: Sync and login run on the reseller website, not flow.doverz.com.
+ */
 function rewritePortalOrigin(text: string, portalOrigin: string) {
   const origin = String(portalOrigin || "").replace(/\/$/, "");
   if (!origin) return text;
@@ -151,8 +158,68 @@ function rewritePortalOrigin(text: string, portalOrigin: string) {
     /const DEFAULT_PORTAL_URL\s*=\s*["']https:\/\/flow\.doverz\.com["']/g,
     `const DEFAULT_PORTAL_URL = ${JSON.stringify(origin)}`,
   );
+  out = out.replace(
+    /const OWNER_PORTAL_URL\s*=\s*`https:\/\/\$\{\s*\[\s*"flow"\s*,\s*"doverz"\s*,\s*"com"\s*\]\s*\.join\(\s*"\."\s*\)\s*\}`\s*;?/g,
+    `const OWNER_PORTAL_URL = ${JSON.stringify(origin)};`,
+  );
   out = out.replace(/https:\/\/flow\.doverz\.com/g, origin);
   return out;
+}
+
+function fileBaseName(fileName: string) {
+  return String(fileName || "")
+    .replace(/\\/g, "/")
+    .split("/")
+    .pop() || "";
+}
+
+/** Force branded builds to stay on the reseller origin even if the official ZIP is older. */
+function brandedPortalLockScript(portalOrigin: string) {
+  const origin = String(portalOrigin || "").replace(/\/$/, "");
+  const originJson = JSON.stringify(origin);
+  const loginJson = JSON.stringify(`${origin}/login`);
+  return `
+
+;/* branded-portal-lock */
+async function hasPortalLoginCookie(baseUrl) {
+  try {
+    var target = String(baseUrl || ${originJson}).replace(/\\/+$/, "");
+    var root = target.indexOf("http") === 0 ? target : ("http://" + target);
+    var cookieUrl = root.charAt(root.length - 1) === "/" ? root : (root + "/");
+    var cookie = await chrome.cookies.get({ url: cookieUrl, name: SESSION_COOKIE_NAME });
+    if (cookie && cookie.value && cookie.value !== "admin-local") return true;
+    var host = "";
+    try { host = new URL(root).hostname.replace(/^www\\./, ""); } catch (_e) { return false; }
+    var all = await chrome.cookies.getAll({ name: SESSION_COOKIE_NAME });
+    return (all || []).some(function (item) {
+      if (!item || !item.value || item.value === "admin-local") return false;
+      var domain = String(item.domain || "").replace(/^\\./, "").replace(/^www\\./, "");
+      return domain === host || domain.endsWith("." + host);
+    });
+  } catch (_error) {
+    return false;
+  }
+}
+function portalLoginUrl() {
+  return ${loginJson};
+}
+async function resolvePortalBaseUrl(_preferred) {
+  var origin = ${originJson};
+  if (await hasPortalLoginCookie(origin)) {
+    await chrome.storage.local.set({ portalUrl: origin });
+    return origin;
+  }
+  return origin;
+}
+`;
+}
+
+function appendBrandedPortalLock(text: string, fileName: string, portalOrigin: string) {
+  if (fileBaseName(fileName) !== "background.js") return text;
+  const origin = String(portalOrigin || "").replace(/\/$/, "");
+  if (!origin) return text;
+  const stripped = String(text || "").replace(/\n;\/\* branded-portal-lock \*\/[\s\S]*$/, "");
+  return stripped + brandedPortalLockScript(origin);
 }
 
 function replaceDashboardUrls(text: string, dashboardUrl: string, appUrl: string) {
@@ -193,7 +260,59 @@ function replaceVisibleEmails(text: string, email: string) {
   if (!email) return text;
   return String(text || "")
     .replace(/[a-zA-Z0-9._%+-]+@flowdoverz\.[a-zA-Z.]{2,}/gi, email)
+    .replace(/flowdoverz\$\{[^}]+\}@gmail\.com/gi, email)
     .replace(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g, email);
+}
+
+/** Stamp the reseller name/email so Sync cannot put FlowDoverz back into the popup. */
+function applyBrandIdentity(text: string, displayName: string, supportEmail: string) {
+  const name = String(displayName || "").trim();
+  const email = String(supportEmail || "").trim().toLowerCase();
+  if (!name) return text;
+  const nameJson = JSON.stringify(name);
+  const emailJson = JSON.stringify(email);
+  let out = String(text || "");
+
+  out = out.replace(
+    /siteName\.textContent\s*=\s*state\.brand_siteName\s*\|\|\s*(['"`])[\s\S]*?\1/g,
+    `siteName.textContent = ${nameJson}`,
+  );
+  out = out.replace(
+    /brand_siteName:\s*data\.branding\?\.site_name\s*\|\|\s*(['"`])[\s\S]*?\1/g,
+    `brand_siteName: ${nameJson}`,
+  );
+  out = out.replace(
+    /(<strong[^>]*id=["']siteName["'][^>]*>)[\s\S]*?(<\/strong>)/i,
+    `$1${name.replace(/</g, "")}$2`,
+  );
+  out = out.replace(/(<title>)[\s\S]*?(<\/title>)/i, `$1${name.replace(/</g, "")}$2`);
+
+  if (!/\bBRAND_SITE_NAME\b/.test(out) && /const DEFAULT_PORTAL_URL\s*=/.test(out)) {
+    out = out.replace(
+      /^([ \t]*)const DEFAULT_PORTAL_URL\s*=\s*(['"])[^'"]*\2\s*;/m,
+      (full, indent: string) =>
+        `${full}\n${indent}const BRAND_SITE_NAME = ${nameJson};` +
+        (email ? `\n${indent}const BRAND_SUPPORT_EMAIL = ${emailJson};` : ""),
+    );
+  }
+  if (email && /const DISPLAY_NAME\s*=/.test(out) && !/\bBRAND_SUPPORT_EMAIL\b/.test(out)) {
+    out = out.replace(
+      /^([ \t]*)const DISPLAY_NAME\s*=\s*(['"])[^'"]*\2\s*;/m,
+      (full, indent: string) => `${full}\n${indent}const BRAND_SUPPORT_EMAIL = ${emailJson};`,
+    );
+  }
+
+  if (email) {
+    out = out.replace(/[a-zA-Z0-9._%+-]+@flowdoverz\.[a-zA-Z.]{2,}/gi, email);
+    out = out.replace(/flowdoverz\$\{[^}]+\}@gmail\.com/gi, email);
+    out = out.replace(/["']flowdoverz["']\s*\+\s*\w+\s*\+\s*["']@gmail\.com["']/g, emailJson);
+    out = out.replace(
+      /function emailFromIndex\s*\(\s*\w*\s*\)\s*\{[\s\S]*?\n  \}/,
+      `function emailFromIndex(_n) {\n    return ${emailJson};\n  }`,
+    );
+    out = out.replace(/let fakeEmail\s*=\s*(['"`])[\s\S]*?\1/, `let fakeEmail = ${emailJson}`);
+  }
+  return out;
 }
 
 function overlayFileName(path: string) {
@@ -266,15 +385,34 @@ function zipFolderOf(path: string) {
 }
 
 function looksLikeBrandSvg(svg: string) {
-  return /fd-flow|fd-play|fd-node|fd-text|logo-mark|headerLogo|Flow[\s-]*Doverz|L16 34L32 24|viewBox=["']0 0 48 48["']|aria-label=/i.test(
+  return /fd-flow|fd-play|fd-node|fd-text|logo-mark|headerLogo|Flow[\s-]*Doverz|L16 14L16 34L32 24|L16 34L32 24|viewBox=["']0 0 48 48["']|aria-label=/i.test(
     svg,
   );
 }
 
 function rewriteLogoRefs(text: string, logoFile: string, dataUrl: string) {
   let out = String(text || "");
+  const logoJson = JSON.stringify(logoFile);
   out = out.replace(/logo-mark\.svg/gi, logoFile);
   out = out.replace(/logo\.svg/gi, logoFile);
+  out = out.replace(/headerLogo\.src\s*=\s*[^;]+;/g, `headerLogo.src = chrome.runtime.getURL(${logoJson});`);
+  out = out.replace(
+    /brand_logoUrl:\s*data\.branding\?\.logo_url\s*\|\|\s*(['"`])[\s\S]*?\1/g,
+    `brand_logoUrl: chrome.runtime.getURL(${logoJson})`,
+  );
+  out = out.replace(
+    /brand_logoUrl:\s*data\.branding\?\.logo_url\s*\|\|\s*["']["']/g,
+    `brand_logoUrl: chrome.runtime.getURL(${logoJson})`,
+  );
+  if (!/\bBRAND_LOGO_FILE\b/.test(out) && /const DEFAULT_PORTAL_URL\s*=/.test(out)) {
+    out = out.replace(
+      /^([ \t]*)const DEFAULT_PORTAL_URL\s*=\s*(['"])[^'"]*\2\s*;/m,
+      (full, indent: string) => `${full}\n${indent}const BRAND_LOGO_FILE = ${logoJson};`,
+    );
+  }
+  if (!/\bBRAND_LOGO_FILE\b/.test(out) && /function applyBranding\s*\(/.test(out)) {
+    out = `const BRAND_LOGO_FILE = ${logoJson};\n${out}`;
+  }
   out = out.replace(/(src|href)=(["'])([^"']*(?:logo|icon|mark|brand)[^"']*\.(?:svg|png|jpe?g|webp|gif))\2/gi, `$1=$2${logoFile}$2`);
   out = out.replace(/url\((['"]?)([^)'"]*(?:logo|icon|mark|brand)[^)'"]*\.(?:svg|png|jpe?g|webp|gif))\1\)/gi, `url($1${logoFile}$1)`);
   out = out.replace(/chrome\.runtime\.getURL\(\s*(['"])([^'"]*(?:logo|icon|mark)[^'"]*)\1\s*\)/gi, `chrome.runtime.getURL($1${logoFile}$1)`);
@@ -366,11 +504,14 @@ async function applyLogoToZip(
   if (popupAfter) {
     let html = await popupAfter.async("string");
     const img = `<img src="${logoFile}" alt="" class="brand-logo" width="36" height="36" style="width:36px;height:36px;object-fit:contain"/>`;
-    const head = html.slice(0, Math.min(html.length, 4500)).replace(/<svg\b[\s\S]*?<\/svg>/gi, img);
-    html = head + html.slice(Math.min(html.length, 4500));
+    html = html.replace(/<svg\b[\s\S]*?<\/svg>/gi, (svg) => {
+      if (!looksLikeBrandSvg(svg)) return svg;
+      return img;
+    });
     html = html.replace(/<img\b[^>]*>/gi, (tag) => {
       if (/src=["']https?:/i.test(tag)) return tag;
       if (!/src\s*=/i.test(tag)) return tag;
+      if (!/headerLogo|logo|icon|mark|brand/i.test(tag)) return tag;
       return tag.replace(/src=(["'])[^"']*\1/i, `src=$1${logoFile}$1`);
     });
     zip.file(popupAfter.name, html);
@@ -446,7 +587,9 @@ async function brandOfficialZip(
     if (email && overlayFileName(file.name)) {
       text = replaceVisibleEmails(text, email);
     }
+    text = applyBrandIdentity(text, name, email);
     text = rewritePortalOrigin(text, portalOrigin);
+    text = appendBrandedPortalLock(text, file.name, portalOrigin);
     text = rewriteDashboardOpen(text, dashboardUrl);
     text = replaceDashboardUrls(text, dashboardUrl, appUrl);
     zip.file(file.name, text);
@@ -662,8 +805,8 @@ export async function generateResellerExtensionPack(
   if (!logo && keepLogo && saved?.logoBase64) {
     logo = parseLogoInput(saved.logoBase64, saved.logoMime);
   }
-  if (!logo && keepLogo === false) {
-    throw new Error("Logo was not received. Upload a PNG or JPG under 400 KB and click Build ZIP again.");
+  if (!logo) {
+    throw new Error("Upload a logo image. It replaces the FlowDoverz icons in the popup and in Chrome.");
   }
 
   const official = await getActiveExtensionDownload();

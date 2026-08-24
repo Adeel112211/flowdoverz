@@ -6,6 +6,7 @@ import {
 } from "@/lib/reseller-http";
 import {
   countResellerUsers,
+  deleteResellerUser,
   listResellerUsers,
   pickAssignedSlot,
   remainingSeats,
@@ -119,4 +120,20 @@ export async function POST(request: NextRequest) {
     },
     { headers: auth.headers },
   );
+}
+
+export async function DELETE(request: NextRequest) {
+  const auth = await authenticateReseller(request);
+  if (!auth.ok) return auth.response;
+
+  const email = request.nextUrl.searchParams.get("email") || "";
+  const result = await deleteResellerUser(auth.reseller.id, email);
+  if (!result.ok) {
+    return jsonSafe(
+      { success: false, error: result.error },
+      { status: result.status, headers: auth.headers },
+    );
+  }
+
+  return jsonSafe({ success: true, email: email.trim().toLowerCase() }, { headers: auth.headers });
 }

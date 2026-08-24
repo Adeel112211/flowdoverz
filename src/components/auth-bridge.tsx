@@ -32,6 +32,7 @@ export function AuthBridge({ session, daysRemaining = 14 }: AuthBridgeProps) {
       id="flowdoverz-auth-bridge"
       data-logged-in={session ? "1" : "0"}
       data-email={session?.email ?? ""}
+      data-sid={session?.sid ?? ""}
       data-days={String(daysRemaining)}
       data-base-url={baseUrl}
       hidden
