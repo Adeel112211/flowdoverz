@@ -12,7 +12,7 @@ import {
   remainingSeats,
   subscriptionExpiryFromNow,
 } from "@/lib/reseller-store";
-import { createUserByAdmin } from "@/lib/user-store";
+import { createUserByAdmin, getUserRecord, issueResellerClientSession } from "@/lib/user-store";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -63,6 +63,47 @@ export async function POST(request: NextRequest) {
 
   const used = await countResellerUsers(auth.reseller.id);
   const left = remainingSeats(auth.reseller, used);
+
+  let body: Record<string, unknown> = {};
+  try {
+    body = (await request.json()) as Record<string, unknown>;
+  } catch {
+    return jsonSafe(
+      { success: false, error: "Invalid JSON body." },
+      { status: 400, headers: auth.headers },
+    );
+  }
+
+  const email = String(body.email || "").trim().toLowerCase();
+  const requestedSlot = pickAssignedSlot(auth.reseller, String(body.assignedSlot || ""));
+  const assignedSlot = requestedSlot || slot;
+  const existing = email ? await getUserRecord(email) : null;
+  if (existing) {
+    if (String(existing.resellerId || "") !== auth.reseller.id) {
+      return jsonSafe(
+        { success: false, error: "A client with this email already exists." },
+        { status: 400, headers: auth.headers },
+      );
+    }
+    const session = await issueResellerClientSession(auth.reseller.id, email);
+    return jsonSafe(
+      {
+        success: true,
+        existing: true,
+        user: {
+          email,
+          assignedSlot: String(existing.assignedSlot || assignedSlot || "") || null,
+          plan: "solo",
+          subscriptionExpiresAt: existing.subscriptionExpiresAt || null,
+          seatDays: auth.reseller.seatDays,
+          remainingSeats: left,
+          sid: session.ok ? session.sid : undefined,
+        },
+      },
+      { headers: auth.headers },
+    );
+  }
+
   if (left <= 0) {
     return jsonSafe(
       {
@@ -75,28 +116,17 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  let body: Record<string, unknown> = {};
-  try {
-    body = (await request.json()) as Record<string, unknown>;
-  } catch {
-    return jsonSafe(
-      { success: false, error: "Invalid JSON body." },
-      { status: 400, headers: auth.headers },
-    );
-  }
-
-  const requestedSlot = pickAssignedSlot(auth.reseller, String(body.assignedSlot || ""));
   const expiry = subscriptionExpiryFromNow(auth.reseller.seatDays);
   const nowIso = new Date().toISOString();
   const result = await createUserByAdmin({
-    email: String(body.email || ""),
+    email,
     name: String(body.name || ""),
     password: String(body.password || ""),
     subscriptionPlan: "solo",
     trialExpiresAt: nowIso,
     subscriptionExpiresAt: expiry,
     resellerId: auth.reseller.id,
-    assignedSlot: requestedSlot || slot,
+    assignedSlot,
   });
 
   if (!result.ok) {
@@ -106,16 +136,19 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  const session = await issueResellerClientSession(auth.reseller.id, email);
   return jsonSafe(
     {
       success: true,
+      existing: false,
       user: {
-        email: String(body.email || "").trim().toLowerCase(),
-        assignedSlot: requestedSlot || slot,
+        email,
+        assignedSlot,
         plan: "solo",
         subscriptionExpiresAt: expiry,
         seatDays: auth.reseller.seatDays,
         remainingSeats: left - 1,
+        sid: session.ok ? session.sid : undefined,
       },
     },
     { headers: auth.headers },

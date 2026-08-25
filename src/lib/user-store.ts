@@ -910,3 +910,39 @@ export async function getPlanActivationBlock(
 
   return null;
 }
+
+/** Reseller API: mint a portal SID for a client that already belongs to this reseller. */
+export async function issueResellerClientSession(resellerId: string, email: string) {
+  const normalized = normalizeEmail(email);
+  if (!normalized || !normalized.includes("@")) {
+    return { ok: false as const, error: "Enter a valid email address.", status: 400 };
+  }
+
+  const record = await getUserRecord(normalized);
+  if (!record) {
+    return { ok: false as const, error: "Client not found.", status: 404 };
+  }
+  if (String(record.resellerId || "") !== resellerId) {
+    return { ok: false as const, error: "This client does not belong to this reseller.", status: 403 };
+  }
+
+  const status = await getUserStatus(normalized);
+  if (!status?.active) {
+    return { ok: false as const, error: "This client has no active FlowDoverz access.", status: 403 };
+  }
+
+  const userEmail = String(record.email || normalized);
+  const created = createClientSession(userEmail);
+  const claimed = await claimClientSession(userEmail, created.sessionId);
+  if (!claimed.ok) {
+    return { ok: false as const, error: claimed.error, status: 403 };
+  }
+
+  return {
+    ok: true as const,
+    email: userEmail,
+    sid: created.sid,
+    assignedSlot: String(record.assignedSlot || "") || null,
+    subscriptionExpiresAt: status.subscriptionExpiresAt,
+  };
+}
