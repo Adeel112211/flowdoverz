@@ -19,16 +19,19 @@ export async function GET() {
 
   if (email) {
     try {
-      const { getBrandedExtensionForUserEmail, brandedExtensionDownloadPath } = await import(
-        "@/lib/extension-reseller-pack"
+      const { getWhiteLabelResellerIdForUser, brandedExtensionDownloadPath } = await import(
+        "@/lib/extension-reseller-lookup"
       );
-      const pack = await getBrandedExtensionForUserEmail(email);
-      if (pack) {
-        downloadUrl = brandedExtensionDownloadPath(pack.resellerId);
-        name = pack.displayName || pack.brandName || name;
+      const resellerId = await getWhiteLabelResellerIdForUser(email);
+      if (resellerId) {
+        const { getReseller } = await import("@/lib/reseller-store");
+        const reseller = await getReseller(resellerId);
+        const brandedMeta = reseller?.brandedExtension;
+        downloadUrl = brandedExtensionDownloadPath(resellerId);
+        name = brandedMeta?.displayName || reseller?.brandName || name;
         shortName = name;
         branded = true;
-        brandedVersion = pack.version;
+        brandedVersion = brandedMeta?.version || config.activeVersion;
       }
     } catch {
       // keep official download

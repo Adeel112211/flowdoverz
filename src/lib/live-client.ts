@@ -6,14 +6,11 @@ type LiveHandler = (event: LiveEvent) => void;
 
 const handlers = new Set<LiveHandler>();
 const LAST_REV_KEY = "flowdoverz_live_rev";
+const POLL_MS = 12_000;
 
-let socket: WebSocket | null = null;
-let source: EventSource | null = null;
-let reconnectTimer = 0;
-let useSse = false;
-let attempt = 0;
+let pollTimer = 0;
 let lastRev = 0;
-let connecting = false;
+let inFlight = false;
 const lastTickByKey = new Map<string, number>();
 
 function readStoredRev() {
@@ -34,18 +31,9 @@ function persistRev(rev: number) {
   }
 }
 
-function wsUrl() {
-  const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-  return `${protocol}//${window.location.host}/api/live/ws`;
-}
-
-function sseUrl() {
-  return lastRev > 0 ? `/api/live?since=${encodeURIComponent(String(lastRev))}` : "/api/live";
-}
-
-function parseEvent(raw: string): LiveEvent | null {
+function parseEvent(raw: unknown): LiveEvent | null {
   try {
-    const event = JSON.parse(raw) as LiveEvent;
+    const event = raw as LiveEvent;
     if (!event || typeof event.type !== "string") return null;
     return event;
   } catch {
@@ -54,12 +42,7 @@ function parseEvent(raw: string): LiveEvent | null {
 }
 
 function dispatch(event: LiveEvent) {
-  if (event.type === "ping") return;
-  if (event.type === "hello") {
-    requestMissed(event.rev);
-    if (!lastRev) persistRev(event.rev);
-    return;
-  }
+  if (event.type === "ping" || event.type === "hello") return;
   if (event.type === "tick") {
     const key = `${event.topic || ""}:${event.id || event.userId || ""}`;
     const prev = lastTickByKey.get(key) || 0;
@@ -74,124 +57,54 @@ function dispatch(event: LiveEvent) {
   handlers.forEach((handler) => handler(event));
 }
 
-function requestMissed(serverRev: number) {
-  if (!lastRev || lastRev >= serverRev) {
-    persistRev(serverRev);
-    return;
-  }
-  if (socket && socket.readyState === WebSocket.OPEN) {
-    try {
-      socket.send(JSON.stringify({ type: "since", rev: lastRev }));
-    } catch {
-      handlers.forEach((handler) =>
-        handler({ type: "resync", rev: serverRev, at: new Date().toISOString() }),
-      );
-    }
-  }
-}
-
-function disconnect() {
-  window.clearTimeout(reconnectTimer);
-  connecting = false;
-  if (socket) {
-    socket.onopen = null;
-    socket.onmessage = null;
-    socket.onerror = null;
-    socket.onclose = null;
-    try {
-      socket.close();
-    } catch {
-      // ignore
-    }
-    socket = null;
-  }
-  if (source) {
-    source.close();
-    source = null;
-  }
-}
-
-function reconnectDelay() {
-  const exp = Math.min(30_000, 1000 * 2 ** Math.min(attempt, 5));
-  const jitter = Math.floor(Math.random() * 400);
-  return exp + jitter;
-}
-
-function scheduleReconnect() {
-  if (handlers.size === 0) return;
-  window.clearTimeout(reconnectTimer);
-  const delay = reconnectDelay();
-  attempt += 1;
-  reconnectTimer = window.setTimeout(() => {
-    if (handlers.size === 0) return;
-    connect();
-  }, delay);
-}
-
-function connectSse() {
-  disconnect();
-  useSse = true;
-  connecting = true;
-  source = new EventSource(sseUrl());
-  source.onopen = () => {
-    attempt = 0;
-    connecting = false;
-  };
-  source.onmessage = (message) => {
-    const event = parseEvent(message.data);
-    if (event) dispatch(event);
-  };
-  source.onerror = () => {
-    disconnect();
-    scheduleReconnect();
-  };
-}
-
-function connectWs() {
-  disconnect();
-  const next = new WebSocket(wsUrl());
-  socket = next;
-  connecting = true;
-  let opened = false;
-  next.onopen = () => {
-    opened = true;
-    attempt = 0;
-    connecting = false;
-    if (lastRev > 0) {
-      try {
-        next.send(JSON.stringify({ type: "since", rev: lastRev }));
-      } catch {
-        // hello path will retry
-      }
-    }
-  };
-  next.onmessage = (message) => {
-    const event = parseEvent(String(message.data || ""));
-    if (event) dispatch(event);
-  };
-  next.onerror = () => {
-    if (!opened) useSse = true;
-    next.close();
-  };
-  next.onclose = () => {
-    socket = null;
-    connecting = false;
-    if (handlers.size === 0) return;
-    if (useSse) {
-      connectSse();
+async function poll() {
+  if (typeof window === "undefined" || handlers.size === 0 || inFlight) return;
+  if (document.hidden) return;
+  inFlight = true;
+  try {
+    const url = lastRev > 0 ? `/api/live?since=${encodeURIComponent(String(lastRev))}` : "/api/live";
+    const res = await fetch(url, { credentials: "include", cache: "no-store" });
+    if (!res.ok) return;
+    const data = (await res.json()) as {
+      resync?: boolean;
+      rev?: number;
+      at?: string;
+      events?: LiveEvent[];
+    };
+    const rev = Number(data.rev || 0);
+    const at = String(data.at || new Date().toISOString());
+    if (data.resync) {
+      persistRev(rev);
+      dispatch({ type: "resync", rev, at });
       return;
     }
-    scheduleReconnect();
-  };
+    for (const item of data.events || []) {
+      const event = parseEvent(item);
+      if (event) dispatch(event);
+    }
+    if (rev) persistRev(rev);
+  } catch {
+    // try again on the next interval
+  } finally {
+    inFlight = false;
+  }
 }
 
-function connect() {
-  if (typeof window === "undefined" || handlers.size === 0 || connecting) return;
-  if (useSse) {
-    connectSse();
-    return;
-  }
-  connectWs();
+function stopPolling() {
+  window.clearInterval(pollTimer);
+  pollTimer = 0;
+}
+
+function startPolling() {
+  if (pollTimer) return;
+  void poll();
+  pollTimer = window.setInterval(() => {
+    void poll();
+  }, POLL_MS);
+}
+
+function onVisibility() {
+  if (document.visibilityState === "visible") void poll();
 }
 
 export function subscribeLive(handler: LiveHandler) {
@@ -199,9 +112,15 @@ export function subscribeLive(handler: LiveHandler) {
     lastRev = readStoredRev();
   }
   handlers.add(handler);
-  if (handlers.size === 1) connect();
+  if (handlers.size === 1) {
+    document.addEventListener("visibilitychange", onVisibility);
+    startPolling();
+  }
   return () => {
     handlers.delete(handler);
-    if (handlers.size === 0) disconnect();
+    if (handlers.size === 0) {
+      document.removeEventListener("visibilitychange", onVisibility);
+      stopPolling();
+    }
   };
 }

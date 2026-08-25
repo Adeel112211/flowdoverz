@@ -223,8 +223,8 @@ export async function validateExtensionIntegrityHeaders(
   const email = String(options?.email || "").trim();
   if (email) {
     try {
-      const { getBrandedExtensionForUserEmail } = await import("@/lib/extension-reseller-pack");
-      const pack = await getBrandedExtensionForUserEmail(email);
+      const { getBrandedExtensionIntegrityForUserEmail } = await import("@/lib/extension-reseller-lookup");
+      const pack = await getBrandedExtensionIntegrityForUserEmail(email);
       if (pack?.profile?.hash && pack.profile.payload && pack.profile.attestation) {
         const packHash = pack.profile.hash.toLowerCase();
         const attestation = pack.profile.attestation;

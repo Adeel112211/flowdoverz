@@ -18,8 +18,8 @@ async function brandedSyncIdentity(email: string) {
     logo_url: `${getAppUrl().replace(/\/$/, "")}/logo.png`,
   };
   try {
-    const { getBrandedExtensionForUserEmail } = await import("@/lib/extension-reseller-pack");
-    const pack = await getBrandedExtensionForUserEmail(email);
+    const { getBrandedExtensionIdentityForUserEmail } = await import("@/lib/extension-reseller-lookup");
+    const pack = await getBrandedExtensionIdentityForUserEmail(email);
     if (!pack?.displayName) return fallback;
     return {
       site_name: pack.displayName,
@@ -102,7 +102,7 @@ export async function GET(request: NextRequest) {
     { email },
   );
   if (!integrityCheck.ok) {
-    const { isResellerExtensionUpdateRequired } = await import("@/lib/extension-reseller-pack");
+    const { isResellerExtensionUpdateRequired } = await import("@/lib/extension-reseller-lookup");
     const outdated =
       isPreviousOfficialHash(incomingHash, extensionConfig) ||
       isOlderExtensionVersion(reportedVersion, latestVersion) ||

@@ -1,71 +1,30 @@
-import { connection } from "next/server";
 import { allowLiveEvent, publicLiveEnvelope, resolveLivePrincipal } from "@/lib/live-auth";
-import { getMissedLiveEvents, subscribeLiveTick, type LiveEvent } from "@/lib/live-tick";
+import { readLiveSnapshot } from "@/lib/live-tick";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-export const maxDuration = 300;
-
-function encodeEvent(event: LiveEvent) {
-  return new TextEncoder().encode(`data: ${JSON.stringify(event)}\n\n`);
-}
+export const maxDuration = 10;
 
 export async function GET(request: Request) {
-  await connection();
   const principal = await resolveLivePrincipal(request);
+  const since = Number(new URL(request.url).searchParams.get("since") || "0");
+  const snapshot = await readLiveSnapshot(Number.isFinite(since) ? since : 0);
+  const events = snapshot.resync
+    ? []
+    : snapshot.events.map(publicLiveEnvelope).filter((event) => allowLiveEvent(principal, event));
 
-  let unsub = () => {};
-  let ping: ReturnType<typeof setInterval> | undefined;
-  const since = Number(new URL(request.url).searchParams.get("since") || "");
-
-  const stream = new ReadableStream({
-    start(controller) {
-      const send = (event: LiveEvent) => {
-        const payload = publicLiveEnvelope(event);
-        if (!allowLiveEvent(principal, payload)) return;
-        try {
-          controller.enqueue(encodeEvent(payload));
-        } catch {
-          // stream closed
-        }
-      };
-
-      unsub = subscribeLiveTick(send, { emitHello: true });
-      if (Number.isFinite(since) && since > 0) {
-        void getMissedLiveEvents(since).then(({ events, resync, rev, at }) => {
-          if (resync) {
-            send({ type: "resync", rev, at });
-            return;
-          }
-          for (const event of events) send(event);
-        });
-      }
-
-      ping = setInterval(() => {
-        send({ type: "ping", rev: 0, at: new Date().toISOString() });
-      }, 25000);
-
-      request.signal.addEventListener("abort", () => {
-        if (ping) clearInterval(ping);
-        unsub();
-        try {
-          controller.close();
-        } catch {
-          // already closed
-        }
-      });
+  return Response.json(
+    {
+      success: true,
+      rev: snapshot.rev,
+      at: snapshot.at,
+      resync: snapshot.resync,
+      events,
     },
-    cancel() {
-      if (ping) clearInterval(ping);
-      unsub();
+    {
+      headers: {
+        "Cache-Control": "private, no-store",
+      },
     },
-  });
-
-  return new Response(stream, {
-    headers: {
-      "Content-Type": "text/event-stream; charset=utf-8",
-      "Cache-Control": "no-cache, no-transform",
-      Connection: "keep-alive",
-    },
-  });
+  );
 }

@@ -7,7 +7,6 @@ import {
   MAINTENANCE_EVENT,
   type MaintenanceNotice,
 } from "@/lib/maintenance-client";
-import { subscribeLive } from "@/lib/live-client";
 import type { PublicMaintenanceStatus } from "@/lib/maintenance";
 
 function formatUntil(iso: string) {
@@ -96,22 +95,27 @@ export function MaintenanceGate({
     };
 
     window.addEventListener(MAINTENANCE_EVENT, onNotice);
-    const unsub = subscribeLive((event) => {
-      if (event.topic === "maintenance" || event.topic === "settings") {
-        void refresh();
-      }
-    });
+    const poll = window.setInterval(() => {
+      if (document.hidden) return;
+      void refresh();
+    }, 90_000);
+    const onVisible = () => {
+      if (document.visibilityState === "visible") void refresh();
+    };
+    document.addEventListener("visibilitychange", onVisible);
     if (!initial.active) {
       return () => {
         window.removeEventListener(MAINTENANCE_EVENT, onNotice);
-        unsub();
+        document.removeEventListener("visibilitychange", onVisible);
+        window.clearInterval(poll);
       };
     }
 
     void refresh();
     return () => {
       window.removeEventListener(MAINTENANCE_EVENT, onNotice);
-      unsub();
+      document.removeEventListener("visibilitychange", onVisible);
+      window.clearInterval(poll);
     };
   }, [isAdmin, initial.active]);
 

@@ -1,17 +1,26 @@
 import JSZip from "jszip";
 import { getDb } from "@/lib/firebase-admin";
 import { sanitizeForFirestore } from "@/lib/cookie-store";
-import { getAppUrl, getResellerUrl } from "@/lib/site-urls";
 import { getReseller } from "@/lib/reseller-store";
-import { getActiveExtensionDownload, getExtensionConfig, isPreviousOfficialHash } from "@/lib/extension-store";
+import { getActiveExtensionDownload } from "@/lib/extension-store";
+import { sealOfficialExtensionZip, type OfficialIntegrityProfile } from "@/lib/extension-official-from-zip";
+import { getAppUrl, getResellerUrl } from "@/lib/site-urls";
 import {
-  sealOfficialExtensionZip,
-  type OfficialIntegrityProfile,
-} from "@/lib/extension-official-from-zip";
-import { getUserRecord } from "@/lib/user-store";
+  INTEGRITY_COLLECTION,
+  PACKS_COLLECTION,
+  asResellerPackMeta,
+  brandedExtensionDownloadPath,
+  brandedExtensionDownloadUrl,
+  getResellerExtensionPackMeta,
+  type ResellerExtensionMeta,
+} from "@/lib/extension-reseller-lookup";
 
-const PACKS_COLLECTION = "extension_reseller_packs";
-const INTEGRITY_COLLECTION = "extension_reseller_integrity";
+export {
+  brandedExtensionDownloadPath,
+  brandedExtensionDownloadUrl,
+  type ResellerExtensionMeta,
+};
+
 const BRANDING_COLLECTION = "extension_reseller_branding";
 const MAX_ZIP_BYTES = 700_000;
 const PREVIOUS_HASH_LIMIT = 20;
@@ -36,22 +45,6 @@ export type ResellerExtensionBranding = {
   logoBase64?: string;
   logoMime?: string;
   keepLogo?: boolean;
-};
-
-export type ResellerExtensionMeta = {
-  resellerId: string;
-  brandName: string;
-  displayName: string;
-  supportEmail: string;
-  dashboardUrl?: string;
-  hasLogo: boolean;
-  version: string;
-  officialVersion: string;
-  hash: string;
-  fileName: string;
-  fileSize: number;
-  generatedAt: string;
-  previousHashes: string[];
 };
 
 export type ResellerExtensionPack = ResellerExtensionMeta & {
@@ -104,14 +97,6 @@ function rotateHashes(previous: string[] | undefined, oldHash: string | null | u
     if (out.length >= PREVIOUS_HASH_LIMIT) break;
   }
   return out;
-}
-
-export function brandedExtensionDownloadUrl(resellerId: string) {
-  return `${getAppUrl()}/api/extension/download?reseller=${encodeURIComponent(resellerId)}`;
-}
-
-export function brandedExtensionDownloadPath(resellerId: string) {
-  return `/api/extension/download?reseller=${encodeURIComponent(resellerId)}`;
 }
 
 function replaceVisibleBrand(text: string, displayName: string) {
@@ -634,29 +619,6 @@ async function brandOfficialZip(
   );
 }
 
-function asMeta(id: string, data: Record<string, unknown>): ResellerExtensionMeta | null {
-  const hash = String(data.hash || "").toLowerCase();
-  const version = String(data.version || "").trim();
-  if (!hash || hash.length < 32 || !version) return null;
-  return {
-    resellerId: id,
-    brandName: String(data.brandName || ""),
-    displayName: String(data.displayName || data.brandName || ""),
-    supportEmail: String(data.supportEmail || ""),
-    dashboardUrl: String(data.dashboardUrl || ""),
-    hasLogo: Boolean(data.hasLogo || data.logoBase64),
-    version,
-    officialVersion: String(data.officialVersion || version),
-    hash,
-    fileName: String(data.fileName || `${slugifyBrand(String(data.brandName || "reseller"))}-extension.zip`),
-    fileSize: Math.max(0, Math.floor(Number(data.fileSize) || 0)),
-    generatedAt: String(data.generatedAt || ""),
-    previousHashes: Array.isArray(data.previousHashes)
-      ? data.previousHashes.map((item) => String(item || "").toLowerCase()).filter((item) => item.length >= 32)
-      : [],
-  };
-}
-
 async function savedBrandingFor(resellerId: string) {
   const db = getDb();
   if (!db) return null;
@@ -673,16 +635,6 @@ async function savedBrandingFor(resellerId: string) {
   return { displayName, supportEmail, dashboardUrl, logoBase64, logoMime };
 }
 
-export async function getResellerExtensionPackMeta(resellerId: string): Promise<ResellerExtensionMeta | null> {
-  const id = String(resellerId || "").trim();
-  if (!id) return null;
-  const db = getDb();
-  if (!db) return null;
-  const snap = await db.collection(PACKS_COLLECTION).doc(id).get();
-  if (!snap.exists) return null;
-  return asMeta(id, (snap.data() || {}) as Record<string, unknown>);
-}
-
 export async function getResellerExtensionPack(resellerId: string): Promise<ResellerExtensionPack | null> {
   const id = String(resellerId || "").trim();
   if (!id) return null;
@@ -691,7 +643,7 @@ export async function getResellerExtensionPack(resellerId: string): Promise<Rese
   const packSnap = await db.collection(PACKS_COLLECTION).doc(id).get();
   if (!packSnap.exists) return null;
   const packData = (packSnap.data() || {}) as Record<string, unknown>;
-  const meta = asMeta(id, packData);
+  const meta = asResellerPackMeta(id, packData);
   const zipBase64 = String(packData.zipBase64 || "");
   if (!meta || !zipBase64) return null;
 
@@ -710,32 +662,6 @@ export async function getResellerExtensionPack(resellerId: string): Promise<Rese
     buffer: Buffer.from(zipBase64, "base64"),
     profile,
   };
-}
-
-export async function getBrandedExtensionForUserEmail(email: string): Promise<ResellerExtensionPack | null> {
-  const user = await getUserRecord(email);
-  const resellerId = String(user?.resellerId || "").trim();
-  if (!resellerId) return null;
-  const reseller = await getReseller(resellerId);
-  if (!reseller || reseller.kind !== "white_label") return null;
-  return getResellerExtensionPack(resellerId);
-}
-
-export async function isResellerExtensionUpdateRequired(email: string | null | undefined, incomingHash: string) {
-  const hash = String(incomingHash || "").trim().toLowerCase();
-  if (!email || hash.length < 32) return false;
-  const pack = await getBrandedExtensionForUserEmail(email);
-  if (!pack) return false;
-  if (hash === pack.hash) return false;
-  if (pack.previousHashes.includes(hash)) return true;
-  try {
-    const config = await getExtensionConfig();
-    if (hash === String(config.officialHash || "").toLowerCase()) return true;
-    if (isPreviousOfficialHash(hash, config)) return true;
-  } catch {
-    // ignore
-  }
-  return false;
 }
 
 async function saveResellerBrandedMeta(

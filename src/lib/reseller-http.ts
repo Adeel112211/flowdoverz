@@ -214,7 +214,7 @@ export async function buildResellerIntegration(reseller: {
   if (reseller.id && reseller.kind !== "official") {
     try {
       const { getResellerExtensionPackMeta, brandedExtensionDownloadUrl } = await import(
-        "@/lib/extension-reseller-pack"
+        "@/lib/extension-reseller-lookup"
       );
       const pack = await getResellerExtensionPackMeta(reseller.id);
       if (pack || reseller.brandedExtension?.downloadUrl) {
