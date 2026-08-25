@@ -103,9 +103,12 @@ function rotateHashes(previous: string[] | undefined, oldHash: string | null | u
 function replaceVisibleBrand(text: string, displayName: string) {
   const name = String(displayName || "").trim();
   if (!name) return text;
+  // Do not touch identifiers like FlowDoverzGuard / FlowDoverzProtect.
+  // Replacing those with "INFINITY FLOWGuard" makes background.js unparsable,
+  // the service worker never starts, and the popup shows "Sync timed out".
   return String(text || "")
-    .replace(/Flow[\s-]*Doverz/g, name)
-    .replace(/FLOW[\s-]*DOVERZ(?!_)/g, name.toUpperCase())
+    .replace(/Flow[\s-]*Doverz(?![A-Za-z0-9_])/g, name)
+    .replace(/FLOW[\s-]*DOVERZ(?![A-Za-z0-9_])/g, name.toUpperCase())
     .replace(/Google Flow Workspace/gi, `${name} workspace`)
     .replace(/GOOGLE FLOW WORKSPACE/g, `${name.toUpperCase()} WORKSPACE`);
 }
@@ -164,12 +167,9 @@ function resellerDashboardUrl() {
 function wireBrandRuntimeLoader(text: string, fileName: string) {
   const base = fileBaseName(fileName);
   let out = String(text || "");
-  if (base === "background.js" && !/brand-runtime\.js/.test(out)) {
-    if (/importScripts\s*\(/.test(out)) {
-      out = out.replace(/importScripts\s*\(\s*/, `importScripts("brand-runtime.js", `);
-    } else {
-      out = `importScripts("brand-runtime.js");\n${out}`;
-    }
+  if (base === "background.js") {
+    out = out.replace(/importScripts\(\s*"brand-runtime\.js"\s*,\s*/g, "importScripts(");
+    out = out.replace(/^importScripts\("brand-runtime\.js"\);\s*/m, "");
   }
   if (base === "popup.html" && !/brand-runtime\.js/.test(out)) {
     if (/<script([^>]*src=["']popup\.js["'][^>]*)>/i.test(out)) {
@@ -299,6 +299,24 @@ function appendBrandedPortalLock(
       } catch (_sidErr) {}
     }`,
   );
+  stripped = stripped.replace(
+    /if \(request\.action === "TRIGGER_SYNC"\) \{\s*performCookieSync\(request\.slot \|\| "", \{ force: true \}\)\.then\(\(result\) => sendResponse\(result\)\);\s*return true;\s*\}/,
+    `if (request.action === "TRIGGER_SYNC") {
+    var __syncDone = false;
+    var __syncFinish = function (result) {
+      if (__syncDone) return;
+      __syncDone = true;
+      try { sendResponse(result || { success: false, status: "disconnected" }); } catch (_e) {}
+    };
+    setTimeout(function () {
+      __syncFinish({ success: false, status: "disconnected", message: "Sign in on your client page, then try Sync again." });
+    }, 12000);
+    performCookieSync(request.slot || "", { force: true }).then(__syncFinish).catch(function () {
+      __syncFinish({ success: false, status: "disconnected" });
+    });
+    return true;
+  }`,
+  );
   return stripped + brandedPortalLockScript(origin, owner, loginUrl);
 }
 
@@ -316,7 +334,8 @@ function rewriteSyncTimeoutCopy(text: string) {
     /Open [^."]{0,80} in this browser, sign in, then tap Sync now\./g,
     "Sign in on your client page in this browser, then tap Sync now.",
   );
-  out = out.replace(/\},\s*20000\)/, "}, 45000)");
+  out = out.replace(/\},\s*20000\)/, "}, 12000)");
+  out = out.replace(/\},\s*45000\)/, "}, 12000)");
   return out;
 }
 
@@ -325,15 +344,17 @@ function rewritePortalBridgeOrigin(text: string, fileName: string, ownerOrigin: 
   const owner = String(ownerOrigin || "").replace(/\/$/, "") || "https://flow.doverz.com";
   const ownerJson = JSON.stringify(owner);
   let out = String(text || "");
-  out = out.replace(
-    /const realLogin = isLoggedIn && email\.includes\("@"\);\s*let sid = bridge\.getAttribute\("data-sid"\) \|\| "";/,
-    `let sid = bridge.getAttribute("data-sid") || "";`,
-  );
-  out = out.replace(
-    /safeSend\("PORTAL_AUTH_DETECTED", \{\s*isLoggedIn: realLogin,/,
-    `const realLogin = (isLoggedIn && email.includes("@")) || sid.length >= 16;
+  if (!/sid\.length\s*>=\s*16/.test(out)) {
+    out = out.replace(
+      /const realLogin = isLoggedIn && email\.includes\("@"\);\s*let sid = bridge\.getAttribute\("data-sid"\) \|\| "";/,
+      `let sid = bridge.getAttribute("data-sid") || "";`,
+    );
+    out = out.replace(
+      /safeSend\("PORTAL_AUTH_DETECTED", \{\s*isLoggedIn: realLogin,/,
+      `const realLogin = (isLoggedIn && email.includes("@")) || sid.length >= 16;
       safeSend("PORTAL_AUTH_DETECTED", {\n        isLoggedIn: realLogin,`,
-  );
+    );
+  }
   out = out.replace(/origin:\s*baseUrl,/, `origin: ${ownerJson},`);
   out = out.replace(
     /safeSend\("PORTAL_AUTH_DETECTED", \{\s*isLoggedIn: true,\s*email: session\.email,\s*days: 14,\s*origin,/,
