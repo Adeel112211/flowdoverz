@@ -219,24 +219,56 @@ function replaceDashboardUrls(text: string, dashboardUrl: string, appUrl: string
   return out;
 }
 
-/** Popup Dashboard button currently opens portalRoot/dashboard at runtime — pin it to the reseller panel. */
+function pinResellerDashboardUrl(text: string, dashboardUrl: string) {
+  const url = String(dashboardUrl || "").trim();
+  if (!url) return text;
+  const assignment = `const RESELLER_DASHBOARD_URL = ${JSON.stringify(url)};`;
+  let out = String(text || "");
+  if (/const RESELLER_DASHBOARD_URL\s*=/.test(out)) {
+    out = out.replace(/const RESELLER_DASHBOARD_URL\s*=\s*(['"`])[\s\S]*?\1\s*;/, assignment);
+  } else if (/const DEFAULT_PORTAL_URL\s*=/.test(out)) {
+    out = out.replace(
+      /^([ \t]*)const DEFAULT_PORTAL_URL\s*=\s*(['"])[^'"]*\2\s*;/m,
+      (full, indent: string) => `${full}\n${indent}${assignment}`,
+    );
+  }
+  return out;
+}
+
 function rewriteDashboardOpen(text: string, dashboardUrl: string) {
   const url = String(dashboardUrl || "").trim();
   if (!url) return text;
-  let out = String(text || "");
-  if (!/RESELLER_DASHBOARD_URL/.test(out) && /DEFAULT_PORTAL_URL\s*=/.test(out)) {
-    out = out.replace(
-      /^([ \t]*)const DEFAULT_PORTAL_URL\s*=\s*(['"])[^'"]*\2\s*;/m,
-      (full, indent: string) => `${full}\n${indent}const RESELLER_DASHBOARD_URL = ${JSON.stringify(url)};`,
-    );
-  }
+  let out = pinResellerDashboardUrl(text, url);
+  out = out.replace(
+    /if\s*\(\s*request\.action\s*===\s*"OPEN_DASHBOARD"\s*\)\s*\{[\s\S]*?return true;\s*\}/,
+    `if (request.action === "OPEN_DASHBOARD") {
+    (async () => {
+      try {
+        var url = RESELLER_DASHBOARD_URL || DEFAULT_PORTAL_URL;
+        await chrome.tabs.create({ url: url, active: true });
+      } catch (_error) {}
+      try { sendResponse({ success: true }); } catch (_error) {}
+    })();
+    return true;
+  }`,
+  );
+  out = out.replace(
+    /dashboardBtn\.addEventListener\(\s*"click"\s*,\s*\(\)\s*=>\s*\{\s*chrome\.runtime\.sendMessage\(\s*\{\s*action:\s*"OPEN_DASHBOARD"\s*\}\s*\)\s*;\s*\}\s*\)/,
+    `dashboardBtn.addEventListener("click", () => {
+      var url = (typeof RESELLER_DASHBOARD_URL === "string" && RESELLER_DASHBOARD_URL)
+        ? RESELLER_DASHBOARD_URL
+        : ((currentPortalUrl || DEFAULT_PORTAL_URL).replace(/\\/+$/, "") + "/dashboard");
+      if (chrome.tabs && chrome.tabs.create) chrome.tabs.create({ url: url, active: true });
+      else chrome.runtime.sendMessage({ action: "OPEN_DASHBOARD" });
+    })`,
+  );
   out = out.replace(
     /`\$\{portalRoot\.replace\(\/\\\/\+\$\/,\s*""\)\}\/dashboard`/g,
     "RESELLER_DASHBOARD_URL",
   );
   out = out.replace(
     /chrome\.tabs\.create\(\s*\{\s*url:\s*`\$\{[^`]*\}\/dashboard`\s*\}\s*\)/g,
-    "chrome.tabs.create({ url: RESELLER_DASHBOARD_URL })",
+    "chrome.tabs.create({ url: RESELLER_DASHBOARD_URL, active: true })",
   );
   return out;
 }

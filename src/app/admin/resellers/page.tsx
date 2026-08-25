@@ -1333,7 +1333,7 @@ export default function AdminResellersPage() {
                   placeholder="https://their-site.com/dashboard"
                 />
                 <p className="mt-1 text-xs text-slate-500">
-                  Clients sign in on this website. The extension uses that site&apos;s login cookie and /api/sync — it does not open flow.doverz.com.
+                  Dashboard button opens this exact URL. Sync uses that website&apos;s origin (login cookie + /api/sync). Put the full dashboard page, e.g. https://their-site.com/dashboard — not only the homepage.
                 </p>
               </div>
               <div>

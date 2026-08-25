@@ -221,30 +221,34 @@ export async function validateExtensionIntegrityHeaders(
   }
 
   const email = String(options?.email || "").trim();
-  if (email) {
-    try {
-      const { getBrandedExtensionIntegrityForUserEmail } = await import("@/lib/extension-reseller-lookup");
-      const pack = await getBrandedExtensionIntegrityForUserEmail(email);
-      if (pack?.profile?.hash && pack.profile.payload && pack.profile.attestation) {
-        const packHash = pack.profile.hash.toLowerCase();
-        const attestation = pack.profile.attestation;
-        if (
-          incomingHash === packHash &&
-          attestation.enforce.length >= 80 &&
-          attestation.isBlockedCookieExtension.length >= 80 &&
-          attestation.computeLivePayload.length >= 80 &&
-          attestation.proveForSync.length >= 80
-        ) {
-          const expectedProof = buildExtensionProof(parsed.nonce, pack.profile.payload, attestation);
-          if (safeEqualHex(incomingProof, expectedProof)) {
-            return { ok: true };
-          }
-        }
-        return fail;
-      }
-    } catch {
-      // fall through to official profile
+  try {
+    const {
+      getBrandedExtensionIntegrityForUserEmail,
+      getResellerExtensionIntegrityByHash,
+    } = await import("@/lib/extension-reseller-lookup");
+    let pack = email ? await getBrandedExtensionIntegrityForUserEmail(email) : null;
+    if (!pack || pack.profile.hash.toLowerCase() !== incomingHash) {
+      pack = (await getResellerExtensionIntegrityByHash(incomingHash)) || pack;
     }
+    if (pack?.profile?.hash && pack.profile.payload && pack.profile.attestation) {
+      const packHash = pack.profile.hash.toLowerCase();
+      const attestation = pack.profile.attestation;
+      if (
+        incomingHash === packHash &&
+        attestation.enforce.length >= 80 &&
+        attestation.isBlockedCookieExtension.length >= 80 &&
+        attestation.computeLivePayload.length >= 80 &&
+        attestation.proveForSync.length >= 80
+      ) {
+        const expectedProof = buildExtensionProof(parsed.nonce, pack.profile.payload, attestation);
+        if (safeEqualHex(incomingProof, expectedProof)) {
+          return { ok: true };
+        }
+      }
+      if (packHash === incomingHash) return fail;
+    }
+  } catch {
+    // fall through to official profile
   }
 
   const profile = await resolveOfficialProfile();

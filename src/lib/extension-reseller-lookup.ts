@@ -83,6 +83,36 @@ export async function getResellerExtensionIntegrity(
   return { ...meta, profile: data as OfficialIntegrityProfile };
 }
 
+export async function getResellerExtensionIntegrityByHash(
+  hash: string,
+): Promise<ResellerExtensionIntegrity | null> {
+  const normalized = String(hash || "").trim().toLowerCase();
+  if (normalized.length < 32) return null;
+  const db = getDb();
+  if (!db) return null;
+  try {
+    const integritySnap = await db
+      .collection(INTEGRITY_COLLECTION)
+      .where("hash", "==", normalized)
+      .limit(1)
+      .get();
+    const integrityDoc = integritySnap.docs[0];
+    if (integrityDoc) {
+      return getResellerExtensionIntegrity(integrityDoc.id);
+    }
+  } catch {
+    // missing index — try pack meta next
+  }
+  try {
+    const packSnap = await db.collection(PACKS_COLLECTION).where("hash", "==", normalized).limit(1).get();
+    const packDoc = packSnap.docs[0];
+    if (!packDoc) return null;
+    return getResellerExtensionIntegrity(packDoc.id);
+  } catch {
+    return null;
+  }
+}
+
 export async function getWhiteLabelResellerIdForUser(email: string): Promise<string | null> {
   const user = await getUserRecord(email);
   const resellerId = String(user?.resellerId || "").trim();
