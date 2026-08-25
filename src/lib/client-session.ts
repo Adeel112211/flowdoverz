@@ -92,10 +92,34 @@ export async function getClientSessionFromCookies(): Promise<{
   return { email: verified.email, sid, sessionId: verified.sessionId };
 }
 
+export function decodeClientSid(raw: string | undefined | null): string {
+  const value = String(raw || "").trim();
+  if (!value) return "";
+  if (verifyClientSession(value)) return value;
+  try {
+    const decoded = decodeURIComponent(value);
+    if (decoded && decoded !== value && verifyClientSession(decoded)) return decoded;
+  } catch {
+    // keep original
+  }
+  return value;
+}
+
+export function clientSidFromRequest(
+  request: NextRequest,
+  cookieValue?: string | null,
+): string {
+  const header = decodeClientSid(
+    request.headers.get("x-flowdoverz-sid") || request.headers.get("x-client-sid"),
+  );
+  if (verifyClientSession(header)) return header;
+  return decodeClientSid(cookieValue);
+}
+
 export function getClientSessionFromRequest(
   request: NextRequest,
 ): { email: string; sid: string; sessionId: string } | null {
-  const sid = request.cookies.get(CLIENT_SID_COOKIE)?.value;
+  const sid = clientSidFromRequest(request, request.cookies.get(CLIENT_SID_COOKIE)?.value);
   const verified = verifyClientSession(sid);
   if (!verified || !sid) return null;
   return { email: verified.email, sid, sessionId: verified.sessionId };

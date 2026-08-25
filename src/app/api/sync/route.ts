@@ -1,7 +1,7 @@
 import { cookies } from "next/headers";
 import { NextRequest, NextResponse } from "next/server";
 import { WORKSPACE_OWNER } from "@/lib/admin";
-import { CLIENT_SID_COOKIE, verifyClientSession } from "@/lib/client-session";
+import { CLIENT_SID_COOKIE, clientSidFromRequest, verifyClientSession } from "@/lib/client-session";
 import { listSlots } from "@/lib/cookie-store";
 import { getAppUrl } from "@/lib/site-urls";
 
@@ -53,7 +53,8 @@ export async function GET(request: NextRequest) {
   }
 
   const cookieStore = await cookies();
-  const email = resolveSessionEmail(cookieStore.get(CLIENT_SID_COOKIE)?.value);
+  const sidValue = clientSidFromRequest(request, cookieStore.get(CLIENT_SID_COOKIE)?.value);
+  const email = resolveSessionEmail(sidValue);
   const reportedVersion =
     request.headers.get("x-extension-version") || searchParams.get("extension_version");
 
@@ -141,7 +142,6 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  const sidValue = cookieStore.get(CLIENT_SID_COOKIE)?.value;
   const verified = verifyClientSession(sidValue);
   if (!verified?.sessionId) {
     return NextResponse.json(

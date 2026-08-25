@@ -201,33 +201,34 @@ function brandedPortalLockScript(portalOrigin: string, ownerOrigin: string, logi
   return `
 
 ;/* branded-portal-lock */
+function brandedDecodeSid(value) {
+  var token = String(value || "").trim();
+  if (!token || token === "admin-local") return "";
+  try {
+    var decoded = decodeURIComponent(token);
+    if (decoded && decoded.split("|").length >= 4) return decoded;
+  } catch (_e) {}
+  return token;
+}
 async function brandedReadSid(url) {
   try {
     var target = String(url || "").replace(/\\/+$/, "");
     if (!target) return "";
-    var cookieUrl = target.indexOf("http") === 0 ? target : ("http://" + target);
-    if (cookieUrl.charAt(cookieUrl.length - 1) !== "/") cookieUrl += "/";
-    var cookie = await chrome.cookies.get({ url: cookieUrl, name: SESSION_COOKIE_NAME });
-    if (cookie && cookie.value && cookie.value !== "admin-local") return cookie.value;
-    var exact = await chrome.cookies.get({ url: target, name: SESSION_COOKIE_NAME });
-    if (exact && exact.value && exact.value !== "admin-local") return exact.value;
-    var host = "";
-    try { host = new URL(target.indexOf("http") === 0 ? target : ("https://" + target)).hostname.replace(/^www\\./, ""); } catch (_e) { return ""; }
-    var all = await chrome.cookies.getAll({ name: SESSION_COOKIE_NAME });
-    var hit = (all || []).find(function (item) {
-      if (!item || !item.value || item.value === "admin-local") return false;
-      var domain = String(item.domain || "").replace(/^\\./, "").replace(/^www\\./, "");
-      return domain === host || host === domain || domain.endsWith("." + host) || host.endsWith("." + domain);
-    });
-    return hit && hit.value ? hit.value : "";
-  } catch (_error) {
-    return "";
-  }
+    if (target.indexOf("http") !== 0) target = "https://" + target;
+    var candidates = [target + "/", target];
+    try { candidates.push(new URL(target).origin + "/"); } catch (_e) {}
+    for (var i = 0; i < candidates.length; i++) {
+      var cookie = await chrome.cookies.get({ url: candidates[i], name: SESSION_COOKIE_NAME });
+      var token = brandedDecodeSid(cookie && cookie.value);
+      if (token) return token;
+    }
+  } catch (_error) {}
+  return "";
 }
 async function brandedPlantSid(base, sid) {
-  var token = String(sid || "").trim();
+  var token = brandedDecodeSid(sid);
   var root = String(base || "").replace(/\\/+$/, "");
-  if (!token || token.length < 16 || token === "admin-local" || !root) return;
+  if (!token || token.length < 16 || !root) return;
   try {
     await chrome.cookies.set({
       url: root + "/",
@@ -235,9 +236,20 @@ async function brandedPlantSid(base, sid) {
       value: token,
       path: "/",
       secure: root.indexOf("https") === 0,
-      sameSite: "lax",
+      sameSite: "no_restriction",
     });
-  } catch (_error) {}
+  } catch (_error) {
+    try {
+      await chrome.cookies.set({
+        url: root + "/",
+        name: SESSION_COOKIE_NAME,
+        value: token,
+        path: "/",
+        secure: root.indexOf("https") === 0,
+        sameSite: "lax",
+      });
+    } catch (_error2) {}
+  }
 }
 async function brandedEnsureOwnerSid() {
   var sid = (await brandedReadSid(${loginJson})) || (await brandedReadSid(${originJson})) || (await brandedReadSid(${ownerJson}));
@@ -254,8 +266,8 @@ async function portalSessionCookieHeader(_baseUrl) {
   return SESSION_COOKIE_NAME + "=" + sid;
 }
 async function plantPortalSidCookie(origin, sid) {
-  var token = String(sid || "").trim();
-  if (!token || token.length < 16 || token === "admin-local") return;
+  var token = brandedDecodeSid(sid);
+  if (!token || token.length < 16) return;
   await brandedPlantSid(${ownerJson}, token);
   await brandedPlantSid(${originJson}, token);
   await brandedPlantSid(origin, token);
@@ -269,6 +281,46 @@ async function resolvePortalBaseUrl(_preferred) {
   await chrome.storage.local.set({ portalUrl: owner });
   return owner;
 }
+var __fdzOrigFetch = fetch;
+fetch = function (input, init) {
+  return (async function () {
+    var url = "";
+    try {
+      url = typeof input === "string" ? input : (input && input.url ? String(input.url) : "");
+    } catch (_e) {}
+    if (/\\/api\\/(sync|extension\\/integrity)/i.test(url) && url.indexOf("flow.doverz.com") < 0) {
+      url = url.replace(/^https?:\\/\\/[^/]+/i, ${ownerJson});
+      input = url;
+    }
+    if (url.indexOf("flow.doverz.com/api/") >= 0) {
+      try {
+        var sid = await brandedEnsureOwnerSid();
+        if (sid) {
+          init = Object.assign({}, init || {});
+          var headers = new Headers(init.headers || {});
+          headers.set("X-FlowDoverz-Sid", sid);
+          init.headers = headers;
+        }
+      } catch (_e2) {}
+    }
+    return __fdzOrigFetch(input, init);
+  })();
+};
+var __fdzPerformCookieSync = performCookieSync;
+performCookieSync = function (requestedSlot, options) {
+  return Promise.race([
+    __fdzPerformCookieSync(requestedSlot, options),
+    new Promise(function (resolve) {
+      setTimeout(function () {
+        resolve({
+          success: false,
+          status: "disconnected",
+          message: "Sign in on your client page, then try Sync again.",
+        });
+      }, 12000);
+    }),
+  ]);
+};
 `;
 }
 
@@ -284,7 +336,12 @@ function appendBrandedPortalLock(
   const owner = String(ownerOrigin || "").replace(/\/$/, "");
   if (!origin) return text;
   const stripped = String(text || "").replace(/\n;\/\* branded-portal-lock \*\/[\s\S]*$/, "");
-  return stripped + brandedPortalLockScript(origin, owner, loginUrl);
+  const withAuth =
+    stripped.replace(
+      /if \(request\.isLoggedIn && request\.email\) \{/,
+      "if (request.isLoggedIn && (request.email || request.sid)) {",
+    );
+  return withAuth + brandedPortalLockScript(origin, owner, loginUrl);
 }
 
 function rewriteSyncTimeoutCopy(text: string) {
@@ -323,6 +380,17 @@ function rewritePortalBridgeOrigin(text: string, fileName: string, ownerOrigin: 
   out = out.replace(
     /safeSend\("PORTAL_AUTH_DETECTED", \{\s*isLoggedIn: true,\s*email: session\.email,\s*days: 14,\s*origin,/,
     `safeSend("PORTAL_AUTH_DETECTED", {\n        isLoggedIn: true,\n        email: session.email,\n        days: 14,\n        origin: ${ownerJson},`,
+  );
+  out = out.replace(
+    /setInterval\(detectPortalAuth, 2500\);/,
+    `var lastBridgeSid = "";
+  setInterval(function () {
+    var el = document.getElementById("flowdoverz-auth-bridge");
+    var nextSid = el ? String(el.getAttribute("data-sid") || "") : "";
+    if (nextSid && nextSid === lastBridgeSid) return;
+    lastBridgeSid = nextSid;
+    detectPortalAuth();
+  }, 2500);`,
   );
   return out;
 }
