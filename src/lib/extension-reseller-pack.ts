@@ -215,47 +215,27 @@ async function brandedReadSid(url) {
     var target = String(url || "").replace(/\\/+$/, "");
     if (!target) return "";
     if (target.indexOf("http") !== 0) target = "https://" + target;
-    var candidates = [target + "/", target];
-    try { candidates.push(new URL(target).origin + "/"); } catch (_e) {}
-    for (var i = 0; i < candidates.length; i++) {
-      var cookie = await chrome.cookies.get({ url: candidates[i], name: SESSION_COOKIE_NAME });
-      var token = brandedDecodeSid(cookie && cookie.value);
-      if (token) return token;
-    }
-  } catch (_error) {}
-  return "";
-}
-async function brandedPlantSid(base, sid) {
-  var token = brandedDecodeSid(sid);
-  var root = String(base || "").replace(/\\/+$/, "");
-  if (!token || token.length < 16 || !root) return;
-  try {
-    await chrome.cookies.set({
-      url: root + "/",
-      name: SESSION_COOKIE_NAME,
-      value: token,
-      path: "/",
-      secure: root.indexOf("https") === 0,
-      sameSite: "no_restriction",
-    });
+    var originUrl = target;
+    try { originUrl = new URL(target).origin + "/"; } catch (_e) {}
+    var cookie = await chrome.cookies.get({ url: originUrl, name: SESSION_COOKIE_NAME });
+    var token = brandedDecodeSid(cookie && cookie.value);
+    if (token) return token;
+    cookie = await chrome.cookies.get({ url: target + "/", name: SESSION_COOKIE_NAME });
+    return brandedDecodeSid(cookie && cookie.value);
   } catch (_error) {
-    try {
-      await chrome.cookies.set({
-        url: root + "/",
-        name: SESSION_COOKIE_NAME,
-        value: token,
-        path: "/",
-        secure: root.indexOf("https") === 0,
-        sameSite: "lax",
-      });
-    } catch (_error2) {}
+    return "";
   }
 }
 async function brandedEnsureOwnerSid() {
-  var sid = (await brandedReadSid(${loginJson})) || (await brandedReadSid(${originJson})) || (await brandedReadSid(${ownerJson}));
-  if (!sid) return "";
-  await brandedPlantSid(${ownerJson}, sid);
-  return sid;
+  try {
+    var stored = await chrome.storage.local.get(["brandedSid"]);
+    var sid = brandedDecodeSid(stored && stored.brandedSid);
+    if (sid) return sid;
+  } catch (_e) {}
+  var found = (await brandedReadSid(${loginJson})) || (await brandedReadSid(${originJson})) || (await brandedReadSid(${ownerJson}));
+  if (!found) return "";
+  try { await chrome.storage.local.set({ brandedSid: found, portalUrl: ${ownerJson} }); } catch (_e2) {}
+  return found;
 }
 async function hasPortalLoginCookie(_baseUrl) {
   return Boolean(await brandedEnsureOwnerSid());
@@ -265,62 +245,19 @@ async function portalSessionCookieHeader(_baseUrl) {
   if (!sid) return "";
   return SESSION_COOKIE_NAME + "=" + sid;
 }
-async function plantPortalSidCookie(origin, sid) {
+async function plantPortalSidCookie(_origin, sid) {
   var token = brandedDecodeSid(sid);
   if (!token || token.length < 16) return;
-  await brandedPlantSid(${ownerJson}, token);
-  await brandedPlantSid(${originJson}, token);
-  await brandedPlantSid(origin, token);
+  try { await chrome.storage.local.set({ brandedSid: token, portalUrl: ${ownerJson} }); } catch (_e) {}
 }
 function portalLoginUrl() {
   return ${loginJson};
 }
 async function resolvePortalBaseUrl(_preferred) {
   var owner = ${ownerJson};
-  await brandedEnsureOwnerSid();
   await chrome.storage.local.set({ portalUrl: owner });
   return owner;
 }
-var __fdzOrigFetch = fetch;
-fetch = function (input, init) {
-  return (async function () {
-    var url = "";
-    try {
-      url = typeof input === "string" ? input : (input && input.url ? String(input.url) : "");
-    } catch (_e) {}
-    if (/\\/api\\/(sync|extension\\/integrity)/i.test(url) && url.indexOf("flow.doverz.com") < 0) {
-      url = url.replace(/^https?:\\/\\/[^/]+/i, ${ownerJson});
-      input = url;
-    }
-    if (url.indexOf("flow.doverz.com/api/") >= 0) {
-      try {
-        var sid = await brandedEnsureOwnerSid();
-        if (sid) {
-          init = Object.assign({}, init || {});
-          var headers = new Headers(init.headers || {});
-          headers.set("X-FlowDoverz-Sid", sid);
-          init.headers = headers;
-        }
-      } catch (_e2) {}
-    }
-    return __fdzOrigFetch(input, init);
-  })();
-};
-var __fdzPerformCookieSync = performCookieSync;
-performCookieSync = function (requestedSlot, options) {
-  return Promise.race([
-    __fdzPerformCookieSync(requestedSlot, options),
-    new Promise(function (resolve) {
-      setTimeout(function () {
-        resolve({
-          success: false,
-          status: "disconnected",
-          message: "Sign in on your client page, then try Sync again.",
-        });
-      }, 12000);
-    }),
-  ]);
-};
 `;
 }
 
@@ -335,13 +272,34 @@ function appendBrandedPortalLock(
   const origin = String(portalOrigin || "").replace(/\/$/, "");
   const owner = String(ownerOrigin || "").replace(/\/$/, "");
   if (!origin) return text;
-  const stripped = String(text || "").replace(/\n;\/\* branded-portal-lock \*\/[\s\S]*$/, "");
-  const withAuth =
-    stripped.replace(
-      /if \(request\.isLoggedIn && request\.email\) \{/,
-      "if (request.isLoggedIn && (request.email || request.sid)) {",
-    );
-  return withAuth + brandedPortalLockScript(origin, owner, loginUrl);
+  let stripped = String(text || "").replace(/\n;\/\* branded-portal-lock \*\/[\s\S]*$/, "");
+  stripped = stripped.replace(
+    /if \(request\.isLoggedIn && request\.email\) \{/,
+    "if (request.isLoggedIn && (request.email || request.sid)) {",
+  );
+  stripped = stripped.replace(
+    /\.then\(\(\) => performCookieSync\("", \{ force: true \}\)\);/,
+    ";",
+  );
+  stripped = stripped.replace(
+    /portalUrl: request\.origin \|\| DEFAULT_PORTAL_URL,/,
+    `portalUrl: ${JSON.stringify(owner || "https://flow.doverz.com")},\n            brandedSid: request.sid || "",`,
+  );
+  stripped = stripped.replace(
+    /if \(sessionCookie\) headers\.Cookie = sessionCookie;/,
+    `if (sessionCookie) {
+      headers.Cookie = sessionCookie;
+      var __sid = String(sessionCookie).replace(/^flowdoverz_sid=/, "");
+      if (__sid) headers["X-FlowDoverz-Sid"] = __sid;
+    }
+    if (!headers["X-FlowDoverz-Sid"]) {
+      try {
+        var __storedSid = await brandedEnsureOwnerSid();
+        if (__storedSid) headers["X-FlowDoverz-Sid"] = __storedSid;
+      } catch (_sidErr) {}
+    }`,
+  );
+  return stripped + brandedPortalLockScript(origin, owner, loginUrl);
 }
 
 function rewriteSyncTimeoutCopy(text: string) {
