@@ -1330,10 +1330,10 @@ export default function AdminResellersPage() {
                   value={brandDashboardUrl}
                   onChange={(e) => setBrandDashboardUrl(e.target.value)}
                   className={INPUT_CLASS}
-                  placeholder="https://their-site.com/dashboard"
+                  placeholder="https://infinity-flow-tau.vercel.app/painel"
                 />
                 <p className="mt-1 text-xs text-slate-500">
-                  Dashboard button opens this exact URL. Sync uses that site only if it has /api/sync; otherwise it signs in on flow.doverz.com. Put the full page, e.g. https://their-site.com/dashboard.
+                  Dashboard and sign-in open this exact page (example: https://infinity-flow-tau.vercel.app/painel). Sync still talks to FlowDoverz in the background — that page must set the FlowDoverz login cookie after they sign in.
                 </p>
               </div>
               <div>
