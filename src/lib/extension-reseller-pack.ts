@@ -233,6 +233,15 @@ async function brandedEnsureOwnerSid() {
     if (sid) return sid;
   } catch (_e) {}
   var found = (await brandedReadSid(${loginJson})) || (await brandedReadSid(${originJson})) || (await brandedReadSid(${ownerJson}));
+  if (!found) {
+    try {
+      var all = await chrome.cookies.getAll({ name: SESSION_COOKIE_NAME });
+      for (var i = 0; i < (all || []).length; i++) {
+        var token = brandedDecodeSid(all[i] && all[i].value);
+        if (token) { found = token; break; }
+      }
+    } catch (_allErr) {}
+  }
   if (!found) return "";
   try { await chrome.storage.local.set({ brandedSid: found, portalUrl: ${ownerJson} }); } catch (_e2) {}
   return found;
@@ -275,7 +284,11 @@ function appendBrandedPortalLock(
   let stripped = String(text || "").replace(/\n;\/\* branded-portal-lock \*\/[\s\S]*$/, "");
   stripped = stripped.replace(
     /if \(request\.isLoggedIn && request\.email\) \{/,
-    "if (request.isLoggedIn && (request.email || request.sid)) {",
+    "if ((request.sid && String(request.sid).length >= 16) || (request.isLoggedIn && (request.email || request.sid))) {",
+  );
+  stripped = stripped.replace(
+    /if \(request\.isLoggedIn && \(request\.email \|\| request\.sid\)\) \{/,
+    "if ((request.sid && String(request.sid).length >= 16) || (request.isLoggedIn && (request.email || request.sid))) {",
   );
   stripped = stripped.replace(
     /\.then\(\(\) => performCookieSync\("", \{ force: true \}\)\);/,
@@ -287,17 +300,16 @@ function appendBrandedPortalLock(
   );
   stripped = stripped.replace(
     /if \(sessionCookie\) headers\.Cookie = sessionCookie;/,
-    `if (sessionCookie) {
-      headers.Cookie = sessionCookie;
-      var __sid = String(sessionCookie).replace(/^flowdoverz_sid=/, "");
-      if (__sid) headers["X-FlowDoverz-Sid"] = __sid;
+    `var __sid = "";
+    if (sessionCookie) __sid = String(sessionCookie).replace(/^flowdoverz_sid=/, "");
+    if (!__sid) {
+      try { __sid = await brandedEnsureOwnerSid(); } catch (_sidErr) {}
     }
-    if (!headers["X-FlowDoverz-Sid"]) {
-      try {
-        var __storedSid = await brandedEnsureOwnerSid();
-        if (__storedSid) headers["X-FlowDoverz-Sid"] = __storedSid;
-      } catch (_sidErr) {}
-    }`,
+    if (__sid) headers["X-FlowDoverz-Sid"] = __sid;`,
+  );
+  stripped = stripped.replace(
+    /headers\.Cookie = sessionCookie;/,
+    "",
   );
   stripped = stripped.replace(
     /if \(request\.action === "TRIGGER_SYNC"\) \{\s*performCookieSync\(request\.slot \|\| "", \{ force: true \}\)\.then\(\(result\) => sendResponse\(result\)\);\s*return true;\s*\}/,
@@ -312,7 +324,7 @@ function appendBrandedPortalLock(
       __syncFinish({ success: false, status: "disconnected", message: "Sign in on your client page, then try Sync again." });
     }, 12000);
     performCookieSync(request.slot || "", { force: true }).then(__syncFinish).catch(function () {
-      __syncFinish({ success: false, status: "disconnected" });
+      __syncFinish({ success: false, status: "disconnected", message: "Sign in on your client page, then try Sync again." });
     });
     return true;
   }`,
@@ -334,6 +346,14 @@ function rewriteSyncTimeoutCopy(text: string) {
     /Open [^."]{0,80} in this browser, sign in, then tap Sync now\./g,
     "Sign in on your client page in this browser, then tap Sync now.",
   );
+  out = out.replace(
+    /Could not connect — sign in on your website, then Sync/g,
+    "Could not connect. Sign in on your client page, then Sync.",
+  );
+  out = out.replace(
+    /Could not connect\. Sign in on your website, then Sync\./g,
+    "Could not connect. Sign in on your client page, then Sync.",
+  );
   out = out.replace(/\},\s*20000\)/, "}, 12000)");
   out = out.replace(/\},\s*45000\)/, "}, 12000)");
   return out;
@@ -344,16 +364,22 @@ function rewritePortalBridgeOrigin(text: string, fileName: string, ownerOrigin: 
   const owner = String(ownerOrigin || "").replace(/\/$/, "") || "https://flow.doverz.com";
   const ownerJson = JSON.stringify(owner);
   let out = String(text || "");
-  if (!/sid\.length\s*>=\s*16/.test(out)) {
+  if (!/sid\.length\s*>=\s*16/.test(out) || /const realLogin = isLoggedIn && email\.includes\("@"\);/.test(out)) {
     out = out.replace(
-      /const realLogin = isLoggedIn && email\.includes\("@"\);\s*let sid = bridge\.getAttribute\("data-sid"\) \|\| "";/,
+      /const realLogin = isLoggedIn && email\.includes\("@"\);\s*/g,
+      "",
+    );
+    out = out.replace(
+      /let sid = bridge\.getAttribute\("data-sid"\) \|\| "";/,
       `let sid = bridge.getAttribute("data-sid") || "";`,
     );
-    out = out.replace(
-      /safeSend\("PORTAL_AUTH_DETECTED", \{\s*isLoggedIn: realLogin,/,
-      `const realLogin = (isLoggedIn && email.includes("@")) || sid.length >= 16;
+    if (!/sid\.length\s*>=\s*16/.test(out)) {
+      out = out.replace(
+        /safeSend\("PORTAL_AUTH_DETECTED", \{\s*isLoggedIn: realLogin,/,
+        `const realLogin = (isLoggedIn && email.includes("@")) || sid.length >= 16;
       safeSend("PORTAL_AUTH_DETECTED", {\n        isLoggedIn: realLogin,`,
-    );
+      );
+    }
   }
   out = out.replace(/origin:\s*baseUrl,/, `origin: ${ownerJson},`);
   out = out.replace(
