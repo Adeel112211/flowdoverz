@@ -217,31 +217,55 @@ async function brandedReadSid(url) {
     var hit = (all || []).find(function (item) {
       if (!item || !item.value || item.value === "admin-local") return false;
       var domain = String(item.domain || "").replace(/^\\./, "").replace(/^www\\./, "");
-      return domain === host || domain.endsWith("." + host);
+      return domain === host || host === domain || domain.endsWith("." + host) || host.endsWith("." + domain);
     });
     return hit && hit.value ? hit.value : "";
   } catch (_error) {
     return "";
   }
 }
-async function hasPortalLoginCookie(_baseUrl) {
-  var sid = await brandedReadSid(${loginJson});
-  if (sid) return true;
-  sid = await brandedReadSid(${originJson});
-  if (sid) return true;
-  sid = await brandedReadSid(${ownerJson});
-  return Boolean(sid);
+async function brandedPlantSid(base, sid) {
+  var token = String(sid || "").trim();
+  var root = String(base || "").replace(/\\/+$/, "");
+  if (!token || token.length < 16 || token === "admin-local" || !root) return;
+  try {
+    await chrome.cookies.set({
+      url: root + "/",
+      name: SESSION_COOKIE_NAME,
+      value: token,
+      path: "/",
+      secure: root.indexOf("https") === 0,
+      sameSite: "lax",
+    });
+  } catch (_error) {}
 }
-async function portalSessionCookieHeader(_baseUrl) {
+async function brandedEnsureOwnerSid() {
   var sid = (await brandedReadSid(${loginJson})) || (await brandedReadSid(${originJson})) || (await brandedReadSid(${ownerJson}));
   if (!sid) return "";
+  await brandedPlantSid(${ownerJson}, sid);
+  return sid;
+}
+async function hasPortalLoginCookie(_baseUrl) {
+  return Boolean(await brandedEnsureOwnerSid());
+}
+async function portalSessionCookieHeader(_baseUrl) {
+  var sid = await brandedEnsureOwnerSid();
+  if (!sid) return "";
   return SESSION_COOKIE_NAME + "=" + sid;
+}
+async function plantPortalSidCookie(origin, sid) {
+  var token = String(sid || "").trim();
+  if (!token || token.length < 16 || token === "admin-local") return;
+  await brandedPlantSid(${ownerJson}, token);
+  await brandedPlantSid(${originJson}, token);
+  await brandedPlantSid(origin, token);
 }
 function portalLoginUrl() {
   return ${loginJson};
 }
 async function resolvePortalBaseUrl(_preferred) {
   var owner = ${ownerJson};
+  await brandedEnsureOwnerSid();
   await chrome.storage.local.set({ portalUrl: owner });
   return owner;
 }
@@ -270,8 +294,35 @@ function rewriteSyncTimeoutCopy(text: string) {
     "Sync timed out. Sign in on your client page, then try again.",
   );
   out = out.replace(
+    /Sync timed out\. Sign in on your website, then try again\./g,
+    "Sync timed out. Sign in on your client page, then try again.",
+  );
+  out = out.replace(
     /Open [^."]{0,80} in this browser, sign in, then tap Sync now\./g,
     "Sign in on your client page in this browser, then tap Sync now.",
+  );
+  out = out.replace(/\},\s*20000\)/, "}, 45000)");
+  return out;
+}
+
+function rewritePortalBridgeOrigin(text: string, fileName: string, ownerOrigin: string) {
+  if (fileBaseName(fileName) !== "portal-bridge.js") return text;
+  const owner = String(ownerOrigin || "").replace(/\/$/, "") || "https://flow.doverz.com";
+  const ownerJson = JSON.stringify(owner);
+  let out = String(text || "");
+  out = out.replace(
+    /const realLogin = isLoggedIn && email\.includes\("@"\);\s*let sid = bridge\.getAttribute\("data-sid"\) \|\| "";/,
+    `let sid = bridge.getAttribute("data-sid") || "";`,
+  );
+  out = out.replace(
+    /safeSend\("PORTAL_AUTH_DETECTED", \{\s*isLoggedIn: realLogin,/,
+    `const realLogin = (isLoggedIn && email.includes("@")) || sid.length >= 16;
+      safeSend("PORTAL_AUTH_DETECTED", {\n        isLoggedIn: realLogin,`,
+  );
+  out = out.replace(/origin:\s*baseUrl,/, `origin: ${ownerJson},`);
+  out = out.replace(
+    /safeSend\("PORTAL_AUTH_DETECTED", \{\s*isLoggedIn: true,\s*email: session\.email,\s*days: 14,\s*origin,/,
+    `safeSend("PORTAL_AUTH_DETECTED", {\n        isLoggedIn: true,\n        email: session.email,\n        days: 14,\n        origin: ${ownerJson},`,
   );
   return out;
 }
@@ -702,6 +753,7 @@ async function brandOfficialZip(
       portalOriginFromUrl(appUrl) || appUrl,
       loginUrl,
     );
+    text = rewritePortalBridgeOrigin(text, file.name, portalOriginFromUrl(appUrl) || appUrl);
     text = rewriteDashboardOpen(text, dashboardUrl);
     text = rewriteSyncTimeoutCopy(text);
     text = replaceDashboardUrls(text, dashboardUrl, appUrl);
