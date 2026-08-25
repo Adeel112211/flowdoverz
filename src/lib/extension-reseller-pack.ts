@@ -1,7 +1,7 @@
 import JSZip from "jszip";
 import { getDb } from "@/lib/firebase-admin";
 import { sanitizeForFirestore } from "@/lib/cookie-store";
-import { getReseller } from "@/lib/reseller-store";
+import { getReseller, normalizeOriginList } from "@/lib/reseller-store";
 import { getActiveExtensionDownload } from "@/lib/extension-store";
 import { sealOfficialExtensionZip, type OfficialIntegrityProfile } from "@/lib/extension-official-from-zip";
 import { getAppUrl, getResellerUrl } from "@/lib/site-urls";
@@ -42,6 +42,7 @@ export type ResellerExtensionBranding = {
   displayName: string;
   supportEmail: string;
   dashboardUrl?: string;
+  loginUrl?: string;
   logoBase64?: string;
   logoMime?: string;
   keepLogo?: boolean;
@@ -136,8 +137,51 @@ function portalOriginFromUrl(raw: string) {
  * Sync/integrity stay on FlowDoverz. Login and Dashboard use the exact client URL
  * from Admin (e.g. https://infinity-flow-tau.vercel.app/painel).
  */
-function rewritePortalOrigin(text: string, _portalOrigin: string) {
-  return text;
+function brandRuntimeSource(runtime: {
+  siteName: string;
+  supportEmail: string;
+  loginUrl: string;
+  dashboardUrl: string;
+  cookieOrigin: string;
+  syncOrigin: string;
+}) {
+  return `var BRAND_RUNTIME = ${JSON.stringify(runtime)};
+function portalLoginUrl() {
+  try {
+    if (typeof BRAND_RUNTIME !== "undefined" && BRAND_RUNTIME.loginUrl) return BRAND_RUNTIME.loginUrl;
+  } catch (_e) {}
+  return ${JSON.stringify(runtime.loginUrl)};
+}
+function resellerDashboardUrl() {
+  try {
+    if (typeof BRAND_RUNTIME !== "undefined" && BRAND_RUNTIME.dashboardUrl) return BRAND_RUNTIME.dashboardUrl;
+  } catch (_e) {}
+  return ${JSON.stringify(runtime.dashboardUrl)};
+}
+`;
+}
+
+function wireBrandRuntimeLoader(text: string, fileName: string) {
+  const base = fileBaseName(fileName);
+  let out = String(text || "");
+  if (base === "background.js" && !/brand-runtime\.js/.test(out)) {
+    if (/importScripts\s*\(/.test(out)) {
+      out = out.replace(/importScripts\s*\(\s*/, `importScripts("brand-runtime.js", `);
+    } else {
+      out = `importScripts("brand-runtime.js");\n${out}`;
+    }
+  }
+  if (base === "popup.html" && !/brand-runtime\.js/.test(out)) {
+    if (/<script([^>]*src=["']popup\.js["'][^>]*)>/i.test(out)) {
+      out = out.replace(
+        /<script([^>]*src=["']popup\.js["'][^>]*)>/i,
+        `<script src="brand-runtime.js"></script>\n    <script$1>`,
+      );
+    } else {
+      out = out.replace(/<\/head>/i, `<script src="brand-runtime.js"></script>\n</head>`);
+    }
+  }
+  return out;
 }
 
 function fileBaseName(fileName: string) {
@@ -147,10 +191,10 @@ function fileBaseName(fileName: string) {
     .pop() || "";
 }
 
-function brandedPortalLockScript(portalOrigin: string, ownerOrigin: string, dashboardUrl: string) {
+function brandedPortalLockScript(portalOrigin: string, ownerOrigin: string, loginUrl: string) {
   const origin = String(portalOrigin || "").replace(/\/$/, "");
   const owner = String(ownerOrigin || "").replace(/\/$/, "") || "https://flow.doverz.com";
-  const login = String(dashboardUrl || `${origin}/login`).trim() || `${origin}/login`;
+  const login = String(loginUrl || `${origin}/login`).trim() || `${origin}/login`;
   const originJson = JSON.stringify(origin);
   const ownerJson = JSON.stringify(owner);
   const loginJson = JSON.stringify(login);
@@ -209,14 +253,14 @@ function appendBrandedPortalLock(
   fileName: string,
   portalOrigin: string,
   ownerOrigin: string,
-  dashboardUrl: string,
+  loginUrl: string,
 ) {
   if (fileBaseName(fileName) !== "background.js") return text;
   const origin = String(portalOrigin || "").replace(/\/$/, "");
   const owner = String(ownerOrigin || "").replace(/\/$/, "");
   if (!origin) return text;
   const stripped = String(text || "").replace(/\n;\/\* branded-portal-lock \*\/[\s\S]*$/, "");
-  return stripped + brandedPortalLockScript(origin, owner, dashboardUrl);
+  return stripped + brandedPortalLockScript(origin, owner, loginUrl);
 }
 
 function rewriteSyncTimeoutCopy(text: string) {
@@ -269,7 +313,7 @@ function rewriteDashboardOpen(text: string, dashboardUrl: string) {
     `if (request.action === "OPEN_DASHBOARD") {
     (async () => {
       try {
-        var url = RESELLER_DASHBOARD_URL || DEFAULT_PORTAL_URL;
+        var url = (typeof BRAND_RUNTIME !== "undefined" && BRAND_RUNTIME.dashboardUrl) || RESELLER_DASHBOARD_URL || DEFAULT_PORTAL_URL;
         await chrome.tabs.create({ url: url, active: true });
       } catch (_error) {}
       try { sendResponse({ success: true }); } catch (_error) {}
@@ -280,9 +324,9 @@ function rewriteDashboardOpen(text: string, dashboardUrl: string) {
   out = out.replace(
     /dashboardBtn\.addEventListener\(\s*"click"\s*,\s*\(\)\s*=>\s*\{\s*chrome\.runtime\.sendMessage\(\s*\{\s*action:\s*"OPEN_DASHBOARD"\s*\}\s*\)\s*;\s*\}\s*\)/,
     `dashboardBtn.addEventListener("click", () => {
-      var url = (typeof RESELLER_DASHBOARD_URL === "string" && RESELLER_DASHBOARD_URL)
-        ? RESELLER_DASHBOARD_URL
-        : ((currentPortalUrl || DEFAULT_PORTAL_URL).replace(/\\/+$/, "") + "/dashboard");
+      var url = (typeof BRAND_RUNTIME !== "undefined" && BRAND_RUNTIME.dashboardUrl)
+        || (typeof RESELLER_DASHBOARD_URL === "string" && RESELLER_DASHBOARD_URL)
+        || ((currentPortalUrl || DEFAULT_PORTAL_URL).replace(/\\/+$/, "") + "/dashboard");
       if (chrome.tabs && chrome.tabs.create) chrome.tabs.create({ url: url, active: true });
       else chrome.runtime.sendMessage({ action: "OPEN_DASHBOARD" });
     })`,
@@ -302,6 +346,10 @@ function rewriteDashboardOpen(text: string, dashboardUrl: string) {
   out = out.replace(
     /`\$\{cleanBaseUrl\(DEFAULT_PORTAL_URL\)\}\/login`/g,
     "portalLoginUrl()",
+  );
+  out = out.replace(
+    /chrome\.tabs\.create\(\s*\{\s*url:\s*`\$\{[^`]*\}\/login`\s*\}\s*\)/g,
+    "chrome.tabs.create({ url: portalLoginUrl(), active: true })",
   );
   out = out.replace(
     /const origin = cleanBaseUrl\(DEFAULT_PORTAL_URL\);/g,
@@ -329,7 +377,7 @@ function applyBrandIdentity(text: string, displayName: string, supportEmail: str
 
   out = out.replace(
     /siteName\.textContent\s*=\s*state\.brand_siteName\s*\|\|\s*(['"`])[\s\S]*?\1/g,
-    `siteName.textContent = ${nameJson}`,
+    `siteName.textContent = (typeof BRAND_RUNTIME !== "undefined" && BRAND_RUNTIME.siteName) || ${nameJson}`,
   );
   out = out.replace(
     /brand_siteName:\s*data\.branding\?\.site_name\s*\|\|\s*(['"`])[\s\S]*?\1/g,
@@ -546,6 +594,7 @@ async function applyLogoToZip(
 
   for (const file of Object.values(zip.files)) {
     if (file.dir) continue;
+    if (fileBaseName(file.name) === "brand-runtime.js") continue;
     if (!/\.(html|htm|css|js|mjs|cjs|json)$/i.test(file.name)) continue;
     let text = rewriteLogoRefs(await file.async("string"), logoFile, dataUrl);
     if (/\.html?$/i.test(file.name)) {
@@ -607,6 +656,7 @@ async function brandOfficialZip(
     supportEmail: string;
     websiteUrl?: string;
     dashboardUrl?: string;
+    loginUrl?: string;
     logo?: { buffer: Buffer; mime: string } | null;
     version: string;
   },
@@ -628,11 +678,14 @@ async function brandOfficialZip(
   const websiteUrl = normalizePublicUrl(String(branding.websiteUrl || ""));
   const dashboardUrl =
     normalizePublicUrl(String(branding.dashboardUrl || "")) || websiteUrl || getResellerUrl();
-  const portalOrigin = portalOriginFromUrl(dashboardUrl);
+  const loginUrl = normalizePublicUrl(String(branding.loginUrl || "")) || dashboardUrl;
+  const portalOrigin = portalOriginFromUrl(loginUrl || dashboardUrl);
   const appUrl = getAppUrl();
+  const syncOrigin = portalOriginFromUrl(appUrl) || appUrl.replace(/\/$/, "");
 
   for (const file of Object.values(zip.files)) {
     if (file.dir) continue;
+    if (fileBaseName(file.name) === "brand-runtime.js") continue;
     if (file.name.startsWith("__MACOSX") || file.name.split("/").some((part) => part.startsWith("."))) continue;
     if (branding.logo?.buffer && isImageFile(file.name)) continue;
     if (!TEXT_FILE.test(file.name)) continue;
@@ -642,17 +695,17 @@ async function brandOfficialZip(
       text = replaceVisibleEmails(text, email);
     }
     text = applyBrandIdentity(text, name, email);
-    text = rewritePortalOrigin(text, portalOrigin);
     text = appendBrandedPortalLock(
       text,
       file.name,
       portalOrigin,
       portalOriginFromUrl(appUrl) || appUrl,
-      dashboardUrl,
+      loginUrl,
     );
     text = rewriteDashboardOpen(text, dashboardUrl);
     text = rewriteSyncTimeoutCopy(text);
     text = replaceDashboardUrls(text, dashboardUrl, appUrl);
+    text = wireBrandRuntimeLoader(text, file.name);
     zip.file(file.name, text);
   }
 
@@ -666,8 +719,8 @@ async function brandOfficialZip(
   manifest.name = name;
   manifest.short_name = chromeShortName(name);
   manifest.description = `${name} helper for Google Flow.`;
-  if (dashboardUrl) {
-    manifest.homepage_url = dashboardUrl;
+  if (loginUrl) {
+    manifest.homepage_url = loginUrl;
   }
   if (portalOrigin) {
     const perms = Array.isArray(manifest.host_permissions) ? [...(manifest.host_permissions as string[])] : [];
@@ -684,6 +737,17 @@ async function brandOfficialZip(
   if (branding.logo?.buffer) {
     await applyLogoToZip(zip, branding.logo, manifest);
   }
+  zip.file(
+    "brand-runtime.js",
+    brandRuntimeSource({
+      siteName: name,
+      supportEmail: email,
+      loginUrl,
+      dashboardUrl,
+      cookieOrigin: portalOrigin,
+      syncOrigin,
+    }),
+  );
   zip.file(manifestEntry.name, `${JSON.stringify(manifest, null, 2)}\n`);
 
   return Buffer.from(
@@ -705,10 +769,11 @@ async function savedBrandingFor(resellerId: string) {
   const displayName = String(branding.displayName || pack.displayName || "");
   const supportEmail = String(branding.supportEmail || pack.supportEmail || "");
   const dashboardUrl = String(branding.dashboardUrl || pack.dashboardUrl || "");
+  const loginUrl = String(branding.loginUrl || pack.loginUrl || dashboardUrl);
   const logoBase64 = String(branding.logoBase64 || pack.logoBase64 || "");
   const logoMime = String(branding.logoMime || pack.logoMime || "image/png");
-  if (!displayName && !supportEmail && !logoBase64 && !dashboardUrl) return null;
-  return { displayName, supportEmail, dashboardUrl, logoBase64, logoMime };
+  if (!displayName && !supportEmail && !logoBase64 && !dashboardUrl && !loginUrl) return null;
+  return { displayName, supportEmail, dashboardUrl, loginUrl, logoBase64, logoMime };
 }
 
 export async function getResellerExtensionPack(resellerId: string): Promise<ResellerExtensionPack | null> {
@@ -744,7 +809,7 @@ async function saveResellerBrandedMeta(
   resellerId: string,
   meta: Pick<
     ResellerExtensionMeta,
-    "version" | "fileName" | "generatedAt" | "displayName" | "officialVersion" | "supportEmail" | "dashboardUrl" | "hasLogo"
+    "version" | "fileName" | "generatedAt" | "displayName" | "officialVersion" | "supportEmail" | "dashboardUrl" | "loginUrl" | "hasLogo"
   >,
 ) {
   const db = requireDb();
@@ -758,6 +823,7 @@ async function saveResellerBrandedMeta(
         officialVersion: meta.officialVersion,
         supportEmail: meta.supportEmail,
         dashboardUrl: meta.dashboardUrl || "",
+        loginUrl: meta.loginUrl || meta.dashboardUrl || "",
         hasLogo: meta.hasLogo,
       },
       updatedAt: new Date().toISOString(),
@@ -789,15 +855,23 @@ export async function generateResellerExtensionPack(
     pickInputString(inputRec, ["supportEmail"]) || saved?.supportEmail || "",
   ).trim().toLowerCase();
   if (supportEmail && !supportEmail.includes("@")) throw new Error("Enter a valid support email.");
-  const dashboardUrl = normalizePublicUrl(
-    pickInputString(inputRec, ["dashboardUrl", "dashboardLink"]) ||
+  const loginUrl = normalizePublicUrl(
+    pickInputString(inputRec, ["loginUrl", "clientLoginUrl", "signinUrl", "signInUrl"]) ||
+      saved?.loginUrl ||
+      pickInputString(inputRec, ["dashboardUrl", "dashboardLink"]) ||
       saved?.dashboardUrl ||
       reseller.websiteUrl ||
       "",
   );
-  if (!dashboardUrl) {
-    throw new Error("Enter the dashboard link clients should open from the extension popup.");
+  if (!loginUrl) {
+    throw new Error("Enter the client sign-in page. Example: https://their-site.vercel.app/painel");
   }
+  const dashboardFromInput = pickInputString(inputRec, ["dashboardUrl", "dashboardLink"]);
+  const dashboardUrl =
+    normalizePublicUrl(dashboardFromInput) ||
+    (input && ("dashboardUrl" in inputRec || "dashboardLink" in inputRec)
+      ? loginUrl
+      : normalizePublicUrl(String(saved?.dashboardUrl || "")) || loginUrl);
 
   const keepLogo = input?.keepLogo !== false && inputRec.keepLogo !== "false";
   let logo = parseLogoInput(
@@ -823,6 +897,7 @@ export async function generateResellerExtensionPack(
     supportEmail,
     websiteUrl: String(reseller.websiteUrl || ""),
     dashboardUrl,
+    loginUrl,
     logo,
     version,
   });
@@ -841,6 +916,7 @@ export async function generateResellerExtensionPack(
     displayName: displayName.slice(0, 75),
     supportEmail,
     dashboardUrl,
+    loginUrl,
     hasLogo: Boolean(logo),
     version,
     officialVersion: version,
@@ -858,6 +934,7 @@ export async function generateResellerExtensionPack(
         displayName: meta.displayName,
         supportEmail,
         dashboardUrl,
+        loginUrl,
         logoBase64: logo?.base64 || (keepLogo ? saved?.logoBase64 || "" : ""),
         logoMime: logo?.mime || (keepLogo ? saved?.logoMime || "" : ""),
         updatedAt: generatedAt,
@@ -879,6 +956,19 @@ export async function generateResellerExtensionPack(
   }
 
   await saveResellerBrandedMeta(reseller.id, meta);
+  const siteOrigin = portalOriginFromUrl(loginUrl);
+  if (siteOrigin) {
+    const websiteUrl = String(reseller.websiteUrl || "").trim() || siteOrigin;
+    const allowedOrigins = normalizeOriginList([...(reseller.allowedOrigins || []), siteOrigin], websiteUrl);
+    await db.collection("resellers").doc(reseller.id).set(
+      sanitizeForFirestore({
+        websiteUrl,
+        allowedOrigins,
+        updatedAt: generatedAt,
+      }),
+      { merge: true },
+    );
+  }
   const { touchLive } = await import("./live-tick");
   void touchLive({ topic: "reseller", action: "updated", id: reseller.id });
   void touchLive({ topic: "extension", action: "updated", id: reseller.id });

@@ -261,6 +261,7 @@ export async function PUT(request: NextRequest) {
         displayName: String(body.displayName || ""),
         supportEmail: String(body.supportEmail || ""),
         dashboardUrl: String(body.dashboardUrl || body.dashboardLink || ""),
+        loginUrl: String(body.loginUrl || body.clientLoginUrl || body.signinUrl || ""),
         logoBase64: logoValue || undefined,
         logoMime: body.logoMime ? String(body.logoMime) : undefined,
         keepLogo: body.keepLogo !== false && body.keepLogo !== "false",
@@ -280,6 +281,14 @@ export async function PUT(request: NextRequest) {
         success: true,
         reseller,
         downloadUrl: result.downloadUrl,
+        meta: {
+          displayName: result.meta.displayName,
+          supportEmail: result.meta.supportEmail,
+          loginUrl: result.meta.loginUrl || result.meta.dashboardUrl || "",
+          dashboardUrl: result.meta.dashboardUrl || "",
+          version: result.meta.version,
+          fileName: result.meta.fileName,
+        },
       });
     }
 

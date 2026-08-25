@@ -14,6 +14,7 @@ export type ResellerExtensionMeta = {
   displayName: string;
   supportEmail: string;
   dashboardUrl?: string;
+  loginUrl?: string;
   hasLogo: boolean;
   version: string;
   officialVersion: string;
@@ -46,6 +47,7 @@ export function asResellerPackMeta(id: string, data: Record<string, unknown>): R
     displayName: String(data.displayName || data.brandName || ""),
     supportEmail: String(data.supportEmail || ""),
     dashboardUrl: String(data.dashboardUrl || ""),
+    loginUrl: String(data.loginUrl || data.dashboardUrl || ""),
     hasLogo: Boolean(data.hasLogo || data.logoBase64),
     version,
     officialVersion: String(data.officialVersion || version),

@@ -19,6 +19,7 @@ import {
   Users,
   Puzzle,
   Globe,
+  CheckCircle2,
   type LucideIcon,
 } from "lucide-react";
 import { AdminDataTable, type AdminTableColumn } from "@/components/admin-data-table";
@@ -79,6 +80,7 @@ type Reseller = {
     downloadUrl?: string;
     supportEmail?: string;
     dashboardUrl?: string;
+    loginUrl?: string;
     hasLogo?: boolean;
   } | null;
 };
@@ -312,6 +314,15 @@ export default function AdminResellersPage() {
   const [brandName, setBrandName] = useState("");
   const [brandEmail, setBrandEmail] = useState("");
   const [brandDashboardUrl, setBrandDashboardUrl] = useState("");
+  const [brandLoginUrl, setBrandLoginUrl] = useState("");
+  const [brandResult, setBrandResult] = useState<{
+    displayName: string;
+    supportEmail: string;
+    loginUrl: string;
+    dashboardUrl: string;
+    downloadUrl: string;
+    version: string;
+  } | null>(null);
   const [brandLogoDataUrl, setBrandLogoDataUrl] = useState("");
   const [brandLogoName, setBrandLogoName] = useState("");
   const [brandLogoError, setBrandLogoError] = useState("");
@@ -440,9 +451,15 @@ export default function AdminResellersPage() {
 
   const openBrandModal = (row: Reseller) => {
     setBrandTarget(row);
+    setBrandResult(null);
     setBrandName(row.brandedExtension?.displayName || row.brandName || "");
     setBrandEmail(row.brandedExtension?.supportEmail || row.contactEmail || "");
-    setBrandDashboardUrl(row.brandedExtension?.dashboardUrl || row.websiteUrl || "");
+    setBrandLoginUrl(row.brandedExtension?.loginUrl || row.brandedExtension?.dashboardUrl || row.websiteUrl || "");
+    setBrandDashboardUrl(
+      row.brandedExtension?.dashboardUrl && row.brandedExtension.dashboardUrl !== row.brandedExtension.loginUrl
+        ? row.brandedExtension.dashboardUrl
+        : "",
+    );
     setBrandLogoDataUrl("");
     setBrandLogoName("");
     setBrandLogoError("");
@@ -485,6 +502,10 @@ export default function AdminResellersPage() {
       toast("Select a logo image first.", "error");
       return;
     }
+    if (!brandLoginUrl.trim()) {
+      toast("Enter the client sign-in page first.", "error");
+      return;
+    }
     setGeneratingExtensionId(row.id);
     try {
       const form = new FormData();
@@ -492,7 +513,8 @@ export default function AdminResellersPage() {
       form.set("action", "generate_extension");
       form.set("displayName", brandName.trim());
       form.set("supportEmail", brandEmail.trim());
-      form.set("dashboardUrl", brandDashboardUrl.trim());
+      form.set("loginUrl", brandLoginUrl.trim());
+      form.set("dashboardUrl", brandDashboardUrl.trim() || brandLoginUrl.trim());
       if (file) {
         form.set("logo", file);
         form.set("keepLogo", "false");
@@ -510,8 +532,22 @@ export default function AdminResellersPage() {
         return;
       }
       await load(true);
-      setBrandTarget(null);
+      const baked = data.meta as {
+        displayName?: string;
+        supportEmail?: string;
+        loginUrl?: string;
+        dashboardUrl?: string;
+        version?: string;
+      } | undefined;
       const url = String(data.downloadUrl || data.reseller?.brandedExtension?.downloadUrl || "");
+      setBrandResult({
+        displayName: String(baked?.displayName || brandName.trim() || row.brandName),
+        supportEmail: String(baked?.supportEmail || brandEmail.trim()),
+        loginUrl: String(baked?.loginUrl || brandLoginUrl.trim()),
+        dashboardUrl: String(baked?.dashboardUrl || brandDashboardUrl.trim() || brandLoginUrl.trim()),
+        downloadUrl: url,
+        version: String(baked?.version || data.reseller?.brandedExtension?.version || ""),
+      });
       if (url) {
         await copyText(url, "Branded extension link");
         const link = document.createElement("a");
@@ -521,7 +557,7 @@ export default function AdminResellersPage() {
         link.click();
         link.remove();
       }
-      toast(`Branded extension ready for ${brandName.trim() || row.brandName}. Load the new ZIP in chrome://extensions.`);
+      toast(`Branded ZIP ready for ${brandName.trim() || row.brandName}. Remove the old extension, then load this new ZIP.`);
     } catch {
       toast("Could not build branded extension", "error");
     } finally {
@@ -938,7 +974,9 @@ export default function AdminResellersPage() {
                 <input value={form.websiteUrl} onChange={(e) => setForm({ ...form, websiteUrl: e.target.value })} className={INPUT_CLASS} placeholder="https://their-brand.com" disabled={form.kind === "official"} />
                 {form.kind === "official" ? (
                   <p className="mt-1 text-xs text-slate-500">Not needed. Customers use the FlowDoverz website.</p>
-                ) : null}
+                ) : (
+                  <p className="mt-1 text-xs text-slate-500">Optional. Rebuild ZIP fills this from their client sign-in page if you leave it empty.</p>
+                )}
               </div>
             </div>
             {form.kind === "white_label" ? (
@@ -950,7 +988,7 @@ export default function AdminResellersPage() {
                 className={`${INPUT_CLASS} min-h-[88px]`}
                 placeholder={"https://their-brand.com\nhttps://app.their-brand.com"}
               />
-              <p className="mt-1 text-xs text-slate-500">One origin per line. Prefer server-side API calls so the key never sits in their frontend.</p>
+              <p className="mt-1 text-xs text-slate-500">Optional. Rebuild ZIP also adds their client sign-in origin here if it is missing.</p>
             </div>
             ) : (
               <p className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 px-4 py-3 text-sm text-emerald-100">
@@ -1288,14 +1326,85 @@ export default function AdminResellersPage() {
         </AdminGlassPanel>
       </AdminGlassModal>
 
-      <AdminGlassModal open={Boolean(brandTarget)} maxWidth="lg" align="end" scrollable closeOnBackdrop onClose={() => setBrandTarget(null)}>
+      <AdminGlassModal
+        open={Boolean(brandTarget)}
+        maxWidth="lg"
+        align="end"
+        scrollable
+        closeOnBackdrop
+        onClose={() => {
+          setBrandTarget(null);
+          setBrandResult(null);
+        }}
+      >
         <AdminGlassPanel accent="violet" sheet>
-          {brandTarget ? (
+          {brandTarget && brandResult ? (
+            <div className="space-y-4">
+              <div className="flex items-start gap-3">
+                <CheckCircle2 className="mt-0.5 shrink-0 text-emerald-400" size={22} />
+                <div>
+                  <h2 className="text-xl font-black text-white">ZIP baked for {brandResult.displayName}</h2>
+                  <p className="mt-1 text-sm text-slate-400">
+                    No extra code change is needed. Remove the old extension, load this ZIP, then sign in on their client page and tap Sync.
+                  </p>
+                </div>
+              </div>
+              <dl className="grid gap-2 rounded-xl border border-white/10 bg-black/30 p-3 text-sm">
+                <div className="flex justify-between gap-3">
+                  <dt className="text-slate-500">Name</dt>
+                  <dd className="truncate text-white">{brandResult.displayName}</dd>
+                </div>
+                <div className="flex justify-between gap-3">
+                  <dt className="text-slate-500">Sign-in page</dt>
+                  <dd className="truncate font-mono text-cyan-300" title={brandResult.loginUrl}>{brandResult.loginUrl}</dd>
+                </div>
+                <div className="flex justify-between gap-3">
+                  <dt className="text-slate-500">Dashboard</dt>
+                  <dd className="truncate font-mono text-cyan-300" title={brandResult.dashboardUrl}>{brandResult.dashboardUrl}</dd>
+                </div>
+                <div className="flex justify-between gap-3">
+                  <dt className="text-slate-500">Support email</dt>
+                  <dd className="truncate text-white">{brandResult.supportEmail || "—"}</dd>
+                </div>
+                <div className="flex justify-between gap-3">
+                  <dt className="text-slate-500">Version</dt>
+                  <dd className="font-mono text-slate-200">{brandResult.version || "—"}</dd>
+                </div>
+              </dl>
+              <ol className="list-decimal space-y-1 pl-5 text-sm text-slate-300">
+                <li>Open chrome://extensions and remove the previous ZIP.</li>
+                <li>Load this new ZIP (Developer mode → Load unpacked, or drag the zip after unzipping).</li>
+                <li>Sign in at {brandResult.loginUrl} in this same Chrome profile.</li>
+                <li>Open the extension popup and tap Sync.</li>
+              </ol>
+              <div className="flex flex-col-reverse gap-3 sm:flex-row">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setBrandTarget(null);
+                    setBrandResult(null);
+                  }}
+                  className="flex-1 rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-bold text-slate-300"
+                >
+                  Done
+                </button>
+                {brandResult.downloadUrl ? (
+                  <button
+                    type="button"
+                    onClick={() => void copyText(brandResult.downloadUrl, "Branded extension link")}
+                    className="flex-1 rounded-xl bg-gradient-to-r from-fuchsia-400 to-cyan-400 px-4 py-3 text-sm font-bold text-slate-950"
+                  >
+                    Copy download link
+                  </button>
+                ) : null}
+              </div>
+            </div>
+          ) : brandTarget ? (
             <form onSubmit={generateExtension} className="space-y-4">
               <div>
                 <h2 className="text-xl font-black text-white">Build branded extension</h2>
                 <p className="mt-1 text-sm text-slate-400">
-                  These values replace FlowDoverz name, logo, and contact email inside the Chrome ZIP and the fake credits overlay. The site URL below is used for Dashboard and Sync in the extension. Clients must sign in on that site. Rebuild the ZIP after changing this.
+                  Fill this once and rebuild. The ZIP bakes their name, logo, email, sign-in page, and dashboard. You do not change code for a new reseller.
                 </p>
               </div>
               <div>
@@ -1323,17 +1432,30 @@ export default function AdminResellersPage() {
                 <p className="mt-1 text-xs text-slate-500">Replaces contact emails in the fake credits overlay.</p>
               </div>
               <div>
-                <label className="mb-2 block text-sm font-bold text-slate-400">Client site / Dashboard link</label>
+                <label className="mb-2 block text-sm font-bold text-slate-400">Client sign-in page</label>
                 <input
                   required
                   type="url"
-                  value={brandDashboardUrl}
-                  onChange={(e) => setBrandDashboardUrl(e.target.value)}
+                  value={brandLoginUrl}
+                  onChange={(e) => setBrandLoginUrl(e.target.value)}
                   className={INPUT_CLASS}
                   placeholder="https://infinity-flow-tau.vercel.app/painel"
                 />
                 <p className="mt-1 text-xs text-slate-500">
-                  Dashboard and sign-in open this exact page (example: https://infinity-flow-tau.vercel.app/painel). Sync still talks to FlowDoverz in the background — that page must set the FlowDoverz login cookie after they sign in.
+                  Exact page clients log into. Example: https://infinity-flow-tau.vercel.app/painel. That page must set the FlowDoverz login cookie after they sign in. Sync still talks to FlowDoverz in the background.
+                </p>
+              </div>
+              <div>
+                <label className="mb-2 block text-sm font-bold text-slate-400">Dashboard page (optional)</label>
+                <input
+                  type="url"
+                  value={brandDashboardUrl}
+                  onChange={(e) => setBrandDashboardUrl(e.target.value)}
+                  className={INPUT_CLASS}
+                  placeholder="Same as sign-in if left empty"
+                />
+                <p className="mt-1 text-xs text-slate-500">
+                  Popup Dashboard button opens this URL. Leave empty to use the same sign-in page.
                 </p>
               </div>
               <div>
