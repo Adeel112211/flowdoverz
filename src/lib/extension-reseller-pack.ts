@@ -133,7 +133,9 @@ function portalOriginFromUrl(raw: string) {
 }
 
 /**
- * Branded ZIP: Sync and login run on the reseller website, not flow.doverz.com.
+ * Keep Sync/integrity on FlowDoverz. Dashboard URL is pinned separately.
+ * Rewriting every flow.doverz.com link onto the reseller site makes Sync hang
+ * when that site has no /api/sync proxy.
  */
 function rewritePortalOrigin(text: string, portalOrigin: string) {
   const origin = String(portalOrigin || "").replace(/\/$/, "");
@@ -143,11 +145,6 @@ function rewritePortalOrigin(text: string, portalOrigin: string) {
     /const DEFAULT_PORTAL_URL\s*=\s*["']https:\/\/flow\.doverz\.com["']/g,
     `const DEFAULT_PORTAL_URL = ${JSON.stringify(origin)}`,
   );
-  out = out.replace(
-    /const OWNER_PORTAL_URL\s*=\s*`https:\/\/\$\{\s*\[\s*"flow"\s*,\s*"doverz"\s*,\s*"com"\s*\]\s*\.join\(\s*"\."\s*\)\s*\}`\s*;?/g,
-    `const OWNER_PORTAL_URL = ${JSON.stringify(origin)};`,
-  );
-  out = out.replace(/https:\/\/flow\.doverz\.com/g, origin);
   return out;
 }
 
@@ -158,17 +155,17 @@ function fileBaseName(fileName: string) {
     .pop() || "";
 }
 
-/** Force branded builds to stay on the reseller origin even if the official ZIP is older. */
-function brandedPortalLockScript(portalOrigin: string) {
+function brandedPortalLockScript(portalOrigin: string, ownerOrigin: string) {
   const origin = String(portalOrigin || "").replace(/\/$/, "");
+  const owner = String(ownerOrigin || "").replace(/\/$/, "") || "https://flow.doverz.com";
   const originJson = JSON.stringify(origin);
-  const loginJson = JSON.stringify(`${origin}/login`);
+  const ownerJson = JSON.stringify(owner);
   return `
 
 ;/* branded-portal-lock */
 async function hasPortalLoginCookie(baseUrl) {
   try {
-    var target = String(baseUrl || ${originJson}).replace(/\\/+$/, "");
+    var target = String(baseUrl || ${ownerJson}).replace(/\\/+$/, "");
     var root = target.indexOf("http") === 0 ? target : ("http://" + target);
     var cookieUrl = root.charAt(root.length - 1) === "/" ? root : (root + "/");
     var cookie = await chrome.cookies.get({ url: cookieUrl, name: SESSION_COOKIE_NAME });
@@ -185,26 +182,65 @@ async function hasPortalLoginCookie(baseUrl) {
     return false;
   }
 }
+async function brandedPortalHasSyncApi(baseUrl) {
+  try {
+    var root = String(baseUrl || "").replace(/\\/+$/, "");
+    if (!root) return false;
+    var controller = new AbortController();
+    var timer = setTimeout(function () { controller.abort(); }, 3500);
+    var res = await fetch(root + "/api/extension/integrity", {
+      method: "GET",
+      headers: { Accept: "application/json" },
+      credentials: "include",
+      cache: "no-store",
+      signal: controller.signal,
+    });
+    clearTimeout(timer);
+    var type = String((res && res.headers && res.headers.get("content-type")) || "");
+    return Boolean(res && type.indexOf("json") !== -1);
+  } catch (_error) {
+    return false;
+  }
+}
+var brandedPortalResolved = ${ownerJson};
 function portalLoginUrl() {
-  return ${loginJson};
+  return brandedPortalResolved + "/login";
 }
 async function resolvePortalBaseUrl(_preferred) {
-  var origin = ${originJson};
-  if (await hasPortalLoginCookie(origin)) {
-    await chrome.storage.local.set({ portalUrl: origin });
-    return origin;
+  var branded = ${originJson};
+  var owner = ${ownerJson};
+  if (branded && branded !== owner && (await brandedPortalHasSyncApi(branded))) {
+    brandedPortalResolved = branded;
+    await chrome.storage.local.set({ portalUrl: branded });
+    return branded;
   }
-  return origin;
+  brandedPortalResolved = owner;
+  await chrome.storage.local.set({ portalUrl: owner });
+  return owner;
 }
 `;
 }
 
-function appendBrandedPortalLock(text: string, fileName: string, portalOrigin: string) {
+function appendBrandedPortalLock(text: string, fileName: string, portalOrigin: string, ownerOrigin: string) {
   if (fileBaseName(fileName) !== "background.js") return text;
   const origin = String(portalOrigin || "").replace(/\/$/, "");
+  const owner = String(ownerOrigin || "").replace(/\/$/, "");
   if (!origin) return text;
   const stripped = String(text || "").replace(/\n;\/\* branded-portal-lock \*\/[\s\S]*$/, "");
-  return stripped + brandedPortalLockScript(origin);
+  return stripped + brandedPortalLockScript(origin, owner);
+}
+
+function rewriteSyncTimeoutCopy(text: string) {
+  let out = String(text || "");
+  out = out.replace(
+    /Sync timed out\. Open [^."]*, sign in, then try again\./g,
+    "Sync timed out. Sign in, then try again.",
+  );
+  out = out.replace(
+    /Open [^."]{0,80} in this browser, sign in, then tap Sync now\./g,
+    "Sign in on the login page in this browser, then tap Sync now.",
+  );
+  return out;
 }
 
 function replaceDashboardUrls(text: string, dashboardUrl: string, appUrl: string) {
@@ -606,8 +642,9 @@ async function brandOfficialZip(
     }
     text = applyBrandIdentity(text, name, email);
     text = rewritePortalOrigin(text, portalOrigin);
-    text = appendBrandedPortalLock(text, file.name, portalOrigin);
+    text = appendBrandedPortalLock(text, file.name, portalOrigin, portalOriginFromUrl(appUrl) || appUrl);
     text = rewriteDashboardOpen(text, dashboardUrl);
+    text = rewriteSyncTimeoutCopy(text);
     text = replaceDashboardUrls(text, dashboardUrl, appUrl);
     zip.file(file.name, text);
   }

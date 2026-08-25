@@ -1333,7 +1333,7 @@ export default function AdminResellersPage() {
                   placeholder="https://their-site.com/dashboard"
                 />
                 <p className="mt-1 text-xs text-slate-500">
-                  Dashboard button opens this exact URL. Sync uses that website&apos;s origin (login cookie + /api/sync). Put the full dashboard page, e.g. https://their-site.com/dashboard — not only the homepage.
+                  Dashboard button opens this exact URL. Sync uses that site only if it has /api/sync; otherwise it signs in on flow.doverz.com. Put the full page, e.g. https://their-site.com/dashboard.
                 </p>
               </div>
               <div>
