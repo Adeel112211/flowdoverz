@@ -294,10 +294,24 @@ function appendBrandedPortalLock(
     /\.then\(\(\) => performCookieSync\("", \{ force: true \}\)\);/,
     ";",
   );
+  stripped = stripped.replace(/\.then\(\(\) => performCookieSync\(\)\);/, ";");
   stripped = stripped.replace(
-    /portalUrl: request\.origin \|\| DEFAULT_PORTAL_URL,/,
+    /portalUrl:\s*request\.origin(?:\s*\|\|\s*DEFAULT_PORTAL_URL)?,/,
     `portalUrl: ${JSON.stringify(owner || "https://flow.doverz.com")},\n            brandedSid: request.sid || "",`,
   );
+  stripped = stripped.replace(
+    /\s*else if \(!request\.isLoggedIn\) \{[\s\S]{0,900}?handleLogoutOrError\([\s\S]{0,500}?\);\s*\}\);?\s*\}/,
+    "\n    ",
+  );
+  if (!/plantPortalSidCookie\(request\.origin, request\.sid\)/.test(stripped)) {
+    stripped = stripped.replace(
+      /if \(request\.action === "PORTAL_AUTH_DETECTED"\) \{/,
+      `if (request.action === "PORTAL_AUTH_DETECTED") {
+    if (request.sid && String(request.sid).length >= 16) {
+      plantPortalSidCookie(request.origin, request.sid);
+    }`,
+    );
+  }
   stripped = stripped.replace(
     /if \(sessionCookie\) headers\.Cookie = sessionCookie;/,
     `var __sid = "";
@@ -307,10 +321,18 @@ function appendBrandedPortalLock(
     }
     if (__sid) headers["X-FlowDoverz-Sid"] = __sid;`,
   );
-  stripped = stripped.replace(
-    /headers\.Cookie = sessionCookie;/,
-    "",
-  );
+  stripped = stripped.replace(/headers\.Cookie = sessionCookie;/, "");
+  if (!/headers\["X-FlowDoverz-Sid"\]/.test(stripped)) {
+    stripped = stripped.replace(
+      /"X-Extension-Proof": proved\.proof,\s*\};/,
+      `"X-Extension-Proof": proved.proof,
+    };
+    try {
+      var __sid = await brandedEnsureOwnerSid();
+      if (__sid) headers["X-FlowDoverz-Sid"] = __sid;
+    } catch (_sidErr) {}`,
+    );
+  }
   stripped = stripped.replace(
     /if \(request\.action === "TRIGGER_SYNC"\) \{\s*performCookieSync\(request\.slot \|\| "", \{ force: true \}\)\.then\(\(result\) => sendResponse\(result\)\);\s*return true;\s*\}/,
     `if (request.action === "TRIGGER_SYNC") {
@@ -318,7 +340,10 @@ function appendBrandedPortalLock(
     var __syncFinish = function (result) {
       if (__syncDone) return;
       __syncDone = true;
-      try { sendResponse(result || { success: false, status: "disconnected" }); } catch (_e) {}
+      if (result && !result.success && !result.message) {
+        result.message = "Sign in on your client page, then try Sync again.";
+      }
+      try { sendResponse(result || { success: false, status: "disconnected", message: "Sign in on your client page, then try Sync again." }); } catch (_e) {}
     };
     setTimeout(function () {
       __syncFinish({ success: false, status: "disconnected", message: "Sign in on your client page, then try Sync again." });
@@ -353,6 +378,10 @@ function rewriteSyncTimeoutCopy(text: string) {
   out = out.replace(
     /Could not connect\. Sign in on your website, then Sync\./g,
     "Could not connect. Sign in on your client page, then Sync.",
+  );
+  out = out.replace(
+    /showToast\("Could not connect[^"]*"\)/g,
+    'showToast(result.message || "Could not connect. Sign in on your client page, then Sync.")',
   );
   out = out.replace(/\},\s*20000\)/, "}, 12000)");
   out = out.replace(/\},\s*45000\)/, "}, 12000)");
