@@ -192,12 +192,34 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  const slot = (searchParams.get("slot") || "C1").toUpperCase();
-  const ownerSlots = await listSlots(WORKSPACE_OWNER);
-  const record =
-    ownerSlots.find((item) => String(item.key).toUpperCase() === slot)?.record || null;
+  let allowedSlotKeys: Set<string> | null = null;
+  const resellerId = String(userRecord?.resellerId || "").trim();
+  if (resellerId) {
+    const { getReseller } = await import("@/lib/reseller-store");
+    const reseller = await getReseller(resellerId);
+    allowedSlotKeys = new Set(
+      (reseller?.assignedSlots || []).map((key) => String(key).toUpperCase()).filter(Boolean),
+    );
+  }
 
-  const availableSlots = ownerSlots
+  let slot = String(searchParams.get("slot") || userRecord?.assignedSlot || "C1").toUpperCase();
+  if (allowedSlotKeys) {
+    if (!allowedSlotKeys.has(slot)) {
+      slot = [...allowedSlotKeys][0] || "";
+    }
+  }
+
+  const ownerSlots = await listSlots(WORKSPACE_OWNER);
+  const visibleSlots = ownerSlots.filter(({ key }) => {
+    const slotKey = String(key || "").toUpperCase();
+    if (!slotKey) return false;
+    if (allowedSlotKeys && !allowedSlotKeys.has(slotKey)) return false;
+    return true;
+  });
+  const record =
+    visibleSlots.find((item) => String(item.key).toUpperCase() === slot)?.record || null;
+
+  const availableSlots = visibleSlots
     .filter(({ record: rec }) => Array.isArray(rec.cookies) && rec.cookies.length > 0)
     .map(({ key, record: rec }) => ({
       key: key.toUpperCase(),
@@ -209,7 +231,7 @@ export async function GET(request: NextRequest) {
     .sort((a, b) => a.key.localeCompare(b.key));
 
   const slotCookies: Record<string, unknown> = {};
-  for (const { key, record: rec } of ownerSlots) {
+  for (const { key, record: rec } of visibleSlots) {
     const slotKey = String(key || "").toUpperCase();
     if (slotKey && Array.isArray(rec.cookies) && rec.cookies.length > 0) {
       slotCookies[slotKey] = rec.cookies;

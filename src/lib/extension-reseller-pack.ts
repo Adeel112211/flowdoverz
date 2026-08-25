@@ -49,6 +49,8 @@ export type ResellerExtensionBranding = {
   primaryColor?: string;
   accentColor?: string;
   backgroundColor?: string;
+  labelColor?: string;
+  onPrimaryColor?: string;
 };
 
 export type ResellerExtensionPack = ResellerExtensionMeta & {
@@ -119,6 +121,8 @@ function replaceVisibleBrand(text: string, displayName: string) {
 const DEFAULT_BRAND_BG = "#080810";
 const DEFAULT_BRAND_PRIMARY = "#22d3ee";
 const DEFAULT_BRAND_ACCENT = "#34d399";
+const DEFAULT_BRAND_LABEL = "#a5f3fc";
+const DEFAULT_BRAND_ON_PRIMARY = "#041016";
 
 function normalizeHexColor(raw: string, fallback: string) {
   const match = /^#?([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(String(raw || "").trim());
@@ -180,6 +184,8 @@ function brandRuntimeSource(runtime: {
   primaryColor: string;
   accentColor: string;
   backgroundColor: string;
+  labelColor: string;
+  onPrimaryColor: string;
 }) {
   return `var BRAND_RUNTIME = ${JSON.stringify(runtime)};
 function portalLoginUrl() {
@@ -203,6 +209,8 @@ try {
       root.style.setProperty("--primary-dark", BRAND_RUNTIME.primaryColor);
     }
     if (BRAND_RUNTIME.accentColor) root.style.setProperty("--accent", BRAND_RUNTIME.accentColor);
+    if (BRAND_RUNTIME.labelColor) root.style.setProperty("--label", BRAND_RUNTIME.labelColor);
+    if (BRAND_RUNTIME.onPrimaryColor) root.style.setProperty("--on-primary", BRAND_RUNTIME.onPrimaryColor);
   }
 } catch (_theme) {}
 `;
@@ -211,7 +219,15 @@ try {
 function applyBrandTheme(
   text: string,
   fileName: string,
-  theme: { bg: string; panel: string; primary: string; primaryDark: string; accent: string },
+  theme: {
+    bg: string;
+    panel: string;
+    primary: string;
+    primaryDark: string;
+    accent: string;
+    label: string;
+    onPrimary: string;
+  },
 ) {
   const base = fileBaseName(fileName);
   let out = String(text || "");
@@ -223,10 +239,23 @@ function applyBrandTheme(
     out = out.replace(/--accent:\s*#[0-9a-fA-F]{3,8};/, `--accent: ${theme.accent};`);
     out = out.replace(/rgba\(\s*34\s*,\s*211\s*,\s*238\s*,/g, `rgba(${hexToRgb(theme.primary).r}, ${hexToRgb(theme.primary).g}, ${hexToRgb(theme.primary).b},`);
     out = out.replace(/rgba\(\s*52\s*,\s*211\s*,\s*153\s*,/g, `rgba(${hexToRgb(theme.accent).r}, ${hexToRgb(theme.accent).g}, ${hexToRgb(theme.accent).b},`);
+    out = out.replace(/#a5f3fc/gi, theme.label);
+    out = out.replace(/#ecfeff/gi, theme.label);
+    out = out.replace(/#041016/gi, theme.onPrimary);
+    return out;
+  }
+  if (base === "content.js") {
+    out = out.replace(/linear-gradient\(135deg, #22d3ee, #34d399\)/g, `linear-gradient(135deg, ${theme.primary}, ${theme.accent})`);
+    out = out.replace(/current \? "#ecfeff"/g, `current ? ${JSON.stringify(theme.label)}`);
+    out = out.replace(/isCurrent \? "#ecfeff"/g, `isCurrent ? ${JSON.stringify(theme.label)}`);
+    out = out.replace(/current \? "#020617"/g, `current ? ${JSON.stringify(theme.onPrimary)}`);
+    out = out.replace(/isCurrent \? "#020617"/g, `isCurrent ? ${JSON.stringify(theme.onPrimary)}`);
+    out = out.replace(/color: "#020617"/g, `color: ${JSON.stringify(theme.onPrimary)}`);
+    out = out.replace(/color: "#22d3ee"/g, `color: ${JSON.stringify(theme.primary)}`);
     return out;
   }
   if (base === "popup.html" && !/id=["']brand-theme["']/.test(out)) {
-    const style = `<style id="brand-theme">:root{--bg:${theme.bg};--panel:${theme.panel};--primary:${theme.primary};--primary-dark:${theme.primaryDark};--accent:${theme.accent};}</style>\n    `;
+    const style = `<style id="brand-theme">:root{--bg:${theme.bg};--panel:${theme.panel};--primary:${theme.primary};--primary-dark:${theme.primaryDark};--accent:${theme.accent};--label:${theme.label};--on-primary:${theme.onPrimary};}</style>\n    `;
     if (/<link[^>]+popup\.css/i.test(out)) {
       return out.replace(/<link[^>]+popup\.css[^>]*>/i, `${style}$&`);
     }
@@ -886,6 +915,8 @@ async function brandOfficialZip(
     primaryColor?: string;
     accentColor?: string;
     backgroundColor?: string;
+    labelColor?: string;
+    onPrimaryColor?: string;
   },
 ) {
   const zip = await JSZip.loadAsync(officialBuffer);
@@ -912,12 +943,16 @@ async function brandOfficialZip(
   const primaryColor = normalizeHexColor(String(branding.primaryColor || ""), DEFAULT_BRAND_PRIMARY);
   const accentColor = normalizeHexColor(String(branding.accentColor || ""), DEFAULT_BRAND_ACCENT);
   const backgroundColor = normalizeHexColor(String(branding.backgroundColor || ""), DEFAULT_BRAND_BG);
+  const labelColor = normalizeHexColor(String(branding.labelColor || ""), DEFAULT_BRAND_LABEL);
+  const onPrimaryColor = normalizeHexColor(String(branding.onPrimaryColor || ""), DEFAULT_BRAND_ON_PRIMARY);
   const theme = {
     bg: backgroundColor,
     panel: backgroundColor === DEFAULT_BRAND_BG ? "#0c0e16" : backgroundColor,
     primary: primaryColor,
     primaryDark: darkenHex(primaryColor),
     accent: accentColor,
+    label: labelColor,
+    onPrimary: onPrimaryColor,
   };
 
   for (const file of Object.values(zip.files)) {
@@ -988,6 +1023,8 @@ async function brandOfficialZip(
       primaryColor,
       accentColor,
       backgroundColor,
+      labelColor,
+      onPrimaryColor,
     }),
   );
   zip.file(manifestEntry.name, `${JSON.stringify(manifest, null, 2)}\n`);
@@ -1025,6 +1062,8 @@ async function savedBrandingFor(resellerId: string) {
     primaryColor: String(branding.primaryColor || pack.primaryColor || ""),
     accentColor: String(branding.accentColor || pack.accentColor || ""),
     backgroundColor: String(branding.backgroundColor || pack.backgroundColor || ""),
+    labelColor: String(branding.labelColor || pack.labelColor || ""),
+    onPrimaryColor: String(branding.onPrimaryColor || pack.onPrimaryColor || ""),
   };
 }
 
@@ -1066,6 +1105,8 @@ async function saveResellerBrandedMeta(
     primaryColor?: string;
     accentColor?: string;
     backgroundColor?: string;
+    labelColor?: string;
+    onPrimaryColor?: string;
   },
 ) {
   const db = requireDb();
@@ -1084,6 +1125,8 @@ async function saveResellerBrandedMeta(
         primaryColor: meta.primaryColor || "",
         accentColor: meta.accentColor || "",
         backgroundColor: meta.backgroundColor || "",
+        labelColor: meta.labelColor || "",
+        onPrimaryColor: meta.onPrimaryColor || "",
       },
       updatedAt: new Date().toISOString(),
     }),
@@ -1145,6 +1188,14 @@ export async function generateResellerExtensionPack(
     pickInputString(inputRec, ["backgroundColor", "bgColor"]) || saved?.backgroundColor || "",
     DEFAULT_BRAND_BG,
   );
+  const labelColor = normalizeHexColor(
+    pickInputString(inputRec, ["labelColor", "textColor"]) || saved?.labelColor || "",
+    DEFAULT_BRAND_LABEL,
+  );
+  const onPrimaryColor = normalizeHexColor(
+    pickInputString(inputRec, ["onPrimaryColor", "buttonTextColor"]) || saved?.onPrimaryColor || "",
+    DEFAULT_BRAND_ON_PRIMARY,
+  );
   let logo = parseLogoInput(
     pickLogoFromUnknown(inputRec) || input?.logoBase64,
     pickInputString(inputRec, ["logoMime"]) || input?.logoMime,
@@ -1174,6 +1225,8 @@ export async function generateResellerExtensionPack(
     primaryColor,
     accentColor,
     backgroundColor,
+    labelColor,
+    onPrimaryColor,
   });
   const sealed = await sealOfficialExtensionZip(branded, { version });
   if (sealed.zipBuffer.length > MAX_ZIP_BYTES) {
@@ -1214,6 +1267,8 @@ export async function generateResellerExtensionPack(
         primaryColor,
         accentColor,
         backgroundColor,
+        labelColor,
+        onPrimaryColor,
         updatedAt: generatedAt,
       }),
     );
@@ -1223,6 +1278,8 @@ export async function generateResellerExtensionPack(
         primaryColor,
         accentColor,
         backgroundColor,
+        labelColor,
+        onPrimaryColor,
         zipBase64: sealed.zipBuffer.toString("base64"),
       }),
     );
@@ -1240,6 +1297,8 @@ export async function generateResellerExtensionPack(
     primaryColor,
     accentColor,
     backgroundColor,
+    labelColor,
+    onPrimaryColor,
   });
   const siteOrigin = portalOriginFromUrl(loginUrl);
   if (siteOrigin) {

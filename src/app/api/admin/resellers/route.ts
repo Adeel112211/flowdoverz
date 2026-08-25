@@ -268,6 +268,8 @@ export async function PUT(request: NextRequest) {
         primaryColor: String(body.primaryColor || body.buttonColor || ""),
         accentColor: String(body.accentColor || body.sessionColor || ""),
         backgroundColor: String(body.backgroundColor || body.bgColor || ""),
+        labelColor: String(body.labelColor || body.textColor || ""),
+        onPrimaryColor: String(body.onPrimaryColor || body.buttonTextColor || ""),
       });
       const current = await getReseller(id);
       if (!current) {

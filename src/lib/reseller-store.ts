@@ -22,6 +22,8 @@ export type ResellerBrandedExtension = {
   primaryColor?: string;
   accentColor?: string;
   backgroundColor?: string;
+  labelColor?: string;
+  onPrimaryColor?: string;
 };
 
 export type ResellerRecord = {
@@ -228,6 +230,8 @@ function parseBrandedExtension(raw: unknown): ResellerBrandedExtension | null {
     primaryColor: String(data.primaryColor || ""),
     accentColor: String(data.accentColor || ""),
     backgroundColor: String(data.backgroundColor || ""),
+    labelColor: String(data.labelColor || ""),
+    onPrimaryColor: String(data.onPrimaryColor || ""),
   };
 }
 

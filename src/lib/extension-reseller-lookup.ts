@@ -130,6 +130,8 @@ export async function getBrandedExtensionIdentityForUserEmail(email: string): Pr
   primaryColor?: string;
   accentColor?: string;
   backgroundColor?: string;
+  labelColor?: string;
+  onPrimaryColor?: string;
 } | null> {
   const user = await getUserRecord(email);
   const resellerId = String(user?.resellerId || "").trim();
@@ -145,6 +147,8 @@ export async function getBrandedExtensionIdentityForUserEmail(email: string): Pr
     primaryColor: String(branded?.primaryColor || "").trim(),
     accentColor: String(branded?.accentColor || "").trim(),
     backgroundColor: String(branded?.backgroundColor || "").trim(),
+    labelColor: String(branded?.labelColor || "").trim(),
+    onPrimaryColor: String(branded?.onPrimaryColor || "").trim(),
   };
 }
 

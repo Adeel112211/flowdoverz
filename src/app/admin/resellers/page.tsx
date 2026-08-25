@@ -85,6 +85,8 @@ type Reseller = {
     primaryColor?: string;
     accentColor?: string;
     backgroundColor?: string;
+    labelColor?: string;
+    onPrimaryColor?: string;
   } | null;
 };
 
@@ -332,6 +334,8 @@ export default function AdminResellersPage() {
   const [brandPrimaryColor, setBrandPrimaryColor] = useState("#22d3ee");
   const [brandAccentColor, setBrandAccentColor] = useState("#34d399");
   const [brandBackgroundColor, setBrandBackgroundColor] = useState("#080810");
+  const [brandLabelColor, setBrandLabelColor] = useState("#a5f3fc");
+  const [brandOnPrimaryColor, setBrandOnPrimaryColor] = useState("#041016");
   const brandLogoInputRef = useRef<HTMLInputElement>(null);
   const [revealedSignup, setRevealedSignup] = useState<{
     brandName: string;
@@ -472,6 +476,8 @@ export default function AdminResellersPage() {
     setBrandPrimaryColor(row.brandedExtension?.primaryColor || "#22d3ee");
     setBrandAccentColor(row.brandedExtension?.accentColor || "#34d399");
     setBrandBackgroundColor(row.brandedExtension?.backgroundColor || "#080810");
+    setBrandLabelColor(row.brandedExtension?.labelColor || "#a5f3fc");
+    setBrandOnPrimaryColor(row.brandedExtension?.onPrimaryColor || "#041016");
     if (brandLogoInputRef.current) brandLogoInputRef.current.value = "";
   };
 
@@ -527,6 +533,8 @@ export default function AdminResellersPage() {
       form.set("primaryColor", brandPrimaryColor.trim());
       form.set("accentColor", brandAccentColor.trim());
       form.set("backgroundColor", brandBackgroundColor.trim());
+      form.set("labelColor", brandLabelColor.trim());
+      form.set("onPrimaryColor", brandOnPrimaryColor.trim());
       if (file) {
         form.set("logo", file);
         form.set("keepLogo", "false");
@@ -1473,7 +1481,7 @@ export default function AdminResellersPage() {
               <div>
                 <p className="mb-2 text-sm font-bold text-white">Extension colors</p>
                 <p className="mb-3 text-xs text-slate-500">
-                  Baked into the ZIP. Background is the popup. Buttons is Sync and primary actions. Session is the slot picker and connected accents.
+                  Baked into the ZIP. Background is the popup. Buttons is Sync. Session is the slot accents. Label text is INJECT SESSION and Dashboard. Button text is Sync now and the C1 chip.
                 </p>
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
                   <label className="block text-xs font-bold uppercase tracking-wide text-slate-500">
@@ -1520,6 +1528,38 @@ export default function AdminResellersPage() {
                       <input
                         value={brandAccentColor}
                         onChange={(e) => setBrandAccentColor(e.target.value)}
+                        className={INPUT_CLASS}
+                      />
+                    </span>
+                  </label>
+                  <label className="block text-xs font-bold uppercase tracking-wide text-slate-500">
+                    Label text
+                    <span className="mt-2 flex items-center gap-2">
+                      <input
+                        type="color"
+                        value={brandLabelColor}
+                        onChange={(e) => setBrandLabelColor(e.target.value)}
+                        className="h-10 w-12 cursor-pointer rounded-lg border border-white/15 bg-[#080810]"
+                      />
+                      <input
+                        value={brandLabelColor}
+                        onChange={(e) => setBrandLabelColor(e.target.value)}
+                        className={INPUT_CLASS}
+                      />
+                    </span>
+                  </label>
+                  <label className="block text-xs font-bold uppercase tracking-wide text-slate-500">
+                    Button text
+                    <span className="mt-2 flex items-center gap-2">
+                      <input
+                        type="color"
+                        value={brandOnPrimaryColor}
+                        onChange={(e) => setBrandOnPrimaryColor(e.target.value)}
+                        className="h-10 w-12 cursor-pointer rounded-lg border border-white/15 bg-[#080810]"
+                      />
+                      <input
+                        value={brandOnPrimaryColor}
+                        onChange={(e) => setBrandOnPrimaryColor(e.target.value)}
                         className={INPUT_CLASS}
                       />
                     </span>
