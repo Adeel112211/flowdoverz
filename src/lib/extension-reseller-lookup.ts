@@ -127,6 +127,9 @@ export async function getWhiteLabelResellerIdForUser(email: string): Promise<str
 export async function getBrandedExtensionIdentityForUserEmail(email: string): Promise<{
   displayName: string;
   supportEmail: string;
+  primaryColor?: string;
+  accentColor?: string;
+  backgroundColor?: string;
 } | null> {
   const user = await getUserRecord(email);
   const resellerId = String(user?.resellerId || "").trim();
@@ -139,6 +142,9 @@ export async function getBrandedExtensionIdentityForUserEmail(email: string): Pr
   return {
     displayName,
     supportEmail: String(branded?.supportEmail || "").trim().toLowerCase(),
+    primaryColor: String(branded?.primaryColor || "").trim(),
+    accentColor: String(branded?.accentColor || "").trim(),
+    backgroundColor: String(branded?.backgroundColor || "").trim(),
   };
 }
 

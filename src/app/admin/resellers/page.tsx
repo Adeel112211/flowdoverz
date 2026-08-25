@@ -82,6 +82,9 @@ type Reseller = {
     dashboardUrl?: string;
     loginUrl?: string;
     hasLogo?: boolean;
+    primaryColor?: string;
+    accentColor?: string;
+    backgroundColor?: string;
   } | null;
 };
 
@@ -326,6 +329,9 @@ export default function AdminResellersPage() {
   const [brandLogoDataUrl, setBrandLogoDataUrl] = useState("");
   const [brandLogoName, setBrandLogoName] = useState("");
   const [brandLogoError, setBrandLogoError] = useState("");
+  const [brandPrimaryColor, setBrandPrimaryColor] = useState("#22d3ee");
+  const [brandAccentColor, setBrandAccentColor] = useState("#34d399");
+  const [brandBackgroundColor, setBrandBackgroundColor] = useState("#080810");
   const brandLogoInputRef = useRef<HTMLInputElement>(null);
   const [revealedSignup, setRevealedSignup] = useState<{
     brandName: string;
@@ -463,6 +469,9 @@ export default function AdminResellersPage() {
     setBrandLogoDataUrl("");
     setBrandLogoName("");
     setBrandLogoError("");
+    setBrandPrimaryColor(row.brandedExtension?.primaryColor || "#22d3ee");
+    setBrandAccentColor(row.brandedExtension?.accentColor || "#34d399");
+    setBrandBackgroundColor(row.brandedExtension?.backgroundColor || "#080810");
     if (brandLogoInputRef.current) brandLogoInputRef.current.value = "";
   };
 
@@ -515,6 +524,9 @@ export default function AdminResellersPage() {
       form.set("supportEmail", brandEmail.trim());
       form.set("loginUrl", brandLoginUrl.trim());
       form.set("dashboardUrl", brandDashboardUrl.trim() || brandLoginUrl.trim());
+      form.set("primaryColor", brandPrimaryColor.trim());
+      form.set("accentColor", brandAccentColor.trim());
+      form.set("backgroundColor", brandBackgroundColor.trim());
       if (file) {
         form.set("logo", file);
         form.set("keepLogo", "false");
@@ -1457,6 +1469,62 @@ export default function AdminResellersPage() {
                 <p className="mt-1 text-xs text-slate-500">
                   Popup Dashboard button opens this URL. Leave empty to use the same sign-in page.
                 </p>
+              </div>
+              <div>
+                <p className="mb-2 text-sm font-bold text-white">Extension colors</p>
+                <p className="mb-3 text-xs text-slate-500">
+                  Baked into the ZIP. Background is the popup. Buttons is Sync and primary actions. Session is the slot picker and connected accents.
+                </p>
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                  <label className="block text-xs font-bold uppercase tracking-wide text-slate-500">
+                    Background
+                    <span className="mt-2 flex items-center gap-2">
+                      <input
+                        type="color"
+                        value={brandBackgroundColor}
+                        onChange={(e) => setBrandBackgroundColor(e.target.value)}
+                        className="h-10 w-12 cursor-pointer rounded-lg border border-white/15 bg-[#080810]"
+                      />
+                      <input
+                        value={brandBackgroundColor}
+                        onChange={(e) => setBrandBackgroundColor(e.target.value)}
+                        className={INPUT_CLASS}
+                      />
+                    </span>
+                  </label>
+                  <label className="block text-xs font-bold uppercase tracking-wide text-slate-500">
+                    Buttons
+                    <span className="mt-2 flex items-center gap-2">
+                      <input
+                        type="color"
+                        value={brandPrimaryColor}
+                        onChange={(e) => setBrandPrimaryColor(e.target.value)}
+                        className="h-10 w-12 cursor-pointer rounded-lg border border-white/15 bg-[#080810]"
+                      />
+                      <input
+                        value={brandPrimaryColor}
+                        onChange={(e) => setBrandPrimaryColor(e.target.value)}
+                        className={INPUT_CLASS}
+                      />
+                    </span>
+                  </label>
+                  <label className="block text-xs font-bold uppercase tracking-wide text-slate-500">
+                    Session
+                    <span className="mt-2 flex items-center gap-2">
+                      <input
+                        type="color"
+                        value={brandAccentColor}
+                        onChange={(e) => setBrandAccentColor(e.target.value)}
+                        className="h-10 w-12 cursor-pointer rounded-lg border border-white/15 bg-[#080810]"
+                      />
+                      <input
+                        value={brandAccentColor}
+                        onChange={(e) => setBrandAccentColor(e.target.value)}
+                        className={INPUT_CLASS}
+                      />
+                    </span>
+                  </label>
+                </div>
               </div>
               <div>
                 <p className="mb-2 text-sm font-bold text-white">Logo</p>

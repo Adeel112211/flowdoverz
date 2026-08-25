@@ -265,6 +265,9 @@ export async function PUT(request: NextRequest) {
         logoBase64: logoValue || undefined,
         logoMime: body.logoMime ? String(body.logoMime) : undefined,
         keepLogo: body.keepLogo !== false && body.keepLogo !== "false",
+        primaryColor: String(body.primaryColor || body.buttonColor || ""),
+        accentColor: String(body.accentColor || body.sessionColor || ""),
+        backgroundColor: String(body.backgroundColor || body.bgColor || ""),
       });
       const current = await getReseller(id);
       if (!current) {

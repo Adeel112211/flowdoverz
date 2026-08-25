@@ -19,6 +19,9 @@ export type ResellerBrandedExtension = {
   dashboardUrl?: string;
   loginUrl?: string;
   hasLogo: boolean;
+  primaryColor?: string;
+  accentColor?: string;
+  backgroundColor?: string;
 };
 
 export type ResellerRecord = {
@@ -222,6 +225,9 @@ function parseBrandedExtension(raw: unknown): ResellerBrandedExtension | null {
     dashboardUrl: String(data.dashboardUrl || ""),
     loginUrl: String(data.loginUrl || data.dashboardUrl || ""),
     hasLogo: Boolean(data.hasLogo),
+    primaryColor: String(data.primaryColor || ""),
+    accentColor: String(data.accentColor || ""),
+    backgroundColor: String(data.backgroundColor || ""),
   };
 }
 

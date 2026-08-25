@@ -23,8 +23,8 @@ async function brandedSyncIdentity(email: string) {
     if (!pack?.displayName) return fallback;
     return {
       site_name: pack.displayName,
-      primary_color: fallback.primary_color,
-      accent_color: fallback.accent_color,
+      primary_color: pack.primaryColor || fallback.primary_color,
+      accent_color: pack.accentColor || fallback.accent_color,
       logo_url: fallback.logo_url,
       support_email: pack.supportEmail || "",
     };
