@@ -188,7 +188,7 @@ export async function saveSlotCookies(
 ): Promise<SlotRecord> {
   const db = getDb();
   if (!db) throw new Error("Database not initialized");
-  
+
   const record: SlotRecord = {
     cookies,
     hash: hashCookies(cookies),
@@ -197,15 +197,25 @@ export async function saveSlotCookies(
   };
 
   const firestoreRecord = sanitizeForFirestore(record);
-  
   const docRef = db.collection("cookies").doc(ownerKey);
-  
+
   await db.runTransaction(async (transaction) => {
     const doc = await transaction.get(docRef);
-    let data = doc.exists ? doc.data() : { slots: {} };
-    if (!data!.slots) data!.slots = {};
-    data!.slots[slot] = firestoreRecord;
-    transaction.set(docRef, sanitizeForFirestore(data!), { merge: true });
+    const slots: Record<string, SlotRecord> = doc.exists
+      ? { ...(((doc.data()?.slots as Record<string, SlotRecord> | undefined) || {})) }
+      : {};
+
+    // Full replace — old cookies for this slot are not kept.
+    slots[slot] = firestoreRecord as SlotRecord;
+
+    // Remove empty slots so cleared cookie sets do not linger in the database.
+    for (const [key, entry] of Object.entries(slots)) {
+      if (!Array.isArray(entry?.cookies) || entry.cookies.length === 0) {
+        delete slots[key];
+      }
+    }
+
+    transaction.set(docRef, sanitizeForFirestore({ slots }), { merge: false });
   });
 
   invalidateSlotsCache();
@@ -242,6 +252,21 @@ export async function listSlots(ownerKey: string): Promise<Array<{ key: string; 
   return value;
 }
 
+export async function clearAllCookieSlots(ownerKey: string): Promise<string[]> {
+  const slots = await listSlots(ownerKey);
+  const cleared = slots.map((item) => item.key);
+  if (!cleared.length) return [];
+
+  const db = getDb();
+  if (!db) return cleared;
+
+  await db.collection("cookies").doc(ownerKey).delete();
+  invalidateSlotsCache();
+  const { touchLive } = await import("./live-tick");
+  void touchLive({ topic: "cookies", action: "cleared_all", id: ownerKey });
+  return cleared;
+}
+
 export async function clearSlotCookies(ownerKey: string, slot: string): Promise<void> {
   const db = getDb();
   if (!db) return;
@@ -250,10 +275,14 @@ export async function clearSlotCookies(ownerKey: string, slot: string): Promise<
     const doc = await transaction.get(docRef);
     if (!doc.exists) return;
     const data = doc.data();
-    if (data?.slots?.[slot]) {
-      delete data.slots[slot];
-      transaction.set(docRef, data);
+    if (!data?.slots?.[slot]) return;
+    const slots = { ...(data.slots as Record<string, SlotRecord>) };
+    delete slots[slot];
+    if (Object.keys(slots).length === 0) {
+      transaction.delete(docRef);
+      return;
     }
+    transaction.set(docRef, sanitizeForFirestore({ slots }), { merge: false });
   });
   invalidateSlotsCache();
   const { touchLive } = await import("./live-tick");

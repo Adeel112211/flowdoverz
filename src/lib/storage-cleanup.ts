@@ -72,6 +72,15 @@ export async function purgeOldExtensionReleases(): Promise<PurgeOldExtensionResu
 
   for (const doc of filesSnap.docs) {
     if (doc.id === keep) continue;
+    const fileData = doc.data() as { storagePath?: string; zipBase64?: string };
+    if (fileData.storagePath) {
+      try {
+        const { deleteSupabaseBlob } = await import("./supabase-storage");
+        await deleteSupabaseBlob(String(fileData.storagePath));
+      } catch (error) {
+        console.warn(`Failed to delete extension storage ${doc.id}:`, error);
+      }
+    }
     await doc.ref.delete();
     deletedFileVersions.push(doc.id);
   }

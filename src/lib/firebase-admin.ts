@@ -1,6 +1,8 @@
 import type { App } from "firebase-admin/app";
 import type { Firestore } from "firebase-admin/firestore";
 import type { Auth } from "firebase-admin/auth";
+import { getSupabaseFirestore } from "./supabase-firestore";
+import { getSupabaseInitError as readSupabaseInitError, isSupabaseConfigured, useSupabaseDatabase } from "./supabase-admin";
 
 let firebaseApp: App | null = null;
 let firestoreDb: Firestore | null = null;
@@ -88,11 +90,24 @@ function resolveCredentials(): ServiceAccountCredentials | null {
 }
 
 export function isFirebaseConfigured() {
+  if (useSupabaseDatabase()) return isSupabaseConfigured();
   return Boolean(resolveCredentials());
 }
 
 export function getFirebaseInitError() {
+  if (useSupabaseDatabase()) return readSupabaseInitError();
   return lastInitError;
+}
+
+export function isSupabaseBackend() {
+  return useSupabaseDatabase() && isSupabaseConfigured();
+}
+
+export function getDatabaseConfigHint() {
+  if (useSupabaseDatabase()) {
+    return "Set DATABASE_PROVIDER=supabase, SUPABASE_URL, and SUPABASE_SERVICE_ROLE_KEY on Vercel.";
+  }
+  return "Set FIREBASE_SERVICE_ACCOUNT_JSON or FIREBASE_PROJECT_ID + FIREBASE_CLIENT_EMAIL + FIREBASE_PRIVATE_KEY on Vercel.";
 }
 
 export function isFirebaseQuotaError(error: unknown): boolean {
@@ -166,6 +181,9 @@ async function initFirebaseAuth() {
 }
 
 export function getDb(): Firestore | null {
+  if (useSupabaseDatabase() && isSupabaseConfigured()) {
+    return getSupabaseFirestore() as unknown as Firestore;
+  }
   initFirebaseCore();
   return firestoreDb;
 }

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { isAdminUiRequest } from "@/lib/admin";
 import { logAdminActivity } from "@/lib/admin-activity";
-import { getDb, getFirebaseInitError, isFirebaseConfigured } from "@/lib/firebase-admin";
+import { getDb, getFirebaseInitError, getDatabaseConfigHint, isFirebaseConfigured } from "@/lib/firebase-admin";
 import { sendAccountActivatedEmail } from "@/lib/email";
 import { deleteClientCompletely } from "@/lib/client-data-cleanup";
 import { createUserByAdmin, isClientNameTaken, normalizeClientNameKey, updateUserPasswordByAdmin } from "@/lib/user-store";
@@ -24,7 +24,7 @@ function databaseErrorResponse() {
       {
         success: false,
         error:
-          "Firebase is not configured. Add FIREBASE_SERVICE_ACCOUNT_JSON or FIREBASE_PROJECT_ID + FIREBASE_CLIENT_EMAIL + FIREBASE_PRIVATE_KEY on Vercel.",
+          getDatabaseConfigHint(),
       },
       { status: 503 },
     );

@@ -130,7 +130,24 @@ export async function getExtensionZip(version: string): Promise<{
   const doc = await db.collection(FILES_COLLECTION).doc(sanitizeVersion(version)).get();
   if (!doc.exists) return null;
 
-  const data = doc.data() as { zipBase64?: string; fileName?: string; fileSize?: number };
+  const data = doc.data() as {
+    zipBase64?: string;
+    storagePath?: string;
+    fileName?: string;
+    fileSize?: number;
+  };
+
+  if (data.storagePath) {
+    const { downloadSupabaseBlob } = await import("./supabase-storage");
+    const buffer = await downloadSupabaseBlob(String(data.storagePath));
+    if (!buffer) return null;
+    return {
+      buffer,
+      fileName: data.fileName || `flowdoverz-${version}.zip`,
+      fileSize: data.fileSize || buffer.length,
+    };
+  }
+
   if (!data.zipBase64) return null;
 
   return {
@@ -164,15 +181,26 @@ export async function uploadExtensionRelease(input: {
     sealed.profile.hash,
   );
 
-  await db
-    .collection(FILES_COLLECTION)
-    .doc(version)
-    .set({
-      zipBase64: sealed.zipBuffer.toString("base64"),
-      fileName: input.fileName,
-      fileSize: sealed.zipBuffer.length,
-      uploadedAt: new Date().toISOString(),
-    });
+  const { isSupabaseBackend } = await import("./firebase-admin");
+  const filePayload: Record<string, unknown> = {
+    fileName: input.fileName,
+    fileSize: sealed.zipBuffer.length,
+    uploadedAt: new Date().toISOString(),
+  };
+
+  if (isSupabaseBackend()) {
+    const { uploadSupabaseBlob, STORAGE_BUCKETS } = await import("./supabase-storage");
+    filePayload.storagePath = await uploadSupabaseBlob(
+      STORAGE_BUCKETS.extensionFiles,
+      `${version}.zip`,
+      sealed.zipBuffer,
+      "application/zip",
+    );
+  } else {
+    filePayload.zipBase64 = sealed.zipBuffer.toString("base64");
+  }
+
+  await db.collection(FILES_COLLECTION).doc(version).set(filePayload);
 
   await db.collection(INTEGRITY_COLLECTION).doc(version).set(sealed.profile);
 
@@ -203,6 +231,14 @@ export async function uploadExtensionRelease(input: {
   void import("./extension-reseller-pack")
     .then((mod) => mod.rebuildResellerExtensionPacks())
     .catch((error) => console.warn("Branded reseller extension rebuild failed:", error));
+
+  try {
+    const { purgeOldExtensionReleases } = await import("./storage-cleanup");
+    await purgeOldExtensionReleases();
+  } catch (error) {
+    console.warn("Auto-purge of old extension versions failed:", error);
+  }
+
   return next;
 }
 
@@ -235,6 +271,14 @@ export async function setActiveExtensionRelease(version: string) {
   void import("./extension-reseller-pack")
     .then((mod) => mod.rebuildResellerExtensionPacks())
     .catch((error) => console.warn("Branded reseller extension rebuild failed:", error));
+
+  try {
+    const { purgeOldExtensionReleases } = await import("./storage-cleanup");
+    await purgeOldExtensionReleases();
+  } catch (error) {
+    console.warn("Auto-purge of old extension versions failed:", error);
+  }
+
   return next;
 }
 
