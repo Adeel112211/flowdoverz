@@ -1,12 +1,18 @@
-import { getSharp } from "./sharp-runtime";
 import { isSupabaseBackend } from "./firebase-admin";
 import { deleteSupabaseBlob, downloadSupabaseBlob, uploadSupabaseBlob, STORAGE_BUCKETS } from "./supabase-storage";
 
-const LOGO_MAX_BYTES = 80 * 1024;
-const LOGO_MAX_DIMENSION = 256;
+const LOGO_MAX_BYTES = 400_000;
 
 export function shouldStoreResellerPackInStorage() {
   return isSupabaseBackend();
+}
+
+function logoExtension(mime: string) {
+  if (mime.includes("png")) return "png";
+  if (mime.includes("webp")) return "webp";
+  if (mime.includes("gif")) return "gif";
+  if (mime.includes("svg")) return "svg";
+  return "jpg";
 }
 
 export async function saveResellerPackZip(resellerId: string, buffer: Buffer) {
@@ -30,34 +36,17 @@ export async function loadResellerPackZip(record: {
   return Buffer.from(base64, "base64");
 }
 
-async function compressLogoBuffer(input: Buffer) {
-  const sharp = await getSharp();
-  let quality = 82;
-  let output = await sharp(input)
-    .rotate()
-    .resize(LOGO_MAX_DIMENSION, LOGO_MAX_DIMENSION, { fit: "inside", withoutEnlargement: true })
-    .jpeg({ quality, mozjpeg: true })
-    .toBuffer();
-
-  while (output.length > LOGO_MAX_BYTES && quality > 45) {
-    quality -= 10;
-    output = await sharp(input)
-      .rotate()
-      .resize(LOGO_MAX_DIMENSION, LOGO_MAX_DIMENSION, { fit: "inside", withoutEnlargement: true })
-      .jpeg({ quality, mozjpeg: true })
-      .toBuffer();
+export async function saveResellerLogo(resellerId: string, buffer: Buffer, mime: string) {
+  if (buffer.length > LOGO_MAX_BYTES) {
+    throw new Error("Logo is too large. Use a smaller image (max 400KB).");
   }
 
-  return { buffer: output, mime: "image/jpeg" as const };
-}
-
-export async function saveResellerLogo(resellerId: string, buffer: Buffer, mime: string) {
-  const compressed = await compressLogoBuffer(buffer);
+  const ext = logoExtension(mime);
   return uploadSupabaseBlob(
     STORAGE_BUCKETS.resellerLogos,
-    `${resellerId}.jpg`,
-    compressed.buffer,
-    compressed.mime,
+    `${resellerId}.${ext}`,
+    buffer,
+    mime || "image/jpeg",
   );
 }
 

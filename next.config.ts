@@ -8,7 +8,6 @@ const nextConfig: NextConfig = {
     "jwks-rsa",
     "jose",
     "disposable-email-domains",
-    "sharp",
   ],
   async headers() {
     return [

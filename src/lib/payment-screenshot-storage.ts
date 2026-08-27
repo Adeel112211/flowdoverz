@@ -1,9 +1,28 @@
 import { isSupabaseBackend } from "./firebase-admin";
 import { deleteSupabaseBlob, downloadSupabaseBlob, uploadSupabaseBlob, STORAGE_BUCKETS } from "./supabase-storage";
 
+export const PAYMENT_SCREENSHOT_MAX_BYTES = 150 * 1024;
+
+function screenshotByteLength(screenshot: string) {
+  const raw = String(screenshot || "").trim();
+  const base64 = raw.includes(",") ? raw.split(",", 2)[1] || "" : raw;
+  return Math.floor((base64.length * 3) / 4);
+}
+
+function normalizeScreenshotDataUrl(screenshot: string) {
+  const raw = String(screenshot || "").trim();
+  if (!raw) throw new Error("Payment screenshot is empty.");
+  if (raw.startsWith("data:")) return raw;
+  return `data:image/jpeg;base64,${raw}`;
+}
+
+/** Client already compresses screenshots; server only validates and normalizes. */
 export async function preparePaymentScreenshot(screenshot: string) {
-  const { compressPaymentScreenshotDataUrl } = await import("./compress-payment-screenshot");
-  return compressPaymentScreenshotDataUrl(screenshot);
+  const normalized = normalizeScreenshotDataUrl(screenshot);
+  if (screenshotByteLength(normalized) > PAYMENT_SCREENSHOT_MAX_BYTES) {
+    throw new Error("Payment screenshot is too large. Please upload a smaller image.");
+  }
+  return normalized;
 }
 
 export async function savePaymentScreenshot(paymentId: string, screenshotDataUrl: string) {
