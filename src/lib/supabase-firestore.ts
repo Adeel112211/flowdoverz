@@ -1,7 +1,12 @@
+import { randomBytes } from "crypto";
 import { FieldPath } from "firebase-admin/firestore";
 import { getSupabaseAdmin } from "./supabase-admin";
 
 type DocData = Record<string, unknown>;
+
+function generateDocId() {
+  return randomBytes(12).toString("hex");
+}
 
 function deepMerge(target: DocData, source: DocData): DocData {
   const out: DocData = { ...target };
@@ -138,8 +143,15 @@ class SupabaseCollectionReference extends SupabaseQuery {
     super(db, collectionPath);
   }
 
-  doc(id: string) {
-    return new SupabaseDocumentReference(this.db, this.collectionPath, id);
+  doc(id?: string) {
+    const docId = String(id || "").trim() || generateDocId();
+    return new SupabaseDocumentReference(this.db, this.collectionPath, docId);
+  }
+
+  async add(data: DocData) {
+    const ref = this.doc();
+    await ref.set(data);
+    return ref;
   }
 }
 
@@ -292,6 +304,7 @@ export class SupabaseFirestore {
   ) {
     const client = getSupabaseAdmin();
     if (!client) throw new Error("Supabase not configured.");
+    if (!id.trim()) throw new Error("Document id is required.");
 
     let payload = data;
     if (merge) {
