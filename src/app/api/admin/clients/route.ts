@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { isAdminUiRequest } from "@/lib/admin";
 import { logAdminActivity } from "@/lib/admin-activity";
-import { getDb, getAdminAuth, getFirebaseInitError, isFirebaseConfigured } from "@/lib/firebase-admin";
+import { getDb, getFirebaseInitError, isFirebaseConfigured } from "@/lib/firebase-admin";
 import { sendAccountActivatedEmail } from "@/lib/email";
+import { deleteClientCompletely } from "@/lib/client-data-cleanup";
 import { createUserByAdmin, isClientNameTaken, normalizeClientNameKey, updateUserPasswordByAdmin } from "@/lib/user-store";
 
 export const runtime = "nodejs";
@@ -284,27 +285,24 @@ export async function DELETE(request: NextRequest) {
 
     const existing = await db.collection("users").doc(email).get();
     const existingData = (existing.data() || {}) as Record<string, unknown>;
-    await db.collection("users").doc(email).delete();
+    const removed = await deleteClientCompletely(email);
     const { touchLive } = await import("@/lib/live-tick");
     void touchLive({ topic: "user", action: "deleted", id: email, userId: email });
     const { accessFromUserData } = await import("@/lib/admin-client-view");
     const { recordUserDeleted } = await import("@/lib/admin-metrics");
     void recordUserDeleted(accessFromUserData(existingData).subscriptionActive);
 
-    await logAdminActivity({ action: "client_deleted", targetEmail: email });
+    await logAdminActivity({
+      action: "client_deleted",
+      targetEmail: email,
+      detail: `Removed client, ${removed.deletedPayments} payment(s), ${removed.deletedEmailLogs} email log(s).`,
+    });
 
-    const adminAuth = await getAdminAuth();
-    if (adminAuth) {
-      try {
-        const userRecord = await adminAuth.getUserByEmail(email);
-        await adminAuth.deleteUser(userRecord.uid);
-      } catch (authError: unknown) {
-        const message = authError instanceof Error ? authError.message : "Auth deletion failed";
-        console.warn("Auth deletion failed or user not found:", message);
-      }
-    }
-
-    return NextResponse.json({ success: true, message: "Client deleted successfully" });
+    return NextResponse.json({
+      success: true,
+      message: "Client and related data deleted successfully",
+      removed,
+    });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : "Failed to delete client";
     return NextResponse.json({ success: false, error: message }, { status: 500 });

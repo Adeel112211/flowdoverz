@@ -410,8 +410,7 @@ export async function deleteResellerUser(
   const db = getDb();
   if (!db) return { ok: false, error: "Database not configured.", status: 503 };
 
-  const ref = db.collection("users").doc(normalized);
-  const snap = await ref.get();
+  const snap = await db.collection("users").doc(normalized).get();
   if (!snap.exists) {
     return { ok: false, error: "Client not found.", status: 404 };
   }
@@ -421,7 +420,10 @@ export async function deleteResellerUser(
     return { ok: false, error: "This client does not belong to this reseller.", status: 403 };
   }
 
-  await ref.delete();
+  const { deleteClientCompletely } = await import("./client-data-cleanup");
+  await deleteClientCompletely(normalized);
+  const { touchLive } = await import("./live-tick");
+  void touchLive({ topic: "user", action: "deleted", id: normalized, userId: normalized });
   return { ok: true };
 }
 
@@ -1024,10 +1026,8 @@ export async function rotateResellerKey(id: string): Promise<{
 export async function deleteReseller(id: string) {
   const current = await getReseller(id);
   if (!current) throw new Error("Reseller not found.");
-  const db = requireDb();
-  await db.collection(COLLECTION).doc(id).delete();
-  const { deleteResellerExtensionPack } = await import("./extension-reseller-pack");
-  await deleteResellerExtensionPack(id);
+  const { deleteResellerCompletely } = await import("./client-data-cleanup");
+  await deleteResellerCompletely(id);
   const { touchLive } = await import("./live-tick");
   void touchLive({ topic: "reseller", action: "deleted", id });
   return current;

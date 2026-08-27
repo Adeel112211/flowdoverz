@@ -122,6 +122,29 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: true, config });
     }
 
+    if (action === "purge_old_releases") {
+      const { purgeDatabaseStorage } = await import("@/lib/client-data-cleanup");
+      const result = await purgeDatabaseStorage({
+        purgeStaleClients: false,
+        purgeOldPayments: false,
+        purgeOldExtensions: true,
+        purgeEmptyCookieSlots: true,
+      });
+      await logAdminActivity({
+        action: "settings_updated",
+        detail: `Purged old extension data; kept latest official ZIP.`,
+      });
+      const config = await getExtensionConfig();
+      const extension = result.extension as { keptVersion?: string; deletedFileVersions?: string[]; deletedIntegrityVersions?: string[] } | undefined;
+      const cookies = result.cookies as { keptSlots?: string[]; removedSlots?: string[] } | undefined;
+      return NextResponse.json({
+        success: true,
+        config,
+        result,
+        message: `Kept extension v${extension?.keptVersion || config.activeVersion || "?"}. Deleted ${extension?.deletedFileVersions?.length || 0} old ZIP(s). Cookie slots kept: ${cookies?.keptSlots?.join(", ") || "none"}.`,
+      });
+    }
+
     return NextResponse.json({ success: false, error: "Unknown action" }, { status: 400 });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Extension action failed";

@@ -330,3 +330,49 @@ export async function POST(request: NextRequest) {
     return errorResponse(error, "Failed to process payment");
   }
 }
+
+export async function DELETE(request: NextRequest) {
+  try {
+    const { isAdminUiRequest } = await import("@/lib/admin");
+
+    if (!(await isAdminUiRequest(request))) {
+      return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+    }
+
+    const { db, response } = await requireFirebaseDb();
+    if (response) return response;
+
+    const paymentId = request.nextUrl.searchParams.get("id")?.trim();
+    if (!paymentId) {
+      return NextResponse.json({ success: false, error: "Payment id is required." }, { status: 400 });
+    }
+
+    const ref = db!.collection("manual_payments").doc(paymentId);
+    const snap = await ref.get();
+    if (!snap.exists) {
+      return NextResponse.json({ success: false, error: "Payment not found." }, { status: 404 });
+    }
+
+    const data = (snap.data() || {}) as { userEmail?: string; status?: string };
+    await ref.delete();
+
+    const { logAdminActivity } = await import("@/lib/admin-activity");
+    await logAdminActivity({
+      action: "payment_rejected",
+      targetEmail: String(data.userEmail || ""),
+      detail: `Deleted payment record ${paymentId} (${String(data.status || "unknown")}).`,
+    });
+
+    const { touchLive } = await import("@/lib/live-tick");
+    void touchLive({
+      topic: "payment",
+      action: "deleted",
+      id: paymentId,
+      userId: String(data.userEmail || ""),
+    });
+
+    return NextResponse.json({ success: true, message: "Payment record deleted from database." });
+  } catch (error) {
+    return errorResponse(error, "Failed to delete payment");
+  }
+}

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { isAdminUiRequest } from "@/lib/admin";
 import { logAdminActivity } from "@/lib/admin-activity";
 import { getDb } from "@/lib/firebase-admin";
+import { deleteClientCompletely } from "@/lib/client-data-cleanup";
 
 export const dynamic = "force-dynamic";
 
@@ -20,6 +21,29 @@ export async function POST(request: NextRequest) {
   const body = await request.json();
   const emails: string[] = Array.isArray(body.emails) ? body.emails : [];
   const action = String(body.action || "");
+
+  if (action === "delete") {
+    if (!emails.length) {
+      return NextResponse.json({ success: false, error: "No clients selected" }, { status: 400 });
+    }
+    const removed: Array<Awaited<ReturnType<typeof deleteClientCompletely>>> = [];
+    for (const email of emails) {
+      removed.push(await deleteClientCompletely(String(email || "")));
+    }
+    const { touchLive } = await import("@/lib/live-tick");
+    for (const email of emails) {
+      void touchLive({ topic: "user", action: "deleted", id: email, userId: email });
+    }
+    await logAdminActivity({
+      action: "client_deleted",
+      detail: `Bulk deleted ${removed.length} client(s) with related payments and logs.`,
+    });
+    return NextResponse.json({
+      success: true,
+      message: `Deleted ${removed.length} client(s) and related data.`,
+      removed,
+    });
+  }
 
   if (!emails.length) {
     return NextResponse.json({ success: false, error: "No clients selected" }, { status: 400 });
