@@ -34,7 +34,7 @@ export default async function ResellerLayout({ children }: { children: ReactNode
         <div className="pointer-events-none absolute inset-0 z-0 overflow-hidden">
           <div className="absolute right-[-10%] top-[-20%] h-[600px] w-[800px] rounded-full bg-cyan-500/10 blur-[120px]" />
         </div>
-        <ResellerSidebar brandName={reseller.brandName} />
+        <ResellerSidebar brandName={reseller.brandName} pricePerSeatPkr={reseller.pricePerSeatPkr} />
         <main className="relative z-10 flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden overscroll-none">
           <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden overscroll-none p-3 max-lg:px-0 max-lg:pb-0 max-lg:pt-0 sm:p-5 lg:overflow-x-hidden lg:overflow-y-auto lg:p-8 lg:pb-0">
             <AdminShell>{children}</AdminShell>

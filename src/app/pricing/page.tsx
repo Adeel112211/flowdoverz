@@ -130,6 +130,7 @@ export default function PricingPage() {
             ))}
             <Link href="/#faq" className="text-sm font-semibold text-slate-400 hover:text-white transition-colors">FAQ</Link>
             <Link href="/pricing" className="text-sm font-semibold text-cyan-400">Pricing</Link>
+            <Link href="/resellers" className="text-sm font-semibold text-slate-400 hover:text-white transition-colors">Resellers</Link>
           </nav>
 
           <div className="hidden md:flex items-center gap-3">
@@ -164,9 +165,19 @@ export default function PricingPage() {
 
       {mobileMenuOpen && (
         <div className="fixed inset-0 z-40 bg-black/95 backdrop-blur-2xl flex flex-col pt-24 px-6 gap-5 md:hidden">
-          {["Features", "Platform", "Workflow", "FAQ", "Pricing"].map((item) => (
-            <Link key={item} href={item === "Pricing" ? "/pricing" : `/#${item.toLowerCase()}`} onClick={() => setMobileMenuOpen(false)}
-              className={`text-2xl font-bold border-b border-white/10 pb-4 ${item === "Pricing" ? "text-cyan-400" : "text-white"}`}>
+          {["Features", "Platform", "Workflow", "FAQ", "Pricing", "Resellers"].map((item) => (
+            <Link
+              key={item}
+              href={
+                item === "Pricing"
+                  ? "/pricing"
+                  : item === "Resellers"
+                    ? "/resellers"
+                    : `/#${item.toLowerCase()}`
+              }
+              onClick={() => setMobileMenuOpen(false)}
+              className={`text-2xl font-bold border-b border-white/10 pb-4 ${item === "Pricing" ? "text-cyan-400" : item === "Resellers" ? "text-fuchsia-300" : "text-white"}`}
+            >
               {item}
             </Link>
           ))}
@@ -346,6 +357,22 @@ export default function PricingPage() {
 
         </div>
 
+        <div className="mx-auto mb-10 max-w-4xl">
+          <div className="flex flex-col items-start justify-between gap-4 rounded-2xl border border-fuchsia-500/20 bg-fuchsia-500/[0.06] px-5 py-4 sm:flex-row sm:items-center">
+            <div>
+              <p className="text-sm font-black uppercase tracking-wider text-fuchsia-300">Selling to clients?</p>
+              <p className="mt-1 text-sm text-slate-300">Wholesale Solo & Team seats with your own reseller panel.</p>
+            </div>
+            <Link
+              href="/resellers"
+              className="inline-flex shrink-0 items-center gap-2 rounded-xl bg-gradient-to-r from-fuchsia-400 to-violet-400 px-4 py-2.5 text-sm font-bold text-slate-950"
+            >
+              Reseller program
+              <ArrowRight size={14} />
+            </Link>
+          </div>
+        </div>
+
         {/* ─── FEATURE COMPARISON BANNER ─── */}
         <div className="max-w-5xl mx-auto mt-16 mb-16">
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-5">
@@ -465,7 +492,7 @@ export default function PricingPage() {
             <div className="md:col-span-3 md:col-start-8">
               <h4 className="text-white font-black text-sm tracking-widest uppercase mb-5">Product</h4>
               <div className="flex flex-col gap-3">
-                {[["/#features","Features"],["/#workflow","How It Works"],["/pricing","Pricing"],["/#faq","FAQ"]].map(([href,label]) => (
+                {[["/#features","Features"],["/#workflow","How It Works"],["/pricing","Pricing"],["/resellers","Resellers"],["/#faq","FAQ"]].map(([href,label]) => (
                   <Link key={label} href={href} className="text-slate-500 hover:text-white text-sm transition-colors">{label}</Link>
                 ))}
               </div>

@@ -1,4 +1,5 @@
 import { ReactNode } from "react";
+import { Loader2 } from "lucide-react";
 
 export type AdminTableColumn<T> = {
   key: string;
@@ -21,6 +22,7 @@ type AdminDataTableProps<T> = {
   /** Optional phone/tablet card (below xl table). Generic cards used from lg until xl when this is set. */
   renderMobileCard?: (row: T) => ReactNode;
   headerActions?: ReactNode;
+  loading?: boolean;
 };
 
 export function AdminDataTable<T>({
@@ -33,11 +35,17 @@ export function AdminDataTable<T>({
   renderMobileActions,
   renderMobileCard,
   headerActions,
+  loading = false,
 }: AdminDataTableProps<T>) {
   const mobileColumns = columns.filter((col) => !col.hideOnMobile);
 
   return (
-    <div className="flex flex-1 flex-col min-h-0 min-w-0 max-w-full pb-0 w-full">
+    <div className="relative flex flex-1 flex-col min-h-0 min-w-0 max-w-full pb-0 w-full">
+      {loading ? (
+        <div className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center rounded-2xl bg-[#0F172A]/55 backdrop-blur-[1px]">
+          <Loader2 className="h-8 w-8 animate-spin text-cyan-400" aria-hidden />
+        </div>
+      ) : null}
       <div className="mb-3 flex flex-none flex-col gap-3 sm:mb-4 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
         <h2 className="m-0 break-words text-base font-black text-white sm:text-xl md:text-2xl">
           {title} ({count})

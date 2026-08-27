@@ -5,12 +5,20 @@ import { Eye, EyeOff } from "lucide-react";
 import { AdminPageHeader } from "@/components/admin-page-header";
 import { AdminPageLayout } from "@/components/admin-page-layout";
 import { AdminLoadingState } from "@/components/admin-loading-state";
+import { formatPkr } from "@/lib/pricing-config";
 
 type ClientRow = {
   email: string;
   name: string;
+  subscriptionPlan?: string;
   subscriptionExpiresAt: string | null;
   createdAt: string | null;
+};
+
+type PlanOption = {
+  id: "solo" | "team";
+  label: string;
+  pricePerSeatPkr: number;
 };
 
 const INPUT_CLASS =
@@ -25,9 +33,17 @@ function daysLeft(iso: string | null | undefined) {
   return { label: `${days}d left`, className: "text-emerald-400" };
 }
 
+function planLabel(plan?: string) {
+  if (plan === "team") return "Team";
+  if (plan === "solo") return "Solo";
+  return plan || "—";
+}
+
 export default function ResellerClientsPage() {
   const [loading, setLoading] = useState(true);
   const [users, setUsers] = useState<ClientRow[]>([]);
+  const [planOptions, setPlanOptions] = useState<PlanOption[]>([]);
+  const [subscriptionPlan, setSubscriptionPlan] = useState<"solo" | "team">("solo");
   const [error, setError] = useState("");
   const [formError, setFormError] = useState("");
   const [notice, setNotice] = useState("");
@@ -46,6 +62,11 @@ export default function ResellerClientsPage() {
     }
     setError("");
     setUsers(data.users || []);
+    const options = (data.planOptions || []) as PlanOption[];
+    setPlanOptions(options);
+    const defaultPlan = data.defaultSeatPlan === "team" ? "team" : "solo";
+    const firstPlan = options[0]?.id || defaultPlan;
+    setSubscriptionPlan(options.some((item) => item.id === defaultPlan) ? defaultPlan : firstPlan);
   }, []);
 
   useEffect(() => {
@@ -59,6 +80,8 @@ export default function ResellerClientsPage() {
     };
   }, [load]);
 
+  const selectedPlan = planOptions.find((option) => option.id === subscriptionPlan);
+
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
     setFormError("");
@@ -69,14 +92,16 @@ export default function ResellerClientsPage() {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, email, password }),
+        body: JSON.stringify({ name, email, password, subscriptionPlan }),
       });
       const data = await res.json();
       if (!data.success) {
         setFormError(data.error || "Could not register this client.");
         return;
       }
-      setNotice(`${email.trim().toLowerCase()} registered. They sign in on FlowDoverz with this email and password.`);
+      setNotice(
+        `${email.trim().toLowerCase()} registered on ${planLabel(subscriptionPlan)}. They sign in on FlowDoverz with this email and password.`,
+      );
       setName("");
       setEmail("");
       setPassword("");
@@ -95,7 +120,7 @@ export default function ResellerClientsPage() {
       header={
         <AdminPageHeader
           title="Clients"
-          description="Register your clients here. Each new client uses one paid seat and starts their timer."
+          description="Register your clients here. Each new client uses one paid seat, starts their timer, and gets the plan you choose."
         />
       }
     >
@@ -121,7 +146,28 @@ export default function ResellerClientsPage() {
             <label className="mb-1.5 block text-sm font-medium text-slate-300">Client email</label>
             <input required type="email" value={email} onChange={(e) => setEmail(e.target.value)} className={INPUT_CLASS} placeholder="client@email.com" />
           </div>
-          <div className="sm:col-span-2">
+          <div>
+            <label className="mb-1.5 block text-sm font-medium text-slate-300">Plan</label>
+            <select
+              required
+              value={subscriptionPlan}
+              onChange={(e) => setSubscriptionPlan(e.target.value === "team" ? "team" : "solo")}
+              className={INPUT_CLASS}
+            >
+              {planOptions.map((option) => (
+                <option key={option.id} value={option.id}>
+                  {option.label}
+                  {option.pricePerSeatPkr > 0 ? ` · ${formatPkr(option.pricePerSeatPkr)} / seat` : ""}
+                </option>
+              ))}
+            </select>
+            {selectedPlan && selectedPlan.pricePerSeatPkr > 0 ? (
+              <p className="mt-1 text-xs font-semibold text-fuchsia-300">
+                Seat price: {formatPkr(selectedPlan.pricePerSeatPkr)}
+              </p>
+            ) : null}
+          </div>
+          <div>
             <label className="mb-1.5 block text-sm font-medium text-slate-300">Password</label>
             <div className="relative">
               <input
@@ -163,6 +209,9 @@ export default function ResellerClientsPage() {
                 <div className="min-w-0">
                   <p className="truncate font-semibold text-white">{user.name || "—"}</p>
                   <p className="truncate font-mono text-xs text-cyan-300">{user.email}</p>
+                  <p className="mt-1 text-xs font-semibold uppercase tracking-wide text-fuchsia-300">
+                    {planLabel(user.subscriptionPlan)}
+                  </p>
                 </div>
                 <p className={`shrink-0 text-xs font-semibold ${daysLeft(user.subscriptionExpiresAt).className}`}>
                   {daysLeft(user.subscriptionExpiresAt).label}

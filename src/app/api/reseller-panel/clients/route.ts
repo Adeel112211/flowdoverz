@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { publicMaintenanceResponse } from "@/lib/maintenance";
-import { listResellerUsers, registerClientForReseller } from "@/lib/reseller-store";
+import {
+  listResellerUsers,
+  publicResellerPlanOptions,
+  registerClientForReseller,
+} from "@/lib/reseller-store";
 import { getResellerSession } from "@/lib/reseller-session";
 
 export const runtime = "nodejs";
@@ -18,9 +22,12 @@ export async function GET() {
   const users = await listResellerUsers(reseller.id);
   return NextResponse.json({
     success: true,
+    defaultSeatPlan: reseller.defaultSeatPlan,
+    planOptions: publicResellerPlanOptions(reseller),
     users: users.map((user) => ({
       email: user.email,
       name: user.name,
+      subscriptionPlan: user.subscriptionPlan,
       subscriptionExpiresAt: user.subscriptionExpiresAt,
       createdAt: user.createdAt,
     })),
@@ -36,9 +43,14 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
   }
 
-  let body: { email?: string; name?: string; password?: string } = {};
+  let body: { email?: string; name?: string; password?: string; subscriptionPlan?: string } = {};
   try {
-    body = (await request.json()) as { email?: string; name?: string; password?: string };
+    body = (await request.json()) as {
+      email?: string;
+      name?: string;
+      password?: string;
+      subscriptionPlan?: string;
+    };
   } catch {
     return NextResponse.json({ success: false, error: "Invalid request." }, { status: 400 });
   }
@@ -47,6 +59,7 @@ export async function POST(request: NextRequest) {
     email: String(body.email || ""),
     name: String(body.name || ""),
     password: String(body.password || ""),
+    subscriptionPlan: body.subscriptionPlan,
   });
 
   if (!result.ok) {

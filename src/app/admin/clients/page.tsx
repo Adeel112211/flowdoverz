@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import {
   AlertCircle,
@@ -21,6 +21,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { AdminDataTable, type AdminTableColumn } from "@/components/admin-data-table";
+import { AdminTablePagination } from "@/components/admin-table-pagination";
 import { AdminFilterPills } from "@/components/admin-filter-pills";
 import { AdminPageHeader } from "@/components/admin-page-header";
 import { AdminPlanSelect, normalizePlanValue } from "@/components/admin-plan-select";
@@ -197,7 +198,7 @@ function EmptyClients() {
 export default function ClientsPage() {
   const { toast } = useAdminToast();
   const [clients, setClients] = useState<Client[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [initialLoading, setInitialLoading] = useState(true);
   const [error, setError] = useState("");
   const [editing, setEditing] = useState<Client | null>(null);
   const [creating, setCreating] = useState(false);
@@ -219,10 +220,10 @@ export default function ClientsPage() {
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
   const [totalCount, setTotalCount] = useState(0);
-  const [hasNextPage, setHasNextPage] = useState(false);
   const [pageLoading, setPageLoading] = useState(false);
   const [billing, setBilling] = useState<BillingDefaults>(DEFAULT_BILLING);
   const [resellerNames, setResellerNames] = useState<Record<string, string>>({});
+  const hasLoadedOnce = useRef(false);
 
   useEffect(() => {
     const timer = window.setTimeout(() => setDebouncedSearch(searchQuery.trim().toLowerCase()), 300);
@@ -245,9 +246,11 @@ export default function ClientsPage() {
       });
   }, []);
 
-  const fetchClients = useCallback(async (page: number, opts: { silent?: boolean } = {}) => {
+  const fetchClients = useCallback(async (page: number, opts: { silent?: boolean; initial?: boolean } = {}) => {
     const silent = Boolean(opts.silent);
-    if (!silent) setPageLoading(true);
+    const initial = Boolean(opts.initial);
+    if (initial) setInitialLoading(true);
+    else if (!silent) setPageLoading(true);
     try {
       const params = new URLSearchParams();
       params.set("filter", filter);
@@ -278,9 +281,6 @@ export default function ClientsPage() {
         setClients(data.clients);
         if (typeof data.totalCount === "number") {
           setTotalCount(data.totalCount);
-          setHasNextPage(page * CLIENT_PAGE_SIZE < data.totalCount);
-        } else {
-          setHasNextPage(Boolean(data.nextCursor));
         }
         setCurrentPage(page);
         setError("");
@@ -292,15 +292,15 @@ export default function ClientsPage() {
         setError("Failed to fetch clients. Check Firebase env vars on Vercel.");
       }
     } finally {
-      if (!silent) setLoading(false);
+      setInitialLoading(false);
       setPageLoading(false);
     }
   }, [filter, debouncedSearch]);
 
   useEffect(() => {
     setCurrentPage(1);
-    setLoading(true);
-    void fetchClients(1, { silent: false });
+    void fetchClients(1, { initial: !hasLoadedOnce.current, silent: hasLoadedOnce.current });
+    hasLoadedOnce.current = true;
   }, [filter, debouncedSearch, fetchClients]);
 
   useEffect(() => {
@@ -553,21 +553,19 @@ export default function ClientsPage() {
     }
   };
 
-  if (loading) {
+  if (initialLoading) {
     return <AdminLoadingState />;
   }
 
   const totalPages = Math.max(1, Math.ceil(totalCount / CLIENT_PAGE_SIZE));
-  const pageStart = totalCount === 0 ? 0 : (currentPage - 1) * CLIENT_PAGE_SIZE + 1;
-  const pageEnd = totalCount === 0 ? 0 : Math.min(currentPage * CLIENT_PAGE_SIZE, totalCount);
 
   function goToPage(page: number) {
-    if (page < 1 || page > totalPages || pageLoading) return;
-    setLoading(true);
-    void fetchClients(page, { silent: false });
+    if (page < 1 || page > totalPages || pageLoading || page === currentPage) return;
+    void fetchClients(page);
   }
 
   const displayClients = clients;
+  const tableCount = totalCount > 0 ? totalCount : displayClients.length;
 
   const getTableTitle = () => {
     if (filter === "all") return "All Clients";
@@ -754,7 +752,8 @@ export default function ClientsPage() {
 
       <AdminDataTable
         title={getTableTitle()}
-        count={displayClients.length}
+        count={tableCount}
+        loading={pageLoading}
         columns={columns}
         data={displayClients}
         rowKey={(client) => client.email}
@@ -788,32 +787,16 @@ export default function ClientsPage() {
           </div>
         }
       />
-      {totalCount > 0 && !debouncedSearch && (
-        <div className="mt-4 flex flex-col gap-3 border-t border-white/10 pt-4 sm:flex-row sm:items-center sm:justify-between">
-          <p className="text-sm text-slate-400">
-            Showing {pageStart}–{pageEnd} of {totalCount.toLocaleString()} · Page {currentPage} of{" "}
-            {totalPages}
-          </p>
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              disabled={currentPage <= 1 || pageLoading}
-              onClick={() => goToPage(currentPage - 1)}
-              className="rounded-xl border border-white/10 px-4 py-2 text-sm font-bold text-slate-300 hover:bg-white/5 disabled:opacity-40"
-            >
-              Previous
-            </button>
-            <button
-              type="button"
-              disabled={!hasNextPage || currentPage >= totalPages || pageLoading}
-              onClick={() => goToPage(currentPage + 1)}
-              className="rounded-xl border border-white/10 px-4 py-2 text-sm font-bold text-slate-300 hover:bg-white/5 disabled:opacity-40"
-            >
-              {pageLoading ? "Loading..." : "Next"}
-            </button>
-          </div>
-        </div>
-      )}
+      {totalCount > CLIENT_PAGE_SIZE ? (
+        <AdminTablePagination
+          currentPage={currentPage}
+          totalPages={totalPages}
+          totalCount={totalCount}
+          pageSize={CLIENT_PAGE_SIZE}
+          loading={pageLoading}
+          onPageChange={goToPage}
+        />
+      ) : null}
 
       {deleteClient && (
         <AdminGlassModal open={Boolean(deleteClient)} maxWidth="md">

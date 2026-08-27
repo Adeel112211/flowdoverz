@@ -3,6 +3,7 @@ import { publicMaintenanceResponse } from "@/lib/maintenance";
 import {
   listResellerUsers,
   listSeatGrants,
+  publicResellerPlanOptions,
   remainingSeats,
   summarizeSeatGrants,
 } from "@/lib/reseller-store";
@@ -44,6 +45,9 @@ export async function GET() {
       expiredClients: expired,
       seatDays: reseller.seatDays,
       pricePerSeatPkr: reseller.pricePerSeatPkr,
+      defaultSeatPlan: reseller.defaultSeatPlan,
+      allowedSeatPlans: reseller.allowedSeatPlans,
+      planOptions: publicResellerPlanOptions(reseller),
       totalPaidPkr: pricing.totalPaidPkr,
       totalSeatsGranted: pricing.totalSeatsGranted,
       lastGrantAt: pricing.lastGrant?.createdAt || null,

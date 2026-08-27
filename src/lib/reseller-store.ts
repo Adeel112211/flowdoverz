@@ -47,6 +47,14 @@ export type ResellerRecord = {
   seatDays: number;
   /** Wholesale price per paid seat in PKR. Shown to admin and reseller dashboard. */
   pricePerSeatPkr: number;
+  /** Which client plans this reseller can sell seats for. */
+  allowedSeatPlans: ResellerSeatPlan[];
+  /** Default plan when registering a client. */
+  defaultSeatPlan: ResellerSeatPlan;
+  /** Optional override price for Solo seats. Falls back to pricePerSeatPkr. */
+  soloPricePerSeatPkr: number;
+  /** Optional override price for Team seats. Falls back to pricePerSeatPkr. */
+  teamPricePerSeatPkr: number;
   notes: string;
   expiresAt: string | null;
   apiKeyHash: string;
@@ -95,12 +103,18 @@ export type ResellerInput = {
   seatsPurchased?: number;
   seatDays?: number;
   pricePerSeatPkr?: number;
+  allowedSeatPlans?: string[] | string;
+  defaultSeatPlan?: string;
+  soloPricePerSeatPkr?: number;
+  teamPricePerSeatPkr?: number;
   notes?: string;
   expiresAt?: string | null;
   panelPassword?: string;
 };
 
 export const DEFAULT_SEAT_DAYS = 30;
+export const RESELLER_SEAT_PLANS = ["solo", "team"] as const;
+export type ResellerSeatPlan = (typeof RESELLER_SEAT_PLANS)[number];
 
 export type SeatGrantRecord = {
   id: string;
@@ -121,6 +135,51 @@ export function normalizePricePerSeatPkr(raw: unknown) {
 export function seatTotalPkr(seats: number, pricePerSeatPkr: number) {
   const count = Math.max(0, Math.floor(Number(seats) || 0));
   return count * normalizePricePerSeatPkr(pricePerSeatPkr);
+}
+
+export function normalizeAllowedSeatPlans(raw: unknown): ResellerSeatPlan[] {
+  const values = Array.isArray(raw)
+    ? raw
+    : typeof raw === "string"
+      ? raw.split(",")
+      : ["solo", "team"];
+  const plans = values
+    .map((item) => String(item || "").trim().toLowerCase())
+    .filter((item): item is ResellerSeatPlan => item === "solo" || item === "team");
+  return plans.length ? [...new Set(plans)] : ["solo", "team"];
+}
+
+export function normalizeSeatPlan(raw: unknown, allowed: ResellerSeatPlan[]): ResellerSeatPlan {
+  const plan = String(raw || "").trim().toLowerCase();
+  if (plan === "team" && allowed.includes("team")) return "team";
+  if (plan === "solo" && allowed.includes("solo")) return "solo";
+  return allowed[0] || "solo";
+}
+
+export function pricePerSeatForPlan(
+  record: Pick<
+    ResellerRecord,
+    "pricePerSeatPkr" | "soloPricePerSeatPkr" | "teamPricePerSeatPkr"
+  >,
+  plan: ResellerSeatPlan,
+) {
+  if (plan === "team") {
+    const teamPrice = normalizePricePerSeatPkr(record.teamPricePerSeatPkr);
+    if (teamPrice > 0) return teamPrice;
+  }
+  if (plan === "solo") {
+    const soloPrice = normalizePricePerSeatPkr(record.soloPricePerSeatPkr);
+    if (soloPrice > 0) return soloPrice;
+  }
+  return normalizePricePerSeatPkr(record.pricePerSeatPkr);
+}
+
+export function publicResellerPlanOptions(record: ResellerRecord) {
+  return record.allowedSeatPlans.map((plan) => ({
+    id: plan,
+    label: plan === "team" ? "Team" : "Solo",
+    pricePerSeatPkr: pricePerSeatForPlan(record, plan),
+  }));
 }
 
 const COLLECTION = "resellers";
@@ -260,6 +319,7 @@ function parseBrandedExtension(raw: unknown): ResellerBrandedExtension | null {
 }
 
 function asRecord(id: string, data: Record<string, unknown>): ResellerRecord {
+  const allowedSeatPlans = normalizeAllowedSeatPlans(data.allowedSeatPlans);
   return {
     id,
     brandName: String(data.brandName || ""),
@@ -277,6 +337,10 @@ function asRecord(id: string, data: Record<string, unknown>): ResellerRecord {
     seatsPurchased: Math.max(0, Math.floor(Number(data.seatsPurchased ?? data.maxUsers) || 0)),
     seatDays: Math.max(1, Math.floor(Number(data.seatDays) || DEFAULT_SEAT_DAYS)),
     pricePerSeatPkr: normalizePricePerSeatPkr(data.pricePerSeatPkr),
+    allowedSeatPlans,
+    defaultSeatPlan: normalizeSeatPlan(data.defaultSeatPlan, allowedSeatPlans),
+    soloPricePerSeatPkr: normalizePricePerSeatPkr(data.soloPricePerSeatPkr),
+    teamPricePerSeatPkr: normalizePricePerSeatPkr(data.teamPricePerSeatPkr),
     maxUsers: Math.max(0, Math.floor(Number(data.seatsPurchased ?? data.maxUsers) || 0)),
     notes: String(data.notes || ""),
     expiresAt: data.expiresAt ? String(data.expiresAt) : null,
@@ -620,11 +684,11 @@ export async function resolveOfficialPanel(slug: string): Promise<
 
 export async function registerClientForReseller(
   reseller: ResellerRecord,
-  input: { email: string; name: string; password: string },
+  input: { email: string; name: string; password: string; subscriptionPlan?: string },
 ): Promise<
   | {
       ok: true;
-      user: { email: string; name: string; subscriptionExpiresAt: string };
+      user: { email: string; name: string; subscriptionPlan: ResellerSeatPlan; subscriptionExpiresAt: string };
       remainingSeats: number;
       seatsPurchased: number;
     }
@@ -652,11 +716,15 @@ export async function registerClientForReseller(
 
   const { createUserByAdmin } = await import("./user-store");
   const expiry = subscriptionExpiryFromNow(reseller.seatDays);
+  const subscriptionPlan = normalizeSeatPlan(
+    input.subscriptionPlan || reseller.defaultSeatPlan,
+    reseller.allowedSeatPlans,
+  );
   const created = await createUserByAdmin({
     email: input.email,
     name: input.name,
     password: input.password,
-    subscriptionPlan: "solo",
+    subscriptionPlan,
     trialExpiresAt: new Date().toISOString(),
     subscriptionExpiresAt: expiry,
     resellerId: reseller.id,
@@ -672,6 +740,7 @@ export async function registerClientForReseller(
     user: {
       email: String(input.email || "").trim().toLowerCase(),
       name: String(input.name || "").trim(),
+      subscriptionPlan,
       subscriptionExpiresAt: expiry,
     },
     remainingSeats: left - 1,
@@ -938,6 +1007,13 @@ export async function createReseller(input: ResellerInput): Promise<{
     ),
     seatDays: Math.max(1, Math.floor(Number(input.seatDays) || DEFAULT_SEAT_DAYS)),
     pricePerSeatPkr: normalizePricePerSeatPkr(input.pricePerSeatPkr),
+    allowedSeatPlans: normalizeAllowedSeatPlans(input.allowedSeatPlans),
+    defaultSeatPlan: normalizeSeatPlan(
+      input.defaultSeatPlan,
+      normalizeAllowedSeatPlans(input.allowedSeatPlans),
+    ),
+    soloPricePerSeatPkr: normalizePricePerSeatPkr(input.soloPricePerSeatPkr),
+    teamPricePerSeatPkr: normalizePricePerSeatPkr(input.teamPricePerSeatPkr),
     maxUsers: Math.max(0, Math.floor(Number(input.seatsPurchased ?? input.maxUsers) || 0)),
     notes: String(input.notes || "").trim(),
     expiresAt: input.expiresAt ? String(input.expiresAt) : null,
@@ -1027,6 +1103,27 @@ export async function updateReseller(id: string, input: ResellerInput): Promise<
       input.pricePerSeatPkr !== undefined
         ? normalizePricePerSeatPkr(input.pricePerSeatPkr)
         : current.pricePerSeatPkr,
+    allowedSeatPlans:
+      input.allowedSeatPlans !== undefined
+        ? normalizeAllowedSeatPlans(input.allowedSeatPlans)
+        : current.allowedSeatPlans,
+    defaultSeatPlan:
+      input.defaultSeatPlan !== undefined || input.allowedSeatPlans !== undefined
+        ? normalizeSeatPlan(
+            input.defaultSeatPlan ?? current.defaultSeatPlan,
+            input.allowedSeatPlans !== undefined
+              ? normalizeAllowedSeatPlans(input.allowedSeatPlans)
+              : current.allowedSeatPlans,
+          )
+        : current.defaultSeatPlan,
+    soloPricePerSeatPkr:
+      input.soloPricePerSeatPkr !== undefined
+        ? normalizePricePerSeatPkr(input.soloPricePerSeatPkr)
+        : current.soloPricePerSeatPkr,
+    teamPricePerSeatPkr:
+      input.teamPricePerSeatPkr !== undefined
+        ? normalizePricePerSeatPkr(input.teamPricePerSeatPkr)
+        : current.teamPricePerSeatPkr,
     maxUsers: current.seatsPurchased,
     notes: input.notes !== undefined ? String(input.notes || "").trim() : current.notes,
     expiresAt:

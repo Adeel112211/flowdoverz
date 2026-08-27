@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { Radio, RefreshCw } from "lucide-react";
 import { AdminPageHeader } from "@/components/admin-page-header";
@@ -8,8 +8,11 @@ import { AdminPageLayout } from "@/components/admin-page-layout";
 import { AdminLoadingState } from "@/components/admin-loading-state";
 import { AdminFilterPills } from "@/components/admin-filter-pills";
 import { AdminDataTable, type AdminTableColumn } from "@/components/admin-data-table";
+import { AdminTablePagination } from "@/components/admin-table-pagination";
 import { SyncMobileCard } from "@/components/admin-mobile-cards";
 import { useAdminLiveRefresh } from "@/hooks/use-admin-live-refresh";
+
+const PAGE_SIZE = 50;
 
 type SyncClient = {
   email: string;
@@ -45,43 +48,49 @@ function StatusBadge({ status }: { status: SyncClient["syncStatus"] }) {
 
 export default function SyncStatusPage() {
   const [clients, setClients] = useState<SyncClient[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [initialLoading, setInitialLoading] = useState(true);
+  const [pageLoading, setPageLoading] = useState(false);
   const [filter, setFilter] = useState<Filter>("all");
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalCount, setTotalCount] = useState(0);
+  const hasLoadedOnce = useRef(false);
 
-  const [nextCursor, setNextCursor] = useState<string | null>(null);
-  const [loadedPage, setLoadedPage] = useState(1);
-
-  const load = useCallback(async (silent = false, append = false, page = 1) => {
-    if (!silent) setLoading(true);
+  const load = useCallback(async (page = 1, opts: { silent?: boolean; initial?: boolean } = {}) => {
+    const silent = Boolean(opts.silent);
+    const initial = Boolean(opts.initial);
+    if (initial) setInitialLoading(true);
+    else if (!silent) setPageLoading(true);
     try {
       const params = new URLSearchParams();
-      params.set("limit", "50");
+      params.set("limit", String(PAGE_SIZE));
       params.set("page", String(page));
       const res = await fetch(`/api/admin/sync-status?${params}`, { credentials: "same-origin" });
       const data = await res.json();
       if (data.success) {
-        setClients((prev) => (append ? [...prev, ...(data.clients || [])] : data.clients || []));
-        setNextCursor(data.nextCursor || null);
-        setLoadedPage(page);
+        setClients(data.clients || []);
+        setTotalCount(typeof data.totalCount === "number" ? data.totalCount : (data.clients || []).length);
+        setCurrentPage(page);
       }
     } finally {
-      if (!silent) setLoading(false);
+      setInitialLoading(false);
+      setPageLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    void load(false);
+    void load(1, { initial: !hasLoadedOnce.current, silent: hasLoadedOnce.current });
+    hasLoadedOnce.current = true;
   }, [load]);
 
   useAdminLiveRefresh(
     async (event) => {
       if (event.type === "resync") {
-        void load(true);
+        void load(currentPage, { silent: true });
         return;
       }
       const id = String(event.userId || event.id || "").toLowerCase();
       if (!id) {
-        void load(true);
+        void load(currentPage, { silent: true });
         return;
       }
       try {
@@ -103,11 +112,13 @@ export default function SyncStatusPage() {
         // keep current page
       }
     },
-    [load],
+    [load, currentPage],
     { topics: ["user", "extension"] },
   );
 
   const filtered = clients.filter((c) => filter === "all" || c.syncStatus === filter);
+  const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
+  const tableCount = totalCount > 0 ? totalCount : filtered.length;
 
   const columns: AdminTableColumn<SyncClient>[] = [
     {
@@ -155,21 +166,33 @@ export default function SyncStatusPage() {
     },
   ];
 
-  if (loading) return <AdminLoadingState label="Loading sync status..." />;
+  function goToPage(page: number) {
+    if (page < 1 || page > totalPages || pageLoading || page === currentPage) return;
+    void load(page);
+  }
+
+  if (initialLoading) return <AdminLoadingState label="Loading sync status..." />;
 
   return (
     <AdminPageLayout
       header={
         <AdminPageHeader
           title="Sync Status"
-          description="Monitor which clients are connected and syncing via the extension."
+          description={
+            <>
+              <span className="font-semibold text-cyan-300">{totalCount.toLocaleString()} clients total</span>
+              {" · "}
+              Monitor which clients are connected and syncing via the extension.
+            </>
+          }
           actions={
             <button
               type="button"
-              onClick={() => void load()}
-              className="inline-flex items-center gap-2 rounded-xl border border-white/10 px-4 py-2.5 text-sm font-bold text-slate-300 hover:bg-white/5"
+              onClick={() => void load(currentPage)}
+              disabled={pageLoading}
+              className="inline-flex items-center gap-2 rounded-xl border border-white/10 px-4 py-2.5 text-sm font-bold text-slate-300 hover:bg-white/5 disabled:opacity-60"
             >
-              <RefreshCw className="w-4 h-4" /> Refresh
+              <RefreshCw className={`w-4 h-4 ${pageLoading ? "animate-spin" : ""}`} /> Refresh
             </button>
           }
         />
@@ -178,34 +201,36 @@ export default function SyncStatusPage() {
       <AdminFilterPills options={FILTERS} value={filter} onChange={setFilter} />
 
       <div className="mt-4 rounded-2xl border border-white/5 bg-white/[0.02] p-4 sm:p-6">
-        {filtered.length === 0 ? (
+        {filtered.length === 0 && !pageLoading ? (
           <div className="flex flex-col items-center py-16 text-center">
             <Radio className="w-12 h-12 text-slate-600 mb-4" />
             <p className="text-slate-400">No clients match this filter.</p>
           </div>
         ) : (
-          <AdminDataTable
-            title="Clients"
-            count={filtered.length}
-            columns={columns}
-            data={filtered}
-            rowKey={(c) => c.email}
-            emptyState={<p className="text-slate-500 text-center py-8">No clients</p>}
-            renderMobileCard={(c) => (
-              <SyncMobileCard client={c} statusBadge={<StatusBadge status={c.syncStatus} />} />
-            )}
-          />
-        )}
-        {nextCursor && (
-          <div className="mt-4 flex justify-center">
-            <button
-              type="button"
-              onClick={() => void load(true, true, loadedPage + 1)}
-              className="rounded-xl border border-white/10 px-4 py-2.5 text-sm font-bold text-slate-300 hover:bg-white/5"
-            >
-              Load more
-            </button>
-          </div>
+          <>
+            <AdminDataTable
+              title="Clients"
+              count={tableCount}
+              loading={pageLoading}
+              columns={columns}
+              data={filtered}
+              rowKey={(c) => c.email}
+              emptyState={<p className="text-slate-500 text-center py-8">No clients</p>}
+              renderMobileCard={(c) => (
+                <SyncMobileCard client={c} statusBadge={<StatusBadge status={c.syncStatus} />} />
+              )}
+            />
+            {totalCount > PAGE_SIZE ? (
+              <AdminTablePagination
+                currentPage={currentPage}
+                totalPages={totalPages}
+                totalCount={totalCount}
+                pageSize={PAGE_SIZE}
+                loading={pageLoading}
+                onPageChange={goToPage}
+              />
+            ) : null}
+          </>
         )}
       </div>
     </AdminPageLayout>

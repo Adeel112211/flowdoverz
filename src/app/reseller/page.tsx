@@ -22,6 +22,7 @@ type Stats = {
   lastGrantAt: string | null;
   lastGrantTotalPkr: number;
   lastGrantSeats: number;
+  planOptions?: { id: "solo" | "team"; label: string; pricePerSeatPkr: number }[];
 };
 
 type RecentClient = {
@@ -85,7 +86,41 @@ export default function ResellerDashboardPage() {
       header={
         <AdminPageHeader
           title="Dashboard"
-          description={brandName ? `Welcome back, ${brandName}.` : "Your reseller overview."}
+          description={
+            <>
+              {brandName ? `Welcome back, ${brandName}.` : "Your reseller overview."}
+              {stats && stats.planOptions && stats.planOptions.length > 0 ? (
+                <>
+                  {" · "}
+                  <span className="font-semibold text-cyan-300">
+                    Plans:{" "}
+                    {stats.planOptions
+                      .map((plan) =>
+                        plan.pricePerSeatPkr > 0
+                          ? `${plan.label} ${formatPkr(plan.pricePerSeatPkr)}`
+                          : plan.label,
+                      )
+                      .join(" · ")}
+                  </span>
+                  {stats.totalPaidPkr > 0 ? (
+                    <>
+                      {" · "}
+                      <span className="font-semibold text-violet-300">
+                        Total paid: {formatPkr(stats.totalPaidPkr)}
+                      </span>
+                    </>
+                  ) : null}
+                </>
+              ) : stats && stats.pricePerSeatPkr > 0 ? (
+                <>
+                  {" · "}
+                  <span className="font-semibold text-fuchsia-300">
+                    Your price: {formatPkr(stats.pricePerSeatPkr)} per seat
+                  </span>
+                </>
+              ) : null}
+            </>
+          }
         />
       }
     >

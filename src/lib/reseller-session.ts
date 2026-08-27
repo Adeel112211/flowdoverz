@@ -1,6 +1,6 @@
 import { createHmac, timingSafeEqual } from "crypto";
 import { cookies } from "next/headers";
-import { getReseller, type ResellerRecord } from "@/lib/reseller-store";
+import { getReseller, publicResellerPlanOptions, type ResellerRecord } from "@/lib/reseller-store";
 
 export const RESELLER_COOKIE = "flowdoverz_reseller";
 const TOKEN_TTL_MS = 7 * 24 * 60 * 60 * 1000;
@@ -90,6 +90,9 @@ export function publicResellerSession(record: ResellerRecord) {
     seatsPurchased: record.seatsPurchased,
     seatDays: record.seatDays,
     pricePerSeatPkr: record.pricePerSeatPkr,
+    allowedSeatPlans: record.allowedSeatPlans,
+    defaultSeatPlan: record.defaultSeatPlan,
+    planOptions: publicResellerPlanOptions(record),
     assignedSlots: record.assignedSlots,
   };
 }

@@ -67,6 +67,10 @@ type Reseller = {
   remainingSeats: number;
   seatDays: number;
   pricePerSeatPkr: number;
+  allowedSeatPlans: ("solo" | "team")[];
+  defaultSeatPlan: "solo" | "team";
+  soloPricePerSeatPkr: number;
+  teamPricePerSeatPkr: number;
   notes: string;
   expiresAt: string | null;
   apiKeyPrefix: string;
@@ -123,6 +127,11 @@ type FormState = {
   assignedSlots: string[];
   maxUsers: string;
   pricePerSeatPkr: string;
+  allowSolo: boolean;
+  allowTeam: boolean;
+  defaultSeatPlan: "solo" | "team";
+  soloPricePerSeatPkr: string;
+  teamPricePerSeatPkr: string;
   notes: string;
   expiresAt: string;
   panelPassword: string;
@@ -139,6 +148,11 @@ const EMPTY_FORM: FormState = {
   assignedSlots: [],
   maxUsers: "0",
   pricePerSeatPkr: "0",
+  allowSolo: true,
+  allowTeam: true,
+  defaultSeatPlan: "solo",
+  soloPricePerSeatPkr: "0",
+  teamPricePerSeatPkr: "0",
   notes: "",
   expiresAt: "",
   panelPassword: "",
@@ -156,6 +170,11 @@ function formFromReseller(row: Reseller): FormState {
     assignedSlots: [...(row.assignedSlots || [])],
     maxUsers: String(row.seatsPurchased || row.maxUsers || 0),
     pricePerSeatPkr: String(row.pricePerSeatPkr || 0),
+    allowSolo: (row.allowedSeatPlans || ["solo", "team"]).includes("solo"),
+    allowTeam: (row.allowedSeatPlans || ["solo", "team"]).includes("team"),
+    defaultSeatPlan: row.defaultSeatPlan === "team" ? "team" : "solo",
+    soloPricePerSeatPkr: String(row.soloPricePerSeatPkr || 0),
+    teamPricePerSeatPkr: String(row.teamPricePerSeatPkr || 0),
     notes: row.notes || "",
     expiresAt: row.expiresAt || "",
     panelPassword: "",
@@ -163,6 +182,14 @@ function formFromReseller(row: Reseller): FormState {
 }
 
 function payloadFromForm(form: FormState) {
+  const allowedSeatPlans: ("solo" | "team")[] = [
+    ...(form.allowSolo ? (["solo"] as const) : []),
+    ...(form.allowTeam ? (["team"] as const) : []),
+  ];
+  const plans: ("solo" | "team")[] = allowedSeatPlans.length ? allowedSeatPlans : ["solo"];
+  const defaultSeatPlan: "solo" | "team" = plans.includes(form.defaultSeatPlan)
+    ? form.defaultSeatPlan
+    : plans[0];
   return {
     brandName: form.brandName,
     contactName: form.contactName,
@@ -175,6 +202,10 @@ function payloadFromForm(form: FormState) {
     seatsPurchased: Number(form.maxUsers) || 0,
     maxUsers: Number(form.maxUsers) || 0,
     pricePerSeatPkr: Number(form.pricePerSeatPkr) || 0,
+    allowedSeatPlans: plans,
+    defaultSeatPlan,
+    soloPricePerSeatPkr: Number(form.soloPricePerSeatPkr) || 0,
+    teamPricePerSeatPkr: Number(form.teamPricePerSeatPkr) || 0,
     notes: form.notes,
     expiresAt: form.expiresAt || null,
     ...(form.panelPassword.trim() ? { panelPassword: form.panelPassword.trim() } : {}),
@@ -1094,7 +1125,7 @@ export default function AdminResellersPage() {
             </div>
             <div className="grid gap-4 lg:grid-cols-2">
               <div>
-                <label className="mb-2 block text-sm font-bold text-slate-400">Price per seat (PKR)</label>
+                <label className="mb-2 block text-sm font-bold text-slate-400">Default seat price (PKR)</label>
                 <input
                   type="number"
                   min={0}
@@ -1104,7 +1135,7 @@ export default function AdminResellersPage() {
                   placeholder="e.g. 1500"
                 />
                 <p className="mt-1 text-xs text-slate-500">
-                  Shown on the reseller dashboard. Add paid seats auto-calculates seats × this price.
+                  Used when Solo or Team price below is left empty.
                 </p>
                 {!editing && Number(form.maxUsers) > 0 && Number(form.pricePerSeatPkr) > 0 ? (
                   <p className="mt-1 text-xs font-semibold text-cyan-300">
@@ -1112,6 +1143,79 @@ export default function AdminResellersPage() {
                   </p>
                 ) : null}
               </div>
+              <div>
+                <label className="mb-2 block text-sm font-bold text-slate-400">Seat plans for clients</label>
+                <div className="flex flex-wrap gap-3 rounded-xl border border-white/10 bg-[#080810] px-4 py-3">
+                  <label className="inline-flex items-center gap-2 text-sm font-semibold text-slate-200">
+                    <input
+                      type="checkbox"
+                      checked={form.allowSolo}
+                      onChange={(e) =>
+                        setForm((prev) => ({
+                          ...prev,
+                          allowSolo: e.target.checked,
+                          defaultSeatPlan:
+                            !e.target.checked && prev.defaultSeatPlan === "solo" ? "team" : prev.defaultSeatPlan,
+                        }))
+                      }
+                    />
+                    Solo
+                  </label>
+                  <label className="inline-flex items-center gap-2 text-sm font-semibold text-slate-200">
+                    <input
+                      type="checkbox"
+                      checked={form.allowTeam}
+                      onChange={(e) =>
+                        setForm((prev) => ({
+                          ...prev,
+                          allowTeam: e.target.checked,
+                          defaultSeatPlan:
+                            !e.target.checked && prev.defaultSeatPlan === "team" ? "solo" : prev.defaultSeatPlan,
+                        }))
+                      }
+                    />
+                    Team
+                  </label>
+                </div>
+                <p className="mt-2 text-xs text-slate-500">Reseller picks Solo or Team when registering each client.</p>
+                <label className="mb-2 mt-3 block text-sm font-bold text-slate-400">Default plan</label>
+                <select
+                  value={form.defaultSeatPlan}
+                  onChange={(e) =>
+                    setForm({ ...form, defaultSeatPlan: e.target.value === "team" ? "team" : "solo" })
+                  }
+                  className={INPUT_CLASS}
+                >
+                  {form.allowSolo ? <option value="solo">Solo</option> : null}
+                  {form.allowTeam ? <option value="team">Team</option> : null}
+                </select>
+              </div>
+            </div>
+            <div className="grid gap-4 lg:grid-cols-2">
+              <div>
+                <label className="mb-2 block text-sm font-bold text-slate-400">Solo price / seat (PKR)</label>
+                <input
+                  type="number"
+                  min={0}
+                  value={form.soloPricePerSeatPkr}
+                  onChange={(e) => setForm({ ...form, soloPricePerSeatPkr: e.target.value })}
+                  className={INPUT_CLASS}
+                  placeholder="Optional — uses default seat price"
+                />
+              </div>
+              <div>
+                <label className="mb-2 block text-sm font-bold text-slate-400">Team price / seat (PKR)</label>
+                <input
+                  type="number"
+                  min={0}
+                  value={form.teamPricePerSeatPkr}
+                  onChange={(e) => setForm({ ...form, teamPricePerSeatPkr: e.target.value })}
+                  className={INPUT_CLASS}
+                  placeholder="Optional — uses default seat price"
+                />
+              </div>
+            </div>
+            <div className="grid gap-4 lg:grid-cols-2">
               <div>
                 <label className="mb-2 block text-sm font-bold text-slate-400">Internal notes</label>
                 <textarea

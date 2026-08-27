@@ -56,6 +56,7 @@ export default function LandingPage() {
             <a href="#workflow" className="text-base font-bold text-slate-400 hover:text-white transition-colors">Workflow</a>
             <a href="#faq" className="text-base font-bold text-slate-400 hover:text-white transition-colors">FAQ</a>
             <Link href="/pricing" className="text-base font-bold text-slate-400 hover:text-white transition-colors">Pricing</Link>
+            <Link href="/resellers" className="text-base font-bold text-slate-400 hover:text-white transition-colors">Resellers</Link>
           </nav>
 
           <div className="hidden md:flex items-center gap-3">
@@ -99,6 +100,7 @@ export default function LandingPage() {
           <a href="#workflow" onClick={closeMenu} className="text-2xl font-bold text-white border-b border-white/10 pb-4">Workflow</a>
           <a href="#faq" onClick={closeMenu} className="text-2xl font-bold text-white border-b border-white/10 pb-4">FAQ</a>
           <Link href="/pricing" onClick={closeMenu} className="text-2xl font-bold text-white border-b border-white/10 pb-4">Pricing</Link>
+          <Link href="/resellers" onClick={closeMenu} className="text-2xl font-bold text-white border-b border-white/10 pb-4">Resellers</Link>
           
           <div className="mt-8 flex flex-col gap-4">
             {session ? (
@@ -262,6 +264,7 @@ export default function LandingPage() {
                 <a href="#features" className="text-slate-400 hover:text-white text-sm transition-all duration-300 hover:translate-x-1 flex items-center group">Features</a>
                 <a href="#workflow" className="text-slate-400 hover:text-white text-sm transition-all duration-300 hover:translate-x-1 flex items-center group">How It Works</a>
                 <Link href="/pricing" className="text-slate-400 hover:text-white text-sm transition-all duration-300 hover:translate-x-1 flex items-center group">Pricing</Link>
+                <Link href="/resellers" className="text-slate-400 hover:text-white text-sm transition-all duration-300 hover:translate-x-1 flex items-center group">Resellers</Link>
                 <a href="#faq" className="text-slate-400 hover:text-white text-sm transition-all duration-300 hover:translate-x-1 flex items-center group">FAQ</a>
               </div>
             </div>

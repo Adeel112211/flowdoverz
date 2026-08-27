@@ -6,8 +6,15 @@ import { usePathname } from "next/navigation";
 import { KeyRound, LayoutDashboard, LogOut, Menu, Users, X } from "lucide-react";
 import { BrandLogo } from "@/components/brand-logo";
 import { useResellerNav } from "@/components/reseller-nav";
+import { formatPkr } from "@/lib/pricing-config";
 
-export function ResellerSidebar({ brandName }: { brandName: string }) {
+export function ResellerSidebar({
+  brandName,
+  pricePerSeatPkr = 0,
+}: {
+  brandName: string;
+  pricePerSeatPkr?: number;
+}) {
   const pathname = usePathname();
   const nav = useResellerNav();
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -110,7 +117,16 @@ export function ResellerSidebar({ brandName }: { brandName: string }) {
         </div>
 
         <div className="border-t border-white/5 p-4">
-          <div className="mb-3 truncate px-2 text-xs text-slate-500">{brandName}</div>
+          <div className="mb-3 px-2">
+            <div className="truncate text-xs text-slate-500">{brandName}</div>
+            {pricePerSeatPkr > 0 ? (
+              <div className="mt-1 text-xs font-semibold text-fuchsia-300">
+                {formatPkr(pricePerSeatPkr)} / seat
+              </div>
+            ) : (
+              <div className="mt-1 text-xs text-slate-600">Seat price not set yet</div>
+            )}
+          </div>
           <button
             type="button"
             onClick={() => void handleLogout()}

@@ -15,13 +15,10 @@ import {
   updateReseller,
   countResellerUsers,
   addResellerSeats,
-  pickAssignedSlot,
-  remainingSeats,
-  subscriptionExpiryFromNow,
+  registerClientForReseller,
   RESELLER_SLOTS,
 } from "@/lib/reseller-store";
 import { buildResellerIntegration } from "@/lib/reseller-http";
-import { createUserByAdmin } from "@/lib/user-store";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -215,36 +212,24 @@ export async function PUT(request: NextRequest) {
       if (!current) {
         return NextResponse.json({ success: false, error: "Reseller not found." }, { status: 404 });
       }
-      const slot = pickAssignedSlot(current);
-      if (!slot) {
-        return NextResponse.json({ success: false, error: "Assign a cookie slot first." }, { status: 400 });
-      }
-      const used = await countResellerUsers(id);
-      if (remainingSeats(current, used) <= 0) {
-        return NextResponse.json({ success: false, error: "No paid seats left. Add seats first." }, { status: 403 });
-      }
-      const created = await createUserByAdmin({
+      const result = await registerClientForReseller(current, {
         email: String(body.email || ""),
         name: String(body.name || ""),
         password: String(body.password || ""),
-        subscriptionPlan: "solo",
-        trialExpiresAt: new Date().toISOString(),
-        subscriptionExpiresAt: subscriptionExpiryFromNow(current.seatDays),
-        resellerId: id,
-        assignedSlot: slot,
+        subscriptionPlan: body.subscriptionPlan ? String(body.subscriptionPlan) : undefined,
       });
-      if (!created.ok) {
-        return NextResponse.json({ success: false, error: created.error }, { status: 400 });
+      if (!result.ok) {
+        return NextResponse.json({ success: false, error: result.error }, { status: result.status });
       }
       await logAdminActivity({
         action: "reseller_user_created",
         detail: `Created user ${String(body.email || "")} for ${current.brandName}`,
         targetEmail: String(body.email || ""),
-        meta: { resellerId: id },
+        meta: { resellerId: id, subscriptionPlan: result.user.subscriptionPlan },
       });
       return NextResponse.json({
         success: true,
-        reseller: toPublicReseller(current, used + 1),
+        reseller: toPublicReseller(current, await countResellerUsers(id)),
       });
     }
 
