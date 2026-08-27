@@ -182,7 +182,6 @@ export async function PUT(request: NextRequest) {
         success: true,
         reseller: result.reseller,
         apiKey: result.apiKey,
-        previousKeyValidUntil: result.previousKeyValidUntil,
         integration,
       });
     }

@@ -49,9 +49,6 @@ export type ResellerRecord = {
   expiresAt: string | null;
   apiKeyHash: string;
   apiKeyPrefix: string;
-  /** Previous key stays valid until this ISO time (grace period after rotate). */
-  previousApiKeyHash?: string;
-  previousApiKeyExpiresAt?: string | null;
   passwordHash: string;
   passwordSalt: string;
   sessionVersion: number;
@@ -104,8 +101,6 @@ export const DEFAULT_SEAT_DAYS = 30;
 
 const COLLECTION = "resellers";
 const KEY_PREFIX = "fdz_rk_";
-/** Old API keys keep working this long after rotate (reseller updates server at their pace). */
-const API_KEY_GRACE_MS = 72 * 60 * 60 * 1000;
 
 function requireDb() {
   const db = getDb();
@@ -262,8 +257,6 @@ function asRecord(id: string, data: Record<string, unknown>): ResellerRecord {
     expiresAt: data.expiresAt ? String(data.expiresAt) : null,
     apiKeyHash: String(data.apiKeyHash || ""),
     apiKeyPrefix: String(data.apiKeyPrefix || ""),
-    previousApiKeyHash: data.previousApiKeyHash ? String(data.previousApiKeyHash) : undefined,
-    previousApiKeyExpiresAt: data.previousApiKeyExpiresAt ? String(data.previousApiKeyExpiresAt) : null,
     passwordHash: String(data.passwordHash || ""),
     passwordSalt: String(data.passwordSalt || ""),
     sessionVersion: Math.max(0, Math.floor(Number(data.sessionVersion) || 0)),
@@ -459,22 +452,11 @@ export async function getResellerByApiKey(key: string): Promise<ResellerRecord |
   if (!trimmed.startsWith(KEY_PREFIX) || trimmed.length < 20) return null;
   const db = requireDb();
   const hash = hashApiKey(trimmed);
-
   const snap = await db.collection(COLLECTION).where("apiKeyHash", "==", hash).limit(2).get();
-  if (!snap.empty) {
-    const record = asRecord(snap.docs[0].id, (snap.docs[0].data() || {}) as Record<string, unknown>);
-    if (hashesEqual(record.apiKeyHash, hash)) return record;
-  }
-
-  const prevSnap = await db.collection(COLLECTION).where("previousApiKeyHash", "==", hash).limit(2).get();
-  if (!prevSnap.empty) {
-    const record = asRecord(prevSnap.docs[0].id, (prevSnap.docs[0].data() || {}) as Record<string, unknown>);
-    if (!record.previousApiKeyHash || !hashesEqual(record.previousApiKeyHash, hash)) return null;
-    const expiresAt = record.previousApiKeyExpiresAt ? Date.parse(record.previousApiKeyExpiresAt) : 0;
-    if (Number.isFinite(expiresAt) && expiresAt > Date.now()) return record;
-  }
-
-  return null;
+  if (snap.empty) return null;
+  const record = asRecord(snap.docs[0].id, (snap.docs[0].data() || {}) as Record<string, unknown>);
+  if (!hashesEqual(record.apiKeyHash, hash)) return null;
+  return record;
 }
 
 export async function getResellerByContactEmail(email: string): Promise<ResellerRecord | null> {
@@ -1020,20 +1002,18 @@ export async function updateReseller(id: string, input: ResellerInput): Promise<
 export async function rotateResellerKey(id: string): Promise<{
   reseller: PublicReseller;
   apiKey: string;
-  previousKeyValidUntil: string;
 }> {
   const current = await getReseller(id);
   if (!current) throw new Error("Reseller not found.");
   const generated = generateResellerApiKey();
   const now = new Date().toISOString();
-  const previousKeyValidUntil = new Date(Date.now() + API_KEY_GRACE_MS).toISOString();
   const db = requireDb();
   await db.collection(COLLECTION).doc(id).set(
     {
       apiKeyHash: generated.hash,
       apiKeyPrefix: generated.prefix,
-      previousApiKeyHash: current.apiKeyHash || null,
-      previousApiKeyExpiresAt: current.apiKeyHash ? previousKeyValidUntil : null,
+      previousApiKeyHash: null,
+      previousApiKeyExpiresAt: null,
       updatedAt: now,
     },
     { merge: true },
@@ -1042,17 +1022,10 @@ export async function rotateResellerKey(id: string): Promise<{
   void touchLive({ topic: "reseller", action: "updated", id });
   return {
     reseller: toPublicReseller(
-      {
-        ...current,
-        apiKeyPrefix: generated.prefix,
-        previousApiKeyHash: current.apiKeyHash,
-        previousApiKeyExpiresAt: current.apiKeyHash ? previousKeyValidUntil : null,
-        updatedAt: now,
-      },
+      { ...current, apiKeyPrefix: generated.prefix, updatedAt: now },
       await countResellerUsers(id),
     ),
     apiKey: generated.key,
-    previousKeyValidUntil,
   };
 }
 
