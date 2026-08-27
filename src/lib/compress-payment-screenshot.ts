@@ -1,4 +1,4 @@
-import sharp from "sharp";
+import { getSharp } from "./sharp-runtime";
 
 export const PAYMENT_SCREENSHOT_MAX_BYTES = 120 * 1024;
 export const PAYMENT_SCREENSHOT_MAX_DIMENSION = 640;
@@ -20,6 +20,7 @@ function parseScreenshotBase64(screenshot: string) {
 export async function compressPaymentScreenshotBuffer(input: Buffer) {
   if (!input.length) throw new Error("Payment screenshot is empty.");
 
+  const sharp = await getSharp();
   const resize = {
     width: PAYMENT_SCREENSHOT_MAX_DIMENSION,
     height: PAYMENT_SCREENSHOT_MAX_DIMENSION,

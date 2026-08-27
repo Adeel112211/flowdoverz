@@ -162,7 +162,8 @@ async function transformAndUpsert(
       "image/png",
     );
     delete data.logoBase64;
-    data.storagePath = storagePath;
+    data.logoStoragePath = storagePath;
+    data.logoMime = String(data.logoMime || "image/png");
   }
 
   await upsertDoc(collectionPath, docId, data);

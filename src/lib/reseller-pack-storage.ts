@@ -1,4 +1,4 @@
-import sharp from "sharp";
+import { getSharp } from "./sharp-runtime";
 import { isSupabaseBackend } from "./firebase-admin";
 import { deleteSupabaseBlob, downloadSupabaseBlob, uploadSupabaseBlob, STORAGE_BUCKETS } from "./supabase-storage";
 
@@ -31,6 +31,7 @@ export async function loadResellerPackZip(record: {
 }
 
 async function compressLogoBuffer(input: Buffer) {
+  const sharp = await getSharp();
   let quality = 82;
   let output = await sharp(input)
     .rotate()

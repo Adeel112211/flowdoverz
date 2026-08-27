@@ -1,8 +1,8 @@
-import { compressPaymentScreenshotDataUrl } from "./compress-payment-screenshot";
 import { isSupabaseBackend } from "./firebase-admin";
 import { deleteSupabaseBlob, downloadSupabaseBlob, uploadSupabaseBlob, STORAGE_BUCKETS } from "./supabase-storage";
 
 export async function preparePaymentScreenshot(screenshot: string) {
+  const { compressPaymentScreenshotDataUrl } = await import("./compress-payment-screenshot");
   return compressPaymentScreenshotDataUrl(screenshot);
 }
 
