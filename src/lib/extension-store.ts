@@ -290,7 +290,21 @@ export async function deleteExtensionRelease(version: string) {
   const config = await getExtensionConfig();
   const remaining = config.releases.filter((r) => r.version !== safe);
 
-  await db.collection(FILES_COLLECTION).doc(safe).delete();
+  const fileRef = db.collection(FILES_COLLECTION).doc(safe);
+  const fileSnap = await fileRef.get();
+  if (fileSnap.exists) {
+    const fileData = (fileSnap.data() || {}) as { storagePath?: string };
+    if (fileData.storagePath) {
+      try {
+        const { deleteSupabaseBlob } = await import("./supabase-storage");
+        await deleteSupabaseBlob(String(fileData.storagePath));
+      } catch (error) {
+        console.warn(`Failed to delete extension storage ${safe}:`, error);
+      }
+    }
+  }
+
+  await fileRef.delete();
   await db.collection(INTEGRITY_COLLECTION).doc(safe).delete().catch(() => undefined);
 
   let activeVersion = config.activeVersion;

@@ -1049,8 +1049,14 @@ async function savedBrandingFor(resellerId: string) {
   const supportEmail = String(branding.supportEmail || pack.supportEmail || "");
   const dashboardUrl = String(branding.dashboardUrl || pack.dashboardUrl || "");
   const loginUrl = String(branding.loginUrl || pack.loginUrl || dashboardUrl);
-  const logoBase64 = String(branding.logoBase64 || pack.logoBase64 || "");
-  const logoMime = String(branding.logoMime || pack.logoMime || "image/png");
+  const { loadResellerLogo } = await import("./reseller-pack-storage");
+  const logoLoaded = await loadResellerLogo({
+    logoBase64: branding.logoBase64 || pack.logoBase64,
+    logoStoragePath: branding.logoStoragePath || pack.logoStoragePath,
+    logoMime: branding.logoMime || pack.logoMime,
+  });
+  const logoBase64 = logoLoaded?.base64 || "";
+  const logoMime = logoLoaded?.mime || String(branding.logoMime || pack.logoMime || "image/png");
   if (!displayName && !supportEmail && !logoBase64 && !dashboardUrl && !loginUrl) return null;
   return {
     displayName,
@@ -1059,6 +1065,7 @@ async function savedBrandingFor(resellerId: string) {
     loginUrl,
     logoBase64,
     logoMime,
+    logoStoragePath: String(branding.logoStoragePath || pack.logoStoragePath || ""),
     primaryColor: String(branding.primaryColor || pack.primaryColor || ""),
     accentColor: String(branding.accentColor || pack.accentColor || ""),
     backgroundColor: String(branding.backgroundColor || pack.backgroundColor || ""),
@@ -1076,8 +1083,9 @@ export async function getResellerExtensionPack(resellerId: string): Promise<Rese
   if (!packSnap.exists) return null;
   const packData = (packSnap.data() || {}) as Record<string, unknown>;
   const meta = asResellerPackMeta(id, packData);
-  const zipBase64 = String(packData.zipBase64 || "");
-  if (!meta || !zipBase64) return null;
+  const { loadResellerPackZip } = await import("./reseller-pack-storage");
+  const buffer = await loadResellerPackZip(packData);
+  if (!meta || !buffer) return null;
 
   let profile: OfficialIntegrityProfile | null = null;
   const integritySnap = await db.collection(INTEGRITY_COLLECTION).doc(id).get();
@@ -1091,7 +1099,7 @@ export async function getResellerExtensionPack(resellerId: string): Promise<Rese
 
   return {
     ...meta,
-    buffer: Buffer.from(zipBase64, "base64"),
+    buffer,
     profile,
   };
 }
@@ -1255,34 +1263,86 @@ export async function generateResellerExtensionPack(
   };
 
   const db = requireDb();
+  const {
+    shouldStoreResellerPackInStorage,
+    saveResellerPackZip,
+    saveResellerLogo,
+    deleteResellerPackStorage,
+  } = await import("./reseller-pack-storage");
+  const existingPackSnap = await db.collection(PACKS_COLLECTION).doc(reseller.id).get();
+  const existingBrandingSnap = await db.collection(BRANDING_COLLECTION).doc(reseller.id).get();
+  const existingPack = (existingPackSnap.data() || {}) as Record<string, unknown>;
+  const existingBranding = (existingBrandingSnap.data() || {}) as Record<string, unknown>;
+
+  const brandingPayload: Record<string, unknown> = {
+    displayName: meta.displayName,
+    supportEmail,
+    dashboardUrl,
+    loginUrl,
+    primaryColor,
+    accentColor,
+    backgroundColor,
+    labelColor,
+    onPrimaryColor,
+    updatedAt: generatedAt,
+  };
+
+  if (shouldStoreResellerPackInStorage()) {
+    if (logo?.base64) {
+      brandingPayload.logoStoragePath = await saveResellerLogo(
+        reseller.id,
+        Buffer.from(logo.base64, "base64"),
+        logo.mime,
+      );
+      brandingPayload.logoMime = "image/jpeg";
+      brandingPayload.hasLogo = true;
+    } else if (keepLogo && saved?.logoStoragePath) {
+      brandingPayload.logoStoragePath = saved.logoStoragePath;
+      brandingPayload.logoMime = saved.logoMime || "image/jpeg";
+      brandingPayload.hasLogo = true;
+    } else if (keepLogo && saved?.logoBase64) {
+      brandingPayload.logoStoragePath = await saveResellerLogo(
+        reseller.id,
+        Buffer.from(saved.logoBase64, "base64"),
+        saved.logoMime || "image/png",
+      );
+      brandingPayload.logoMime = "image/jpeg";
+      brandingPayload.hasLogo = true;
+    } else {
+      brandingPayload.hasLogo = false;
+    }
+  } else if (logo?.base64) {
+    brandingPayload.logoBase64 = logo.base64;
+    brandingPayload.logoMime = logo.mime;
+    brandingPayload.hasLogo = true;
+  } else if (keepLogo && saved?.logoBase64) {
+    brandingPayload.logoBase64 = saved.logoBase64;
+    brandingPayload.logoMime = saved.logoMime || "image/png";
+    brandingPayload.hasLogo = true;
+  } else {
+    brandingPayload.hasLogo = false;
+  }
+
+  const packPayload: Record<string, unknown> = {
+    ...meta,
+    primaryColor,
+    accentColor,
+    backgroundColor,
+    labelColor,
+    onPrimaryColor,
+  };
+
   try {
-    await db.collection(BRANDING_COLLECTION).doc(reseller.id).set(
-      sanitizeForFirestore({
-        displayName: meta.displayName,
-        supportEmail,
-        dashboardUrl,
-        loginUrl,
-        logoBase64: logo?.base64 || (keepLogo ? saved?.logoBase64 || "" : ""),
-        logoMime: logo?.mime || (keepLogo ? saved?.logoMime || "" : ""),
-        primaryColor,
-        accentColor,
-        backgroundColor,
-        labelColor,
-        onPrimaryColor,
-        updatedAt: generatedAt,
-      }),
-    );
-    await db.collection(PACKS_COLLECTION).doc(reseller.id).set(
-      sanitizeForFirestore({
-        ...meta,
-        primaryColor,
-        accentColor,
-        backgroundColor,
-        labelColor,
-        onPrimaryColor,
-        zipBase64: sealed.zipBuffer.toString("base64"),
-      }),
-    );
+    await deleteResellerPackStorage(existingPack, existingBranding);
+
+    if (shouldStoreResellerPackInStorage()) {
+      packPayload.storagePath = await saveResellerPackZip(reseller.id, sealed.zipBuffer);
+    } else {
+      packPayload.zipBase64 = sealed.zipBuffer.toString("base64");
+    }
+
+    await db.collection(BRANDING_COLLECTION).doc(reseller.id).set(sanitizeForFirestore(brandingPayload));
+    await db.collection(PACKS_COLLECTION).doc(reseller.id).set(sanitizeForFirestore(packPayload));
     await db.collection(INTEGRITY_COLLECTION).doc(reseller.id).set(sanitizeForFirestore(sealed.profile));
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : "";
@@ -1343,6 +1403,15 @@ export async function deleteResellerExtensionPack(resellerId: string) {
   if (!id) return;
   const db = getDb();
   if (!db) return;
+
+  const packSnap = await db.collection(PACKS_COLLECTION).doc(id).get();
+  const brandingSnap = await db.collection(BRANDING_COLLECTION).doc(id).get();
+  const { deleteResellerPackStorage } = await import("./reseller-pack-storage");
+  await deleteResellerPackStorage(
+    (packSnap.data() || {}) as Record<string, unknown>,
+    (brandingSnap.data() || {}) as Record<string, unknown>,
+  );
+
   await db.collection(PACKS_COLLECTION).doc(id).delete().catch(() => undefined);
   await db.collection(INTEGRITY_COLLECTION).doc(id).delete().catch(() => undefined);
   await db.collection(BRANDING_COLLECTION).doc(id).delete().catch(() => undefined);

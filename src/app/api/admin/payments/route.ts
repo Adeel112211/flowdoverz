@@ -57,16 +57,17 @@ function serializePayment(
   id: string,
   raw: Record<string, unknown>,
   includeScreenshot = false,
+  screenshotDataUrl: string | null = null,
 ) {
   const data = normalizeFirestoreDoc(raw);
-  const screenshot = data.screenshot;
+  const screenshot = screenshotDataUrl ?? data.screenshot;
   const rest = { ...data };
   delete rest.screenshot;
 
   return {
     id,
     ...rest,
-    hasScreenshot: Boolean(screenshot),
+    hasScreenshot: Boolean(screenshot || data.storagePath || data.hasScreenshot),
     ...(includeScreenshot && screenshot ? { screenshot: String(screenshot) } : {}),
   };
 }
@@ -92,13 +93,18 @@ export async function GET(request: NextRequest) {
         return NextResponse.json({ success: false, error: "Payment not found" }, { status: 404 });
       }
 
+      const raw = (doc.data() || {}) as Record<string, unknown>;
+      const { loadPaymentScreenshotDataUrl } = await import("@/lib/payment-screenshot-storage");
+      const screenshotDataUrl = await loadPaymentScreenshotDataUrl(raw);
+
       return NextResponse.json({
         success: true,
         payment: serializePayment(
           normalizeFirestoreDoc,
           doc.id,
-          (doc.data() || {}) as Record<string, unknown>,
+          raw,
           true,
+          screenshotDataUrl,
         ),
       });
     }
@@ -230,6 +236,9 @@ export async function POST(request: NextRequest) {
         expiryAt: expiresAt,
       });
 
+      const { stripPaymentScreenshotFields } = await import("@/lib/payment-screenshot-storage");
+      await stripPaymentScreenshotFields(paymentRef, paymentData as Record<string, unknown>);
+
       await sendAccountActivatedEmail(userEmail, planName, now.toISOString(), expiresAt).catch(console.error);
       await sendPaymentReceiptEmail({
         email: userEmail,
@@ -260,6 +269,9 @@ export async function POST(request: NextRequest) {
         status: "rejected",
         processedAt: new Date().toISOString(),
       });
+
+      const { stripPaymentScreenshotFields } = await import("@/lib/payment-screenshot-storage");
+      await stripPaymentScreenshotFields(paymentRef, paymentData as Record<string, unknown>);
 
       const userEmail = paymentData.userEmail;
       const planId = paymentData.planId;
@@ -353,7 +365,9 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json({ success: false, error: "Payment not found." }, { status: 404 });
     }
 
-    const data = (snap.data() || {}) as { userEmail?: string; status?: string };
+    const data = (snap.data() || {}) as { userEmail?: string; status?: string; storagePath?: string; screenshot?: string };
+    const { deletePaymentScreenshotBlob } = await import("@/lib/payment-screenshot-storage");
+    await deletePaymentScreenshotBlob(data);
     await ref.delete();
 
     const { logAdminActivity } = await import("@/lib/admin-activity");

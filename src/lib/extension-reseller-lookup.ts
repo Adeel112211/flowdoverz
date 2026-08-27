@@ -48,7 +48,7 @@ export function asResellerPackMeta(id: string, data: Record<string, unknown>): R
     supportEmail: String(data.supportEmail || ""),
     dashboardUrl: String(data.dashboardUrl || ""),
     loginUrl: String(data.loginUrl || data.dashboardUrl || ""),
-    hasLogo: Boolean(data.hasLogo || data.logoBase64),
+    hasLogo: Boolean(data.hasLogo || data.logoBase64 || data.logoStoragePath),
     version,
     officialVersion: String(data.officialVersion || version),
     hash,

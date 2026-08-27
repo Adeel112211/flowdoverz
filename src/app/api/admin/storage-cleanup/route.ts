@@ -36,12 +36,25 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: true, result });
     }
 
+    if (action === "purge_old_logs") {
+      const { purgeOldLogRecords } = await import("@/lib/client-data-cleanup");
+      const maxAgeDays = Math.max(7, Math.floor(Number(body.maxAgeDays) || 90));
+      const result = await purgeOldLogRecords(maxAgeDays);
+      await logAdminActivity({
+        action: "settings_updated",
+        detail: `Purged old logs older than ${maxAgeDays} days.`,
+      });
+      return NextResponse.json({ success: true, result });
+    }
+
     const result = await purgeDatabaseStorage({
       purgeStaleClients: action === "purge_all" || body.purgeStaleClients !== false,
       purgeOldPayments: action === "purge_all" || body.purgeOldPayments !== false,
       purgeOldExtensions: action === "purge_all" || action === "purge_extensions" || body.purgeOldExtensions !== false,
       purgeEmptyCookieSlots: action === "purge_all" || action === "purge_extensions" || body.purgeEmptyCookieSlots !== false,
+      purgeOldLogs: action === "purge_all" || body.purgeOldLogs !== false,
       paymentMaxAgeDays: Math.max(7, Math.floor(Number(body.paymentMaxAgeDays) || 90)),
+      logMaxAgeDays: Math.max(7, Math.floor(Number(body.logMaxAgeDays) || 90)),
     });
 
     await logAdminActivity({
@@ -52,7 +65,8 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       success: true,
       result,
-      message: "Storage purge completed. Active clients, live cookie slots, and the latest extension were kept.",
+      message:
+        "Storage purge completed. Active user accounts, live cookie slots, and the latest extension were kept.",
     });
   } catch (error) {
     console.error("Storage purge failed:", error);

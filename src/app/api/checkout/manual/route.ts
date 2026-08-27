@@ -79,9 +79,9 @@ export async function POST(request: NextRequest) {
       );
     }
     
-    // Save to manual_payments collection
     const paymentsRef = db.collection("manual_payments");
-    const payload: Record<string, string> = {
+    const paymentRef = paymentsRef.doc();
+    const payload: Record<string, string | boolean> = {
       userEmail: normalizedEmail,
       planId,
       transactionId: accountCheck.normalized,
@@ -89,12 +89,29 @@ export async function POST(request: NextRequest) {
       senderPaymentSourceLabel: senderPaymentLabel(senderPaymentSource),
       payToMethodId,
       payToMethodLabel: payToMethod.name,
-      screenshot,
       status: "pending",
       createdAt: new Date().toISOString(),
     };
-    
-    const added = await paymentsRef.add(payload);
+
+    const {
+      shouldStorePaymentScreenshotInStorage,
+      savePaymentScreenshot,
+      preparePaymentScreenshot,
+    } = await import("@/lib/payment-screenshot-storage");
+
+    const compressedScreenshot = await preparePaymentScreenshot(screenshot);
+
+    if (shouldStorePaymentScreenshotInStorage()) {
+      payload.storagePath = await savePaymentScreenshot(paymentRef.id, compressedScreenshot);
+      payload.hasScreenshot = true;
+    } else {
+      payload.screenshot = compressedScreenshot;
+      payload.hasScreenshot = true;
+    }
+
+    await paymentRef.set(payload);
+
+    const added = paymentRef;
 
     // Update user to pending status
     const userRef = db.collection("users").doc(normalizedEmail);

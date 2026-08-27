@@ -33,6 +33,83 @@ async function deleteQueryDocs(query: Query, batchSize = 400): Promise<number> {
   return deleted;
 }
 
+async function deleteClientPaymentRecords(email: string): Promise<number> {
+  const db = getDb();
+  if (!db) return 0;
+
+  const { deletePaymentScreenshotBlob } = await import("./payment-screenshot-storage");
+  let deleted = 0;
+
+  for (;;) {
+    const snap = await db
+      .collection("manual_payments")
+      .where("userEmail", "==", email)
+      .limit(200)
+      .get();
+    if (snap.empty) break;
+
+    for (const doc of snap.docs) {
+      await deletePaymentScreenshotBlob((doc.data() || {}) as Record<string, unknown>);
+      await doc.ref.delete();
+      deleted += 1;
+    }
+
+    if (snap.size < 200) break;
+  }
+
+  return deleted;
+}
+
+async function deleteDocsOlderThan(
+  collectionId: string,
+  maxAgeDays: number,
+  dateField = "createdAt",
+): Promise<number> {
+  const db = getDb();
+  if (!db) return 0;
+
+  const cutoff = Date.now() - maxAgeDays * 24 * 60 * 60 * 1000;
+  const snap = await db.collection(collectionId).get();
+  let deleted = 0;
+
+  for (const doc of snap.docs) {
+    const data = doc.data() as Record<string, unknown>;
+    const createdAt = data[dateField] ? new Date(String(data[dateField])).getTime() : 0;
+    if (!createdAt || createdAt > cutoff) continue;
+    await doc.ref.delete();
+    deleted += 1;
+  }
+
+  return deleted;
+}
+
+async function deleteSubcollectionDocsOlderThan(
+  parentCollection: string,
+  subcollection: string,
+  maxAgeDays: number,
+  dateField = "createdAt",
+): Promise<number> {
+  const db = getDb();
+  if (!db) return 0;
+
+  const cutoff = Date.now() - maxAgeDays * 24 * 60 * 60 * 1000;
+  const parents = await db.collection(parentCollection).get();
+  let deleted = 0;
+
+  for (const parent of parents.docs) {
+    const snap = await parent.ref.collection(subcollection).get();
+    for (const doc of snap.docs) {
+      const data = doc.data() as Record<string, unknown>;
+      const createdAt = data[dateField] ? new Date(String(data[dateField])).getTime() : 0;
+      if (!createdAt || createdAt > cutoff) continue;
+      await doc.ref.delete();
+      deleted += 1;
+    }
+  }
+
+  return deleted;
+}
+
 /** Remove Firestore data tied to one client email. Does not touch shared cookie slots. */
 export async function deleteClientCompletely(email: string): Promise<DeleteClientResult> {
   const normalized = normalizeEmail(email);
@@ -43,9 +120,7 @@ export async function deleteClientCompletely(email: string): Promise<DeleteClien
   const db = getDb();
   if (!db) throw new Error("Database not configured.");
 
-  const deletedPayments = await deleteQueryDocs(
-    db.collection("manual_payments").where("userEmail", "==", normalized),
-  );
+  const deletedPayments = await deleteClientPaymentRecords(normalized);
 
   let deletedSignupVerification = false;
   try {
@@ -206,11 +281,13 @@ export async function purgeOldPaymentRecords(maxAgeDays = 90): Promise<{
   const statuses = new Set<string>();
 
   for (const doc of snap.docs) {
-    const data = doc.data() as { status?: string; createdAt?: string };
+    const data = doc.data() as { status?: string; createdAt?: string; storagePath?: string };
     const status = String(data.status || "").toLowerCase();
     if (status === "pending") continue;
     const createdAt = data.createdAt ? new Date(data.createdAt).getTime() : 0;
     if (!createdAt || createdAt > cutoff) continue;
+    const { deletePaymentScreenshotBlob } = await import("./payment-screenshot-storage");
+    await deletePaymentScreenshotBlob(data);
     await doc.ref.delete();
     deleted += 1;
     statuses.add(status || "unknown");
@@ -219,19 +296,35 @@ export async function purgeOldPaymentRecords(maxAgeDays = 90): Promise<{
   return { deleted, statuses: [...statuses] };
 }
 
+/** Trim append-only logs so they do not grow forever. User accounts are not touched. */
+export async function purgeOldLogRecords(maxAgeDays = 90): Promise<{
+  adminActivity: number;
+  emailLog: number;
+  resellerApiUsage: number;
+}> {
+  const adminActivity = await deleteDocsOlderThan("admin_activity", maxAgeDays);
+  const emailLog = await deleteDocsOlderThan("email_log", maxAgeDays);
+  const resellerApiUsage = await deleteSubcollectionDocsOlderThan("resellers", "api_usage", maxAgeDays);
+  return { adminActivity, emailLog, resellerApiUsage };
+}
+
 export async function purgeDatabaseStorage(options?: {
   purgeStaleClients?: boolean;
   purgeOldPayments?: boolean;
   purgeOldExtensions?: boolean;
   purgeEmptyCookieSlots?: boolean;
+  purgeOldLogs?: boolean;
   paymentMaxAgeDays?: number;
+  logMaxAgeDays?: number;
 }) {
   const {
     purgeStaleClients: doStaleClients = true,
     purgeOldPayments = true,
     purgeOldExtensions = true,
     purgeEmptyCookieSlots = true,
+    purgeOldLogs = true,
     paymentMaxAgeDays = 90,
+    logMaxAgeDays = 90,
   } = options || {};
 
   const result: Record<string, unknown> = {};
@@ -254,6 +347,10 @@ export async function purgeDatabaseStorage(options?: {
 
   if (purgeOldPayments) {
     result.oldPayments = await purgeOldPaymentRecords(paymentMaxAgeDays);
+  }
+
+  if (purgeOldLogs) {
+    result.oldLogs = await purgeOldLogRecords(logMaxAgeDays);
   }
 
   return result;
