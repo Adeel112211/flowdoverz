@@ -45,6 +45,8 @@ export type ResellerRecord = {
   seatsPurchased: number;
   /** Length of each user's access after they register. */
   seatDays: number;
+  /** Wholesale price per paid seat in PKR. Shown to admin and reseller dashboard. */
+  pricePerSeatPkr: number;
   notes: string;
   expiresAt: string | null;
   apiKeyHash: string;
@@ -92,12 +94,34 @@ export type ResellerInput = {
   maxUsers?: number;
   seatsPurchased?: number;
   seatDays?: number;
+  pricePerSeatPkr?: number;
   notes?: string;
   expiresAt?: string | null;
   panelPassword?: string;
 };
 
 export const DEFAULT_SEAT_DAYS = 30;
+
+export type SeatGrantRecord = {
+  id: string;
+  seats: number;
+  note: string;
+  paymentAmount: string;
+  unitPricePkr: number;
+  totalPkr: number;
+  createdAt: string;
+};
+
+export function normalizePricePerSeatPkr(raw: unknown) {
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n < 0) return 0;
+  return Math.floor(n);
+}
+
+export function seatTotalPkr(seats: number, pricePerSeatPkr: number) {
+  const count = Math.max(0, Math.floor(Number(seats) || 0));
+  return count * normalizePricePerSeatPkr(pricePerSeatPkr);
+}
 
 const COLLECTION = "resellers";
 const KEY_PREFIX = "fdz_rk_";
@@ -252,6 +276,7 @@ function asRecord(id: string, data: Record<string, unknown>): ResellerRecord {
     assignedSlots: normalizeSlotList(data.assignedSlots),
     seatsPurchased: Math.max(0, Math.floor(Number(data.seatsPurchased ?? data.maxUsers) || 0)),
     seatDays: Math.max(1, Math.floor(Number(data.seatDays) || DEFAULT_SEAT_DAYS)),
+    pricePerSeatPkr: normalizePricePerSeatPkr(data.pricePerSeatPkr),
     maxUsers: Math.max(0, Math.floor(Number(data.seatsPurchased ?? data.maxUsers) || 0)),
     notes: String(data.notes || ""),
     expiresAt: data.expiresAt ? String(data.expiresAt) : null,
@@ -912,6 +937,7 @@ export async function createReseller(input: ResellerInput): Promise<{
       Math.floor(Number(input.seatsPurchased ?? input.maxUsers) || 0),
     ),
     seatDays: Math.max(1, Math.floor(Number(input.seatDays) || DEFAULT_SEAT_DAYS)),
+    pricePerSeatPkr: normalizePricePerSeatPkr(input.pricePerSeatPkr),
     maxUsers: Math.max(0, Math.floor(Number(input.seatsPurchased ?? input.maxUsers) || 0)),
     notes: String(input.notes || "").trim(),
     expiresAt: input.expiresAt ? String(input.expiresAt) : null,
@@ -926,6 +952,20 @@ export async function createReseller(input: ResellerInput): Promise<{
     brandedExtension: null,
   };
   await ref.set(sanitizeForFirestore(record));
+  if (record.seatsPurchased > 0) {
+    const totalPkr = seatTotalPkr(record.seatsPurchased, record.pricePerSeatPkr);
+    const { formatPkr } = await import("./pricing-config");
+    await ref.collection("seat_grants").add(
+      sanitizeForFirestore({
+        seats: record.seatsPurchased,
+        note: "Initial seats",
+        paymentAmount: totalPkr > 0 ? formatPkr(totalPkr) : "",
+        unitPricePkr: record.pricePerSeatPkr,
+        totalPkr,
+        createdAt: now,
+      }),
+    );
+  }
   const { touchLive } = await import("./live-tick");
   void touchLive({ topic: "reseller", action: "created", id: record.id });
   return { reseller: toPublicReseller(record, 0), apiKey: generated.key };
@@ -983,6 +1023,10 @@ export async function updateReseller(id: string, input: ResellerInput): Promise<
       input.seatDays !== undefined
         ? Math.max(1, Math.floor(Number(input.seatDays) || DEFAULT_SEAT_DAYS))
         : current.seatDays,
+    pricePerSeatPkr:
+      input.pricePerSeatPkr !== undefined
+        ? normalizePricePerSeatPkr(input.pricePerSeatPkr)
+        : current.pricePerSeatPkr,
     maxUsers: current.seatsPurchased,
     notes: input.notes !== undefined ? String(input.notes || "").trim() : current.notes,
     expiresAt:
@@ -1045,10 +1089,39 @@ export function pickAssignedSlot(record: ResellerRecord, requested?: string) {
   return record.assignedSlots[0] || null;
 }
 
+export async function listSeatGrants(resellerId: string): Promise<SeatGrantRecord[]> {
+  const db = requireDb();
+  const snap = await db.collection(COLLECTION).doc(resellerId).collection("seat_grants").get();
+  return snap.docs
+    .map((doc) => {
+      const data = doc.data() || {};
+      const unitPricePkr = normalizePricePerSeatPkr(data.unitPricePkr);
+      const totalPkr = Math.max(0, Math.floor(Number(data.totalPkr) || 0));
+      return {
+        id: doc.id,
+        seats: Math.max(0, Math.floor(Number(data.seats) || 0)),
+        note: String(data.note || ""),
+        paymentAmount: String(data.paymentAmount || ""),
+        unitPricePkr,
+        totalPkr: totalPkr || seatTotalPkr(Number(data.seats) || 0, unitPricePkr),
+        createdAt: String(data.createdAt || ""),
+      };
+    })
+    .sort((a, b) => Date.parse(b.createdAt || "0") - Date.parse(a.createdAt || "0"));
+}
+
+export function summarizeSeatGrants(grants: SeatGrantRecord[]) {
+  return {
+    totalPaidPkr: grants.reduce((sum, grant) => sum + grant.totalPkr, 0),
+    totalSeatsGranted: grants.reduce((sum, grant) => sum + grant.seats, 0),
+    lastGrant: grants[0] || null,
+  };
+}
+
 export async function addResellerSeats(
   id: string,
   seats: number,
-  meta?: { note?: string; paymentAmount?: string },
+  meta?: { note?: string; paymentAmount?: string; unitPricePkr?: number; totalPkr?: number },
 ): Promise<PublicReseller> {
   const count = Math.floor(Number(seats));
   if (!Number.isFinite(count) || count < 1) {
@@ -1058,6 +1131,15 @@ export async function addResellerSeats(
   if (!current) throw new Error("Reseller not found.");
   const now = new Date().toISOString();
   const seatsPurchased = current.seatsPurchased + count;
+  const unitPricePkr =
+    meta?.unitPricePkr !== undefined ? normalizePricePerSeatPkr(meta.unitPricePkr) : current.pricePerSeatPkr;
+  const totalPkr =
+    meta?.totalPkr !== undefined
+      ? Math.max(0, Math.floor(Number(meta.totalPkr) || 0))
+      : seatTotalPkr(count, unitPricePkr);
+  const { formatPkr } = await import("./pricing-config");
+  const paymentAmount =
+    String(meta?.paymentAmount || "").trim() || (totalPkr > 0 ? formatPkr(totalPkr) : "");
   const db = requireDb();
   await db.collection(COLLECTION).doc(id).set(
     {
@@ -1071,7 +1153,9 @@ export async function addResellerSeats(
     sanitizeForFirestore({
       seats: count,
       note: String(meta?.note || "").trim(),
-      paymentAmount: String(meta?.paymentAmount || "").trim(),
+      paymentAmount,
+      unitPricePkr,
+      totalPkr,
       createdAt: now,
     }),
   );

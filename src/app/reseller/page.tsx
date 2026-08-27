@@ -2,11 +2,12 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { Users, UserPlus, Timer, Wallet } from "lucide-react";
+import { Users, UserPlus, Timer, Wallet, Receipt, Tag } from "lucide-react";
 import { AdminPageHeader } from "@/components/admin-page-header";
 import { AdminPageLayout } from "@/components/admin-page-layout";
 import { AdminLoadingState } from "@/components/admin-loading-state";
 import { useResellerNav } from "@/components/reseller-nav";
+import { formatPkr } from "@/lib/pricing-config";
 
 type Stats = {
   seatsPurchased: number;
@@ -15,6 +16,12 @@ type Stats = {
   activeClients: number;
   expiredClients: number;
   seatDays: number;
+  pricePerSeatPkr: number;
+  totalPaidPkr: number;
+  totalSeatsGranted: number;
+  lastGrantAt: string | null;
+  lastGrantTotalPkr: number;
+  lastGrantSeats: number;
 };
 
 type RecentClient = {
@@ -69,6 +76,10 @@ export default function ResellerDashboardPage() {
     return <AdminLoadingState />;
   }
 
+  const priceLabel =
+    stats && stats.pricePerSeatPkr > 0 ? formatPkr(stats.pricePerSeatPkr) : "Not set";
+  const totalPaidLabel = stats && stats.totalPaidPkr > 0 ? formatPkr(stats.totalPaidPkr) : "—";
+
   return (
     <AdminPageLayout
       header={
@@ -82,25 +93,35 @@ export default function ResellerDashboardPage() {
         <p className="rounded-xl border border-rose-500/20 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">{error}</p>
       ) : null}
       {stats ? (
-        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-          {[
-            { label: "Paid seats", value: stats.seatsPurchased, icon: Wallet, color: "text-cyan-400" },
-            { label: "Registered", value: stats.userCount, icon: Users, color: "text-emerald-400" },
-            { label: "Seats left", value: stats.remainingSeats, icon: UserPlus, color: "text-amber-400" },
-            { label: "Active now", value: stats.activeClients, icon: Timer, color: "text-cyan-300" },
-          ].map((item) => {
-            const Icon = item.icon;
-            return (
-              <div key={item.label} className="min-w-0 rounded-2xl border border-white/10 bg-[#0F172A]/80 p-3 sm:p-4">
-                <div className="mb-3 flex items-center justify-between gap-2">
-                  <p className="truncate text-[11px] font-bold uppercase tracking-wider text-slate-500">{item.label}</p>
-                  <Icon className={`h-4 w-4 shrink-0 ${item.color}`} />
+        <>
+          <div className="grid grid-cols-2 gap-3 lg:grid-cols-3 xl:grid-cols-6">
+            {[
+              { label: "Price / seat", value: priceLabel, icon: Tag, color: "text-fuchsia-400" },
+              { label: "Total paid", value: totalPaidLabel, icon: Receipt, color: "text-violet-400" },
+              { label: "Paid seats", value: stats.seatsPurchased, icon: Wallet, color: "text-cyan-400" },
+              { label: "Registered", value: stats.userCount, icon: Users, color: "text-emerald-400" },
+              { label: "Seats left", value: stats.remainingSeats, icon: UserPlus, color: "text-amber-400" },
+              { label: "Active now", value: stats.activeClients, icon: Timer, color: "text-cyan-300" },
+            ].map((item) => {
+              const Icon = item.icon;
+              return (
+                <div key={item.label} className="min-w-0 rounded-2xl border border-white/10 bg-[#0F172A]/80 p-3 sm:p-4">
+                  <div className="mb-3 flex items-center justify-between gap-2">
+                    <p className="truncate text-[11px] font-bold uppercase tracking-wider text-slate-500">{item.label}</p>
+                    <Icon className={`h-4 w-4 shrink-0 ${item.color}`} />
+                  </div>
+                  <p className="text-xl font-black tabular-nums text-white sm:text-2xl">{item.value}</p>
                 </div>
-                <p className="text-2xl font-black tabular-nums text-white sm:text-3xl">{item.value}</p>
-              </div>
-            );
-          })}
-        </div>
+              );
+            })}
+          </div>
+          {stats.lastGrantAt && stats.lastGrantTotalPkr > 0 ? (
+            <p className="mt-3 text-sm text-slate-400">
+              Last top-up: {stats.lastGrantSeats} seat{stats.lastGrantSeats === 1 ? "" : "s"} ·{" "}
+              {formatPkr(stats.lastGrantTotalPkr)} · {new Date(stats.lastGrantAt).toLocaleString()}
+            </p>
+          ) : null}
+        </>
       ) : null}
 
       <div className="mt-6 rounded-2xl border border-white/10 bg-[#0F172A]/80 p-5">

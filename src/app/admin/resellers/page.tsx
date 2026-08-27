@@ -32,6 +32,7 @@ import { useAdminToast } from "@/components/admin-toast";
 import { AdminPageLayout } from "@/components/admin-page-layout";
 import { ResellerMobileCard } from "@/components/admin-mobile-cards";
 import { useAdminLiveRefresh } from "@/hooks/use-admin-live-refresh";
+import { formatPkr } from "@/lib/pricing-config";
 
 const SLOTS = ["C1", "C2", "C3", "C4", "C5"] as const;
 const FILTERS = ["all", "active", "paused", "disabled"] as const;
@@ -65,6 +66,7 @@ type Reseller = {
   seatsPurchased: number;
   remainingSeats: number;
   seatDays: number;
+  pricePerSeatPkr: number;
   notes: string;
   expiresAt: string | null;
   apiKeyPrefix: string;
@@ -120,6 +122,7 @@ type FormState = {
   kind: "white_label" | "official";
   assignedSlots: string[];
   maxUsers: string;
+  pricePerSeatPkr: string;
   notes: string;
   expiresAt: string;
   panelPassword: string;
@@ -135,6 +138,7 @@ const EMPTY_FORM: FormState = {
   kind: "white_label",
   assignedSlots: [],
   maxUsers: "0",
+  pricePerSeatPkr: "0",
   notes: "",
   expiresAt: "",
   panelPassword: "",
@@ -151,6 +155,7 @@ function formFromReseller(row: Reseller): FormState {
     kind: row.kind === "official" ? "official" : "white_label",
     assignedSlots: [...(row.assignedSlots || [])],
     maxUsers: String(row.seatsPurchased || row.maxUsers || 0),
+    pricePerSeatPkr: String(row.pricePerSeatPkr || 0),
     notes: row.notes || "",
     expiresAt: row.expiresAt || "",
     panelPassword: "",
@@ -169,10 +174,18 @@ function payloadFromForm(form: FormState) {
     assignedSlots: form.assignedSlots,
     seatsPurchased: Number(form.maxUsers) || 0,
     maxUsers: Number(form.maxUsers) || 0,
+    pricePerSeatPkr: Number(form.pricePerSeatPkr) || 0,
     notes: form.notes,
     expiresAt: form.expiresAt || null,
     ...(form.panelPassword.trim() ? { panelPassword: form.panelPassword.trim() } : {}),
   };
+}
+
+function seatPaymentPreview(seats: number, pricePerSeatPkr: number) {
+  const count = Math.max(0, Math.floor(Number(seats) || 0));
+  const price = Math.max(0, Math.floor(Number(pricePerSeatPkr) || 0));
+  if (count <= 0 || price <= 0) return "";
+  return formatPkr(count * price);
 }
 
 function daysLeft(iso: string | null | undefined) {
@@ -314,6 +327,19 @@ export default function AdminResellersPage() {
   const [seatNote, setSeatNote] = useState("");
   const [seatPayment, setSeatPayment] = useState("");
   const [addingSeats, setAddingSeats] = useState(false);
+
+  const openAddSeats = (row: Reseller, seats = "10") => {
+    setSeatCount(seats);
+    setSeatNote("");
+    setSeatPayment(seatPaymentPreview(Number(seats), row.pricePerSeatPkr || 0));
+    setSeatsTarget(row);
+  };
+
+  useEffect(() => {
+    if (!seatsTarget) return;
+    setSeatPayment(seatPaymentPreview(Number(seatCount), seatsTarget.pricePerSeatPkr || 0));
+  }, [seatCount, seatsTarget]);
+
   const [generatingExtensionId, setGeneratingExtensionId] = useState<string | null>(null);
   const [brandTarget, setBrandTarget] = useState<Reseller | null>(null);
   const [brandName, setBrandName] = useState("");
@@ -689,6 +715,9 @@ export default function AdminResellersPage() {
     if (!seatsTarget) return;
     setAddingSeats(true);
     try {
+      const seats = Number(seatCount);
+      const unitPricePkr = seatsTarget.pricePerSeatPkr || 0;
+      const totalPkr = unitPricePkr > 0 ? seats * unitPricePkr : 0;
       const res = await fetch("/api/admin/resellers", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
@@ -696,9 +725,11 @@ export default function AdminResellersPage() {
         body: JSON.stringify({
           id: seatsTarget.id,
           action: "add_seats",
-          seats: Number(seatCount),
+          seats,
           note: seatNote,
           paymentAmount: seatPayment,
+          unitPricePkr,
+          totalPkr,
         }),
       });
       const data = await res.json();
@@ -755,7 +786,7 @@ export default function AdminResellersPage() {
       {row.kind === "official" ? null : (
         <ActionIconButton label="Where this API key was used" icon={Globe} onClick={() => void openUsage(row)} bgClass="bg-sky-500/10" colorClass="text-sky-300" />
       )}
-      <ActionIconButton label="Add paid seats" icon={CirclePlus} onClick={() => { setSeatCount("10"); setSeatNote(""); setSeatPayment(""); setSeatsTarget(row); }} bgClass="bg-emerald-500/10" colorClass="text-emerald-300" />
+      <ActionIconButton label="Add paid seats" icon={CirclePlus} onClick={() => openAddSeats(row)} bgClass="bg-emerald-500/10" colorClass="text-emerald-300" />
       {row.kind === "official" ? null : (
         <ActionIconButton label="Rotate API key" icon={KeyRound} onClick={() => void rotateKey(row)} bgClass="bg-amber-500/10" colorClass="text-amber-400" />
       )}
@@ -806,6 +837,16 @@ export default function AdminResellersPage() {
       render: (row) => (
         <span className="font-mono text-xs text-cyan-300">
           {row.assignedSlots.length ? row.assignedSlots.join(" · ") : "None"}
+        </span>
+      ),
+    },
+    {
+      key: "price",
+      header: "Price/seat",
+      hideOnMobile: true,
+      render: (row) => (
+        <span className="text-sm tabular-nums text-slate-300">
+          {(row.pricePerSeatPkr || 0) > 0 ? formatPkr(row.pricePerSeatPkr) : "—"}
         </span>
       ),
     },
@@ -899,7 +940,7 @@ export default function AdminResellersPage() {
             onKit={() => void openKit(row)}
             onUsers={() => void openUsers(row)}
             onUsage={row.kind === "official" ? undefined : () => void openUsage(row)}
-            onAddSeats={() => { setSeatCount("10"); setSeatNote(""); setSeatPayment(""); setSeatsTarget(row); }}
+            onAddSeats={() => openAddSeats(row)}
             onRotate={() => void rotateKey(row)}
             onBuildExtension={row.kind === "official" ? undefined : () => openBrandModal(row)}
             onCopySignup={() => void copyText(row.panelUrl || row.signupUrl || "", "Panel link")}
@@ -1051,6 +1092,36 @@ export default function AdminResellersPage() {
               </div>
               <p className="mt-1 text-xs text-slate-500">They never see cookie values. Keep cookies in Cookie Manager.</p>
             </div>
+            <div className="grid gap-4 lg:grid-cols-2">
+              <div>
+                <label className="mb-2 block text-sm font-bold text-slate-400">Price per seat (PKR)</label>
+                <input
+                  type="number"
+                  min={0}
+                  value={form.pricePerSeatPkr}
+                  onChange={(e) => setForm({ ...form, pricePerSeatPkr: e.target.value })}
+                  className={INPUT_CLASS}
+                  placeholder="e.g. 1500"
+                />
+                <p className="mt-1 text-xs text-slate-500">
+                  Shown on the reseller dashboard. Add paid seats auto-calculates seats × this price.
+                </p>
+                {!editing && Number(form.maxUsers) > 0 && Number(form.pricePerSeatPkr) > 0 ? (
+                  <p className="mt-1 text-xs font-semibold text-cyan-300">
+                    Initial total: {seatPaymentPreview(Number(form.maxUsers), Number(form.pricePerSeatPkr))}
+                  </p>
+                ) : null}
+              </div>
+              <div>
+                <label className="mb-2 block text-sm font-bold text-slate-400">Internal notes</label>
+                <textarea
+                  value={form.notes}
+                  onChange={(e) => setForm({ ...form, notes: e.target.value })}
+                  className={`${INPUT_CLASS} min-h-[88px]`}
+                  placeholder="WhatsApp, bank details, special terms…"
+                />
+              </div>
+            </div>
             <div className="grid gap-4 lg:grid-cols-3">
               <div>
                 <label className="mb-2 block text-sm font-bold text-slate-400">Status</label>
@@ -1084,15 +1155,6 @@ export default function AdminResellersPage() {
                 <label className="mb-2 block text-sm font-bold text-slate-400">Access expires</label>
                 <AdminDateTimeInput value={form.expiresAt} onChange={(value) => setForm({ ...form, expiresAt: value })} />
               </div>
-            </div>
-            <div>
-              <label className="mb-2 block text-sm font-bold text-slate-400">Internal notes</label>
-              <textarea
-                value={form.notes}
-                onChange={(e) => setForm({ ...form, notes: e.target.value })}
-                className={`${INPUT_CLASS} min-h-[72px]`}
-                placeholder="Pricing, WhatsApp, special terms…"
-              />
             </div>
             <div className="flex flex-col-reverse gap-3 pt-2 sm:flex-row">
               <button type="button" onClick={() => setFormOpen(false)} className="flex-1 rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-bold text-slate-300">
@@ -1622,10 +1684,20 @@ export default function AdminResellersPage() {
                   onChange={(e) => setSeatCount(e.target.value)}
                   className={INPUT_CLASS}
                 />
+                {(seatsTarget.pricePerSeatPkr || 0) > 0 ? (
+                  <p className="mt-2 text-sm font-semibold text-cyan-300">
+                    {Number(seatCount) || 0} × {formatPkr(seatsTarget.pricePerSeatPkr)} ={" "}
+                    {seatPaymentPreview(Number(seatCount), seatsTarget.pricePerSeatPkr) || "—"}
+                  </p>
+                ) : (
+                  <p className="mt-2 text-xs text-amber-300">
+                    Set a price per seat on this reseller first if you want auto-calculated totals.
+                  </p>
+                )}
               </div>
               <div>
-                <label className="mb-2 block text-sm font-bold text-slate-400">Payment amount (optional)</label>
-                <input value={seatPayment} onChange={(e) => setSeatPayment(e.target.value)} className={INPUT_CLASS} placeholder="e.g. 15000 PKR" />
+                <label className="mb-2 block text-sm font-bold text-slate-400">Payment amount</label>
+                <input value={seatPayment} onChange={(e) => setSeatPayment(e.target.value)} className={INPUT_CLASS} placeholder="Auto-filled from seats × price" />
               </div>
               <div>
                 <label className="mb-2 block text-sm font-bold text-slate-400">Note (optional)</label>

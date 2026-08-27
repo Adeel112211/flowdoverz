@@ -12,6 +12,21 @@ export function isPaidPlanId(plan?: string | null) {
   return PAID_PLAN_IDS.includes(String(plan || "") as (typeof PAID_PLAN_IDS)[number]);
 }
 
+export function clientCreatedAtMs(client: { createdAt?: unknown }) {
+  const raw = client.createdAt;
+  if (raw == null) return 0;
+  const ms = Date.parse(String(raw));
+  return Number.isFinite(ms) ? ms : 0;
+}
+
+export function sortClientsNewestFirst<T extends { email?: string; createdAt?: unknown }>(clients: T[]) {
+  return [...clients].sort((a, b) => {
+    const diff = clientCreatedAtMs(b) - clientCreatedAtMs(a);
+    if (diff !== 0) return diff;
+    return String(b.email || "").localeCompare(String(a.email || ""));
+  });
+}
+
 export function clientMatchesFilter(
   client: Record<string, unknown> & { email?: string; subscriptionPlan?: unknown; suspended?: unknown },
   filter: string,
@@ -21,6 +36,7 @@ export function clientMatchesFilter(
   if (filter === "paid") return isPaidPlanId(plan);
   if (filter === "trial") return !isPaidPlanId(plan) && plan !== "pending";
   if (filter === "suspended") return Boolean(client.suspended);
+  if (filter === "reseller") return Boolean(String(client.resellerId || "").trim());
   return true;
 }
 

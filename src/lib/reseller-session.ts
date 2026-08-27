@@ -89,6 +89,7 @@ export function publicResellerSession(record: ResellerRecord) {
     kind: record.kind,
     seatsPurchased: record.seatsPurchased,
     seatDays: record.seatDays,
+    pricePerSeatPkr: record.pricePerSeatPkr,
     assignedSlots: record.assignedSlots,
   };
 }

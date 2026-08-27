@@ -57,15 +57,25 @@ export async function GET(request: NextRequest) {
   const db = getDb()!;
 
   try {
-    const { listAdminClients } = await import("@/lib/admin-users-query");
+    const { listAdminClients, countAdminClients } = await import("@/lib/admin-users-query");
     const result = await listAdminClients(db, {
       email: request.nextUrl.searchParams.get("email"),
       emails: request.nextUrl.searchParams.get("emails"),
       q: request.nextUrl.searchParams.get("q"),
       filter: request.nextUrl.searchParams.get("filter"),
-      cursor: request.nextUrl.searchParams.get("cursor"),
+      page: request.nextUrl.searchParams.get("page") || request.nextUrl.searchParams.get("cursor"),
       limit: request.nextUrl.searchParams.get("limit"),
     });
+    const includeTotal = request.nextUrl.searchParams.get("includeTotal") === "1";
+    const totalCount =
+      typeof result.totalCount === "number"
+        ? result.totalCount
+        : includeTotal
+          ? await countAdminClients(db, {
+              q: request.nextUrl.searchParams.get("q"),
+              filter: request.nextUrl.searchParams.get("filter"),
+            })
+          : undefined;
     if (request.nextUrl.searchParams.get("email")?.trim() && !result.client && result.clients.length === 0) {
       return NextResponse.json({ success: false, error: "Client not found" }, { status: 404 });
     }
@@ -74,6 +84,7 @@ export async function GET(request: NextRequest) {
       client: result.client,
       clients: result.clients,
       nextCursor: result.nextCursor ?? null,
+      totalCount,
     });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : "Failed to fetch clients";

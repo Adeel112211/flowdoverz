@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import {
   AlertCircle,
@@ -32,6 +32,7 @@ import { getTrialDurationMs } from "@/lib/pricing-config";
 import { AdminPageLayout } from "@/components/admin-page-layout";
 import { ClientMobileCard } from "@/components/admin-mobile-cards";
 import { useAdminLiveRefresh } from "@/hooks/use-admin-live-refresh";
+import { CLIENT_PAGE_SIZE } from "@/lib/admin-client-constants";
 type Client = {
   email: string;
   name?: string;
@@ -216,9 +217,10 @@ export default function ClientsPage() {
   const [filter, setFilter] = useState<Filter>("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
-  const [nextCursor, setNextCursor] = useState<string | null>(null);
-  const nextCursorRef = useRef<string | null>(null);
-  const [loadingMore, setLoadingMore] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalCount, setTotalCount] = useState(0);
+  const [hasNextPage, setHasNextPage] = useState(false);
+  const [pageLoading, setPageLoading] = useState(false);
   const [billing, setBilling] = useState<BillingDefaults>(DEFAULT_BILLING);
   const [resellerNames, setResellerNames] = useState<Record<string, string>>({});
 
@@ -243,19 +245,25 @@ export default function ClientsPage() {
       });
   }, []);
 
-  const fetchClients = useCallback(async (opts: { silent?: boolean; append?: boolean } = {}) => {
+  const fetchClients = useCallback(async (page: number, opts: { silent?: boolean } = {}) => {
     const silent = Boolean(opts.silent);
-    const append = Boolean(opts.append);
-    if (append) setLoadingMore(true);
+    if (!silent) setPageLoading(true);
     try {
       const params = new URLSearchParams();
       params.set("filter", filter);
-      params.set("limit", "50");
+      params.set("limit", String(CLIENT_PAGE_SIZE));
+      params.set("includeTotal", "1");
+      params.set("page", String(page));
       if (debouncedSearch) params.set("q", debouncedSearch);
-      if (append && nextCursorRef.current) params.set("cursor", nextCursorRef.current);
       const res = await fetch(`/api/admin/clients?${params}`, { credentials: "same-origin" });
       const raw = await res.text();
-      let data: { success?: boolean; clients?: Client[]; nextCursor?: string | null; error?: string } = {};
+      let data: {
+        success?: boolean;
+        clients?: Client[];
+        nextCursor?: string | null;
+        totalCount?: number;
+        error?: string;
+      } = {};
 
       try {
         data = raw ? JSON.parse(raw) : {};
@@ -267,13 +275,14 @@ export default function ClientsPage() {
       }
 
       if (data.success && data.clients) {
-        setClients((prev) => {
-          if (!append) return data.clients || [];
-          const seen = new Set(prev.map((c) => c.email));
-          return [...prev, ...(data.clients || []).filter((c) => !seen.has(c.email))];
-        });
-        setNextCursor(data.nextCursor || null);
-        nextCursorRef.current = data.nextCursor || null;
+        setClients(data.clients);
+        if (typeof data.totalCount === "number") {
+          setTotalCount(data.totalCount);
+          setHasNextPage(page * CLIENT_PAGE_SIZE < data.totalCount);
+        } else {
+          setHasNextPage(Boolean(data.nextCursor));
+        }
+        setCurrentPage(page);
         setError("");
       } else if (!silent) {
         setError(data.error || `Failed to fetch clients (HTTP ${res.status}).`);
@@ -284,16 +293,15 @@ export default function ClientsPage() {
       }
     } finally {
       if (!silent) setLoading(false);
-      if (append) setLoadingMore(false);
+      setPageLoading(false);
     }
   }, [filter, debouncedSearch]);
 
   useEffect(() => {
+    setCurrentPage(1);
     setLoading(true);
-    void fetchClients({ silent: false, append: false });
-    // Reload when filter/search change; ignore pagination cursor.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filter, debouncedSearch]);
+    void fetchClients(1, { silent: false });
+  }, [filter, debouncedSearch, fetchClients]);
 
   useEffect(() => {
     fetch("/api/admin/pricing", { credentials: "same-origin" })
@@ -312,12 +320,12 @@ export default function ClientsPage() {
   useAdminLiveRefresh(
     async (event) => {
       if (event.type === "resync") {
-        void fetchClients({ silent: true, append: false });
+        void fetchClients(currentPage, { silent: true });
         return;
       }
       const id = String(event.userId || event.id || "").toLowerCase();
       if (!id) {
-        void fetchClients({ silent: true, append: false });
+        void fetchClients(currentPage, { silent: true });
         return;
       }
       if (event.action === "deleted") {
@@ -357,7 +365,7 @@ export default function ClientsPage() {
         // keep current page
       }
     },
-    [filter, debouncedSearch, fetchClients],
+    [filter, debouncedSearch, fetchClients, currentPage],
     { topics: ["user"] },
   );
 
@@ -374,7 +382,7 @@ export default function ClientsPage() {
       if (data.success) {
         toast("Client updated");
         setEditing(null);
-        fetchClients({ silent: true });
+        fetchClients(currentPage, { silent: true });
       } else {
         toast(data.error || "Update failed", "error");
       }
@@ -396,7 +404,7 @@ export default function ClientsPage() {
         alert("Client created successfully");
         setCreating(false);
         setNewClient(emptyNewClient(billing));
-        fetchClients({ silent: true });
+        fetchClients(currentPage, { silent: true });
       } else {
         alert("Create failed: " + data.error);
       }
@@ -534,7 +542,7 @@ export default function ClientsPage() {
       const data = await res.json();
       if (data.success) {
         setDeleteClient(null);
-        fetchClients({ silent: true });
+        fetchClients(currentPage, { silent: true });
       } else {
         alert("Delete failed: " + data.error);
       }
@@ -549,24 +557,17 @@ export default function ClientsPage() {
     return <AdminLoadingState />;
   }
 
-  const filteredClients = clients.filter((c) => {
-    if (searchQuery) {
-      const q = searchQuery.toLowerCase();
-      if (!c.email.toLowerCase().includes(q)) return false;
-    }
+  const totalPages = Math.max(1, Math.ceil(totalCount / CLIENT_PAGE_SIZE));
+  const pageStart = totalCount === 0 ? 0 : (currentPage - 1) * CLIENT_PAGE_SIZE + 1;
+  const pageEnd = totalCount === 0 ? 0 : Math.min(currentPage * CLIENT_PAGE_SIZE, totalCount);
 
-    if (filter === "all") return true;
-    if (filter === "pending") return c.subscriptionPlan === "pending";
-    if (filter === "paid") {
-      return c.subscriptionPlan && !["none", "trial", "pending"].includes(c.subscriptionPlan);
-    }
-    if (filter === "trial") {
-      return !c.subscriptionPlan || c.subscriptionPlan === "none" || c.subscriptionPlan === "trial";
-    }
-    if (filter === "suspended") return Boolean(c.suspended);
-    if (filter === "reseller") return Boolean(c.resellerId);
-    return true;
-  });
+  function goToPage(page: number) {
+    if (page < 1 || page > totalPages || pageLoading) return;
+    setLoading(true);
+    void fetchClients(page, { silent: false });
+  }
+
+  const displayClients = clients;
 
   const getTableTitle = () => {
     if (filter === "all") return "All Clients";
@@ -712,7 +713,13 @@ export default function ClientsPage() {
       header={
         <AdminPageHeader
           title="Client Manager"
-          description="Every client is here — including people your resellers register. Direct signups show as Direct."
+          description={
+            <>
+              <span className="font-semibold text-cyan-300">{totalCount.toLocaleString()} clients total</span>
+              {" · "}
+              Every client is here — including people your resellers register. Direct signups show as Direct.
+            </>
+          }
           actions={
             <div className="flex w-full flex-col gap-3 sm:w-auto sm:flex-row">
               <button
@@ -747,9 +754,9 @@ export default function ClientsPage() {
 
       <AdminDataTable
         title={getTableTitle()}
-        count={filteredClients.length}
+        count={displayClients.length}
         columns={columns}
-        data={filteredClients}
+        data={displayClients}
         rowKey={(client) => client.email}
         emptyState={<EmptyClients />}
         renderMobileActions={renderActions}
@@ -781,16 +788,30 @@ export default function ClientsPage() {
           </div>
         }
       />
-      {nextCursor && !debouncedSearch && (
-        <div className="mt-4 flex justify-center">
-          <button
-            type="button"
-            disabled={loadingMore}
-            onClick={() => void fetchClients({ silent: true, append: true })}
-            className="rounded-xl border border-white/10 px-4 py-2.5 text-sm font-bold text-slate-300 hover:bg-white/5 disabled:opacity-60"
-          >
-            {loadingMore ? "Loading..." : "Load more"}
-          </button>
+      {totalCount > 0 && !debouncedSearch && (
+        <div className="mt-4 flex flex-col gap-3 border-t border-white/10 pt-4 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-sm text-slate-400">
+            Showing {pageStart}–{pageEnd} of {totalCount.toLocaleString()} · Page {currentPage} of{" "}
+            {totalPages}
+          </p>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              disabled={currentPage <= 1 || pageLoading}
+              onClick={() => goToPage(currentPage - 1)}
+              className="rounded-xl border border-white/10 px-4 py-2 text-sm font-bold text-slate-300 hover:bg-white/5 disabled:opacity-40"
+            >
+              Previous
+            </button>
+            <button
+              type="button"
+              disabled={!hasNextPage || currentPage >= totalPages || pageLoading}
+              onClick={() => goToPage(currentPage + 1)}
+              className="rounded-xl border border-white/10 px-4 py-2 text-sm font-bold text-slate-300 hover:bg-white/5 disabled:opacity-40"
+            >
+              {pageLoading ? "Loading..." : "Next"}
+            </button>
+          </div>
         </div>
       )}
 

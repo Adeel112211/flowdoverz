@@ -1,12 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
-import { FieldPath } from "firebase-admin/firestore";
 import { isAdminUiRequest } from "@/lib/admin";
+import { publicClientRecord, sortClientsNewestFirst, syncStatusFromUserData } from "@/lib/admin-client-view";
 import { getDb } from "@/lib/firebase-admin";
-import { publicClientRecord, syncStatusFromUserData } from "@/lib/admin-client-view";
 
 export const dynamic = "force-dynamic";
 
 const PAGE_SIZE = 50;
+
+function clampPage(raw: string | null | undefined) {
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n < 1) return 1;
+  return Math.floor(n);
+}
 
 export async function GET(request: NextRequest) {
   if (!(await isAdminUiRequest())) {
@@ -19,7 +24,7 @@ export async function GET(request: NextRequest) {
   }
 
   const email = request.nextUrl.searchParams.get("email")?.trim().toLowerCase();
-  const cursor = request.nextUrl.searchParams.get("cursor")?.trim().toLowerCase() || "";
+  const page = clampPage(request.nextUrl.searchParams.get("page") || request.nextUrl.searchParams.get("cursor"));
   const limit = Math.min(Number(request.nextUrl.searchParams.get("limit") || PAGE_SIZE) || PAGE_SIZE, 100);
   const now = Date.now();
 
@@ -38,6 +43,7 @@ export async function GET(request: NextRequest) {
       syncHealth: rec.syncHealth || null,
       trialExpiresAt: rec.trialExpiresAt || null,
       subscriptionExpiresAt: rec.subscriptionExpiresAt || null,
+      createdAt: rec.createdAt || null,
       syncStatus: derived.syncStatus,
       active: derived.active,
     };
@@ -52,12 +58,13 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ success: true, client: row, clients: [row] });
   }
 
-  let query = db.collection("users").orderBy(FieldPath.documentId()).limit(limit + 1);
-  if (cursor) query = query.startAfter(cursor);
-  const snap = await query.get();
-  const docs = snap.docs.slice(0, limit);
-  const rows = docs.map((doc) => toRow(doc.id, (doc.data() || {}) as Record<string, unknown>));
-  const nextCursor = snap.docs.length > limit ? docs[docs.length - 1]?.id || null : null;
+  const snap = await db.collection("users").get();
+  const allRows = sortClientsNewestFirst(
+    snap.docs.map((doc) => toRow(doc.id, (doc.data() || {}) as Record<string, unknown>)),
+  );
+  const offset = (page - 1) * limit;
+  const rows = allRows.slice(offset, offset + limit);
+  const nextCursor = offset + limit < allRows.length ? String(page + 1) : null;
 
-  return NextResponse.json({ success: true, clients: rows, nextCursor });
+  return NextResponse.json({ success: true, clients: rows, nextCursor, totalCount: allRows.length });
 }

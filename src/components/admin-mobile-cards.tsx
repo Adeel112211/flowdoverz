@@ -20,6 +20,7 @@ import {
 import { PayToMethodBadge } from "@/components/pay-to-method-badge";
 import { normalizePlanValue } from "@/components/admin-plan-select";
 import { senderPaymentLabel } from "@/lib/sender-payment-options";
+import { formatPkr } from "@/lib/pricing-config";
 
 type ClientRow = {
   email: string;
@@ -399,6 +400,7 @@ type ResellerRow = {
   maxUsers: number;
   seatsPurchased?: number;
   remainingSeats?: number;
+  pricePerSeatPkr?: number;
   kind?: "white_label" | "official";
   signupUrl?: string;
   panelUrl?: string;
@@ -466,6 +468,10 @@ export function ResellerMobileCard({
             label="Left"
             value={String(reseller.remainingSeats ?? Math.max(0, (reseller.seatsPurchased || reseller.maxUsers || 0) - reseller.userCount))}
             valueClassName={(reseller.remainingSeats ?? 0) > 0 ? "text-emerald-400" : "text-amber-400"}
+          />
+          <AdminMobileMetaTile
+            label="Price/seat"
+            value={(reseller.pricePerSeatPkr || 0) > 0 ? formatPkr(reseller.pricePerSeatPkr || 0) : "—"}
           />
         </AdminMobileMetaGrid>
       </AdminMobileCardBody>

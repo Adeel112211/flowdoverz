@@ -187,9 +187,15 @@ export async function PUT(request: NextRequest) {
     }
 
     if (body.action === "add_seats") {
-      const reseller = await addResellerSeats(id, Number(body.seats), {
+      const seats = Number(body.seats);
+      const unitPricePkr =
+        body.unitPricePkr !== undefined ? Number(body.unitPricePkr) : undefined;
+      const totalPkr = body.totalPkr !== undefined ? Number(body.totalPkr) : undefined;
+      const reseller = await addResellerSeats(id, seats, {
         note: body.note ? String(body.note) : "",
         paymentAmount: body.paymentAmount ? String(body.paymentAmount) : "",
+        unitPricePkr,
+        totalPkr,
       });
       await logAdminActivity({
         action: "reseller_seats_added",

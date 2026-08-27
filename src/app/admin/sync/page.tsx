@@ -49,18 +49,20 @@ export default function SyncStatusPage() {
   const [filter, setFilter] = useState<Filter>("all");
 
   const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [loadedPage, setLoadedPage] = useState(1);
 
-  const load = useCallback(async (silent = false, append = false, cursor = "") => {
+  const load = useCallback(async (silent = false, append = false, page = 1) => {
     if (!silent) setLoading(true);
     try {
       const params = new URLSearchParams();
       params.set("limit", "50");
-      if (append && cursor) params.set("cursor", cursor);
+      params.set("page", String(page));
       const res = await fetch(`/api/admin/sync-status?${params}`, { credentials: "same-origin" });
       const data = await res.json();
       if (data.success) {
         setClients((prev) => (append ? [...prev, ...(data.clients || [])] : data.clients || []));
         setNextCursor(data.nextCursor || null);
+        setLoadedPage(page);
       }
     } finally {
       if (!silent) setLoading(false);
@@ -198,7 +200,7 @@ export default function SyncStatusPage() {
           <div className="mt-4 flex justify-center">
             <button
               type="button"
-              onClick={() => void load(true, true, nextCursor)}
+              onClick={() => void load(true, true, loadedPage + 1)}
               className="rounded-xl border border-white/10 px-4 py-2.5 text-sm font-bold text-slate-300 hover:bg-white/5"
             >
               Load more
