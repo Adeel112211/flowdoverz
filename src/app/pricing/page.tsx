@@ -176,7 +176,7 @@ export default function PricingPage() {
                     : `/#${item.toLowerCase()}`
               }
               onClick={() => setMobileMenuOpen(false)}
-              className={`text-2xl font-bold border-b border-white/10 pb-4 ${item === "Pricing" ? "text-cyan-400" : item === "Resellers" ? "text-fuchsia-300" : "text-white"}`}
+              className={`text-2xl font-bold border-b border-white/10 pb-4 ${item === "Pricing" ? "text-cyan-400" : item === "Resellers" ? "text-cyan-400" : "text-white"}`}
             >
               {item}
             </Link>
@@ -358,14 +358,14 @@ export default function PricingPage() {
         </div>
 
         <div className="mx-auto mb-10 max-w-4xl">
-          <div className="flex flex-col items-start justify-between gap-4 rounded-2xl border border-fuchsia-500/20 bg-fuchsia-500/[0.06] px-5 py-4 sm:flex-row sm:items-center">
+          <div className="flex flex-col items-start justify-between gap-4 rounded-2xl border border-cyan-500/20 bg-cyan-500/[0.06] px-5 py-4 sm:flex-row sm:items-center">
             <div>
-              <p className="text-sm font-black uppercase tracking-wider text-fuchsia-300">Selling to clients?</p>
-              <p className="mt-1 text-sm text-slate-300">Wholesale Solo & Team seats with your own reseller panel.</p>
+              <p className="text-sm font-black uppercase tracking-wider text-cyan-300">Selling to clients?</p>
+              <p className="mt-1 text-sm text-slate-300">Wholesale seats with your own branding & pricing, or under FlowDoverz branding.</p>
             </div>
             <Link
               href="/resellers"
-              className="inline-flex shrink-0 items-center gap-2 rounded-xl bg-gradient-to-r from-fuchsia-400 to-violet-400 px-4 py-2.5 text-sm font-bold text-slate-950"
+              className="inline-flex shrink-0 items-center gap-2 rounded-xl bg-gradient-to-r from-cyan-400 to-emerald-400 px-4 py-2.5 text-sm font-bold text-slate-950 shadow-[0_0_15px_rgba(34,211,238,0.25)]"
             >
               Reseller program
               <ArrowRight size={14} />
