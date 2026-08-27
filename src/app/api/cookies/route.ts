@@ -94,12 +94,6 @@ export async function POST(request: NextRequest) {
       previous?.accountFingerprint,
       analysis.accountFingerprint,
     );
-    const warnings = [...analysis.warnings];
-    if (accountMatch === "different") {
-      warnings.unshift(
-        `Different Google account than before in ${slot}. Old Flow projects from the previous account will not appear.`,
-      );
-    }
     const record = await saveSlotCookies(WORKSPACE_OWNER, slot, cookiesList, body.label);
 
     await logAdminActivity({
@@ -115,20 +109,13 @@ export async function POST(request: NextRequest) {
       cookie_hash: record.hash,
       updated_at: record.updatedAt,
       cookie_names: record.cookies.map((cookie) => cookie.name),
-      warnings,
+      warnings: analysis.warnings,
       hasLabsSession: analysis.hasLabsSession,
       hasGoogleSid: analysis.hasGoogleSid,
       freshness: analysis.freshness,
       account_match: accountMatch,
       account_fingerprint: record.accountFingerprint ?? analysis.accountFingerprint,
-      message:
-        accountMatch === "same"
-          ? `Same Google account — existing Flow projects will remain after clients sync to ${slot}.`
-          : accountMatch === "different"
-            ? `Saved to ${slot}, but this is a different Google account. Previous projects will not appear.`
-            : warnings.length
-              ? `Saved ${record.cookies.length} cookies, but Flow may not save projects reliably.`
-              : "Cookies saved. Clients will get them after they sign in.",
+      message: `Saved ${record.cookies.length} cookies to ${slot}. Clients will get them after they sign in.`,
     });
   } catch (error) {
     return NextResponse.json(

@@ -51,31 +51,9 @@ export type CookieFreshness = {
 
 export function analyzeCookieCoverage(cookies: FlowCookie[]): CookieCoverage {
   const names = new Set(cookies.map((cookie) => cookie.name));
-  const hosts = cookies.map((cookie) =>
-    String(cookie.domain || "").replace(/^\./, "").toLowerCase(),
-  );
   const hasGoogleSid = [...GOOGLE_IDENTITY_NAMES].some((name) => names.has(name));
   const hasLabsSession = [...LABS_SESSION_NAMES].some((name) => names.has(name));
-  const hasLabsHost = hosts.some(
-    (host) => host === "labs.google" || host.endsWith(".labs.google"),
-  );
-  const warnings: string[] = [];
-
-  if (!hasLabsHost && !hasLabsSession && !hasGoogleSid) {
-    warnings.push("No labs.google cookies found. Flow will not stay signed in.");
-  }
-  if (hasLabsSession && !hasGoogleSid) {
-    warnings.push(
-      "Missing Google account cookies (SID / __Secure-1PSID). Flow may open but projects may not save.",
-    );
-  }
-  if (hasGoogleSid && !hasLabsSession) {
-    warnings.push(
-      "Missing labs.google session token. Flow will not stay signed in or save projects.",
-    );
-  }
-
-  return { hasGoogleSid, hasLabsSession, warnings };
+  return { hasGoogleSid, hasLabsSession, warnings: [] };
 }
 
 export function analyzeCookieFreshness(cookies: FlowCookie[]): CookieFreshness {
@@ -160,16 +138,10 @@ export function analyzeCookies(cookies: FlowCookie[]) {
   const coverage = analyzeCookieCoverage(cookies);
   const freshness = analyzeCookieFreshness(cookies);
   const accountFingerprint = googleAccountFingerprint(cookies);
-  const warnings = [...coverage.warnings, ...freshness.warnings];
-  if (!accountFingerprint) {
-    warnings.push(
-      "No SID / __Secure-1PSID found. Export google.com cookies from the same account that owns the Flow projects.",
-    );
-  }
   return {
     ...coverage,
     freshness,
     accountFingerprint,
-    warnings,
+    warnings: freshness.warnings,
   };
 }

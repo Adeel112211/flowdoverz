@@ -6,7 +6,7 @@ import { AdminPageHeader } from "@/components/admin-page-header";
 import { AdminPageLayout } from "@/components/admin-page-layout";
 import { AdminLoadingState } from "@/components/admin-loading-state";
 import { subscribeLive } from "@/lib/live-client";
-import { analyzeCookies, googleAccountFingerprint, type CookieFreshness } from "@/lib/cookie-analysis";
+import type { CookieFreshness } from "@/lib/cookie-analysis";
 
 const SLOTS = ["C1", "C2", "C3", "C4", "C5"] as const;
 
@@ -18,33 +18,6 @@ type SlotInfo = {
   updated_at: string | null;
   cookie_count?: number;
 };
-
-function previewAnalysis(
-  list: Array<{ name?: string; value?: string; expirationDate?: number; session?: boolean }>,
-  previousFingerprint: string | null,
-) {
-  const cookies = list.map((c) => ({
-    name: String(c.name || ""),
-    value: String(c.value || "x"),
-    expirationDate: c.expirationDate,
-    session: c.session,
-  }));
-  const analysis = analyzeCookies(cookies);
-  const fingerprint = googleAccountFingerprint(cookies);
-  let accountNote: string | null = null;
-  if (previousFingerprint && fingerprint) {
-    accountNote =
-      previousFingerprint === fingerprint
-        ? "Same Google account — existing Flow projects should remain after save."
-        : "Different Google account — old Flow projects in this slot will not appear.";
-  }
-  return {
-    warning: analysis.warnings[0] || accountNote,
-    warnings: accountNote ? [accountNote, ...analysis.warnings] : analysis.warnings,
-    freshness: analysis.freshness,
-    accountFingerprint: fingerprint,
-  };
-}
 
 export function CookiesPage() {
   const fileRef = useRef<HTMLInputElement>(null);
@@ -73,15 +46,6 @@ export function CookiesPage() {
   }>({ count: 0, updated: null, names: [], freshness: null, warnings: [], accountFingerprint: null });
   const [slotLabel, setSlotLabel] = useState("");
   const [copyTarget, setCopyTarget] = useState("C2");
-  const [preview, setPreview] = useState<{
-    count: number;
-    names: string[];
-    warning: string | null;
-    warnings: string[];
-    freshness: CookieFreshness | null;
-  } | null>(null);
-  const [pendingSave, setPendingSave] = useState<string | null>(null);
-
   async function checkAdmin() {
     setChecking(true);
     try {
@@ -144,33 +108,11 @@ export function CookiesPage() {
     });
   }, [admin, slot]);
 
-  async function saveCookies(raw: string, targetSlot = slot, skipPreview = false) {
+  async function saveCookies(raw: string, targetSlot = slot) {
     const text = raw.trim();
     if (!text) {
       setStatus({ type: "err", text: "Nothing to save — paste or upload cookies first." });
       return false;
-    }
-
-    if (!skipPreview) {
-      try {
-        const parsed = JSON.parse(text);
-        const list = Array.isArray(parsed) ? parsed : parsed?.cookies;
-        if (Array.isArray(list)) {
-          const names = list.slice(0, 8).map((c: { name?: string }) => c.name || "?");
-          const analysis = previewAnalysis(list, meta.accountFingerprint);
-          setPreview({
-            count: list.length,
-            names,
-            warning: analysis.warning,
-            warnings: analysis.warnings,
-            freshness: analysis.freshness,
-          });
-          setPendingSave(text);
-          return false;
-        }
-      } catch {
-        // fall through to save attempt
-      }
     }
 
     setSaving(true);
@@ -193,11 +135,9 @@ export function CookiesPage() {
         return false;
       }
       setStatus({
-        type:
-          data.account_match === "different" || data.warnings?.length ? "err" : "ok",
+        type: "ok",
         text:
           data.message ||
-          (data.warnings && data.warnings[0]) ||
           `Replaced ${targetSlot} with ${data.cookie_count} cookies. Clients will get them after they sign in.`,
       });
       setJsonText("");
@@ -684,60 +624,6 @@ export function CookiesPage() {
         </div>
       </main>
 
-      {preview && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
-          <div className="w-full max-w-md rounded-2xl border border-white/10 bg-[#0F172A] p-6 shadow-2xl">
-            <h3 className="text-lg font-bold text-white mb-2">Confirm save to {slot}</h3>
-            <p className="text-sm text-slate-400 mb-4">
-              {preview.count} cookies will replace the current slot contents.
-            </p>
-            {preview.warnings.length > 0 && (
-              <div className="mb-4 space-y-2">
-                {preview.warnings.map((line) => (
-                  <p
-                    key={line}
-                    className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-100"
-                  >
-                    {line}
-                  </p>
-                ))}
-              </div>
-            )}
-            <div className="flex flex-wrap gap-1.5 mb-6">
-              {preview.names.map((name) => (
-                <span key={name} className="rounded-md border border-white/10 px-2 py-0.5 font-mono text-[10px] text-slate-400">
-                  {name}
-                </span>
-              ))}
-              {preview.count > preview.names.length && (
-                <span className="text-xs text-slate-500">+{preview.count - preview.names.length} more</span>
-              )}
-            </div>
-            <div className="flex gap-3">
-              <button
-                type="button"
-                onClick={() => { setPreview(null); setPendingSave(null); }}
-                className="flex-1 rounded-xl border border-white/10 py-2.5 text-sm font-bold text-slate-300"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                disabled={saving}
-                onClick={async () => {
-                  const raw = pendingSave;
-                  setPreview(null);
-                  setPendingSave(null);
-                  if (raw) await saveCookies(raw, slot, true);
-                }}
-                className="flex-1 rounded-xl bg-gradient-to-r from-cyan-400 to-emerald-400 py-2.5 text-sm font-bold text-slate-950 disabled:opacity-50"
-              >
-                Confirm Save
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </AdminPageLayout>
   );
 }
