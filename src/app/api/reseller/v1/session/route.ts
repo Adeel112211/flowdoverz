@@ -23,7 +23,9 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const result = await issueResellerClientSession(auth.reseller.id, String(body.email || ""));
+  const result = await issueResellerClientSession(auth.reseller.id, String(body.email || ""), {
+    force: body.force === true,
+  });
   if (!result.ok) {
     return jsonSafe(
       { success: false, error: result.error },

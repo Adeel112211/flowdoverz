@@ -85,7 +85,9 @@ export async function POST(request: NextRequest) {
         { status: 400, headers: auth.headers },
       );
     }
-    const session = await issueResellerClientSession(auth.reseller.id, email);
+    const session = await issueResellerClientSession(auth.reseller.id, email, {
+      force: body.forceSession === true,
+    });
     return jsonSafe(
       {
         success: true,

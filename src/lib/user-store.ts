@@ -4,7 +4,7 @@ import { validateSignupEmail } from "./signup-email-policy";
 import { canonicalizeMailboxEmail } from "./signup-email-rules";
 import { getSignupSecuritySettings } from "./signup-security";
 import { getSystemSettings } from "./admin-settings";
-import { createClientSession, maxClientSessionsForPlan } from "./client-session";
+import { createClientSession, maxClientSessionsForPlan, verifyClientSession } from "./client-session";
 
 export type StoredUser = {
   email: string;
@@ -130,6 +130,7 @@ function clearedSoloSeatFields() {
     activeClientSessionAt: null as string | null,
     soloSeatActive: false,
     clientSessionLock: false,
+    portalSid: null as string | null,
   };
 }
 
@@ -708,6 +709,12 @@ export async function authenticateUser(
       return { ok: false, error: claimed.error, code: "MULTI_DEVICE_BLOCKED" };
     }
 
+    await db.collection("users").doc(normalizeEmail(user.email || normalized)).set(
+      { portalSid: created.sid },
+      { merge: true },
+    );
+    invalidateUserDocCache(normalizeEmail(user.email || normalized));
+
     return {
       ok: true,
       user: {
@@ -912,7 +919,11 @@ export async function getPlanActivationBlock(
 }
 
 /** Reseller API: mint a portal SID for a client that already belongs to this reseller. */
-export async function issueResellerClientSession(resellerId: string, email: string) {
+export async function issueResellerClientSession(
+  resellerId: string,
+  email: string,
+  options?: { force?: boolean },
+) {
   const normalized = normalizeEmail(email);
   if (!normalized || !normalized.includes("@")) {
     return { ok: false as const, error: "Enter a valid email address.", status: 400 };
@@ -932,10 +943,37 @@ export async function issueResellerClientSession(resellerId: string, email: stri
   }
 
   const userEmail = String(record.email || normalized);
+
+  if (!options?.force) {
+    const storedSid = String(record.portalSid || "");
+    if (storedSid) {
+      const verified = verifyClientSession(storedSid);
+      if (verified?.email === normalizeEmail(userEmail) && verified.sessionId) {
+        const active = await isActiveClientSession(userEmail, verified.sessionId);
+        if (active) {
+          return {
+            ok: true as const,
+            email: userEmail,
+            sid: storedSid,
+            assignedSlot: String(record.assignedSlot || "") || null,
+            subscriptionExpiresAt: status.subscriptionExpiresAt,
+            reused: true as const,
+          };
+        }
+      }
+    }
+  }
+
   const created = createClientSession(userEmail);
   const claimed = await claimClientSession(userEmail, created.sessionId);
   if (!claimed.ok) {
     return { ok: false as const, error: claimed.error, status: 403 };
+  }
+
+  const db = getDb();
+  if (db) {
+    await db.collection("users").doc(normalized).set({ portalSid: created.sid }, { merge: true });
+    invalidateUserDocCache(normalized);
   }
 
   return {
