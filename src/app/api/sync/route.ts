@@ -218,6 +218,8 @@ export async function GET(request: NextRequest) {
   });
   const record =
     visibleSlots.find((item) => String(item.key).toUpperCase() === slot)?.record || null;
+  const { analyzeCookies } = await import("@/lib/cookie-analysis");
+  const slotAnalysis = record?.cookies.length ? analyzeCookies(record.cookies) : null;
 
   const availableSlots = visibleSlots
     .filter(({ record: rec }) => Array.isArray(rec.cookies) && rec.cookies.length > 0)
@@ -310,6 +312,15 @@ export async function GET(request: NextRequest) {
     available_slots: availableSlots,
     slot_cookies: slotCookies,
     cookies_access: true,
+    slot_health: slotAnalysis
+      ? {
+          status: slotAnalysis.freshness.status,
+          hours_remaining: slotAnalysis.freshness.hoursRemaining,
+          earliest_expiry: slotAnalysis.freshness.earliestExpiry,
+          account_fingerprint: record?.accountFingerprint ?? slotAnalysis.accountFingerprint,
+          warnings: slotAnalysis.warnings,
+        }
+      : null,
     latest_extension_version: latestVersion,
     user: {
       email,

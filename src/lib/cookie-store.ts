@@ -1,28 +1,28 @@
 import { createHash } from "crypto";
 import { getDb } from "@/lib/firebase-admin";
 import { verifyClientSession } from "@/lib/client-session";
+import {
+  analyzeCookieCoverage,
+  googleAccountFingerprint,
+  type FlowCookie,
+} from "@/lib/cookie-analysis";
 
-export type FlowCookie = {
-  name: string;
-  value: string;
-  domain?: string;
-  path?: string;
-  url?: string;
-  secure?: boolean;
-  httpOnly?: boolean;
-  sameSite?: string;
-  expirationDate?: number;
-  hostOnly?: boolean;
-  session?: boolean;
-  storeId?: string;
-  partitionKey?: unknown;
-};
+export type { FlowCookie } from "@/lib/cookie-analysis";
+export {
+  analyzeCookieCoverage,
+  analyzeCookieFreshness,
+  analyzeCookies,
+  compareAccountFingerprints,
+  googleAccountFingerprint,
+} from "@/lib/cookie-analysis";
 
 export type SlotRecord = {
   cookies: FlowCookie[];
   hash: string;
   updatedAt: string;
   label?: string;
+  /** Stable hash of SID / __Secure-1PSID — same value means same Google account. */
+  accountFingerprint?: string | null;
 };
 
 export function hashCookies(cookies: FlowCookie[]): string {
@@ -107,34 +107,6 @@ function buildCookie(row: Record<string, unknown>): FlowCookie {
   return cookie;
 }
 
-const GOOGLE_IDENTITY_NAMES = new Set(["SID", "__Secure-1PSID", "__Secure-3PSID"]);
-const LABS_SESSION_NAMES = new Set([
-  "OSID",
-  "__Secure-OSID",
-  "__Host-next-auth.session-token",
-  "__Secure-next-auth.session-token",
-  "next-auth.session-token",
-]);
-
-export function analyzeCookieCoverage(cookies: FlowCookie[]): {
-  hasGoogleSid: boolean;
-  hasLabsSession: boolean;
-  warnings: string[];
-} {
-  const names = new Set(cookies.map((cookie) => cookie.name));
-  const hosts = cookies.map((cookie) => String(cookie.domain || "").replace(/^\./, "").toLowerCase());
-  const hasGoogleSid = [...GOOGLE_IDENTITY_NAMES].some((name) => names.has(name));
-  const hasLabsSession = [...LABS_SESSION_NAMES].some((name) => names.has(name));
-  const hasLabsHost = hosts.some((host) => host === "labs.google" || host.endsWith(".labs.google"));
-  const warnings: string[] = [];
-
-  if (!hasLabsHost && !hasLabsSession && !hasGoogleSid) {
-    warnings.push("No labs.google cookies found. Flow will not stay signed in.");
-  }
-
-  return { hasGoogleSid, hasLabsSession, warnings };
-}
-
 export function parseCookieJson(input: string): FlowCookie[] {
   const trimmed = input.trim();
   if (!trimmed) throw new Error("Paste a JSON cookie array first.");
@@ -193,6 +165,7 @@ export async function saveSlotCookies(
     cookies,
     hash: hashCookies(cookies),
     updatedAt: new Date().toISOString(),
+    accountFingerprint: googleAccountFingerprint(cookies),
     ...(label ? { label } : {}),
   };
 

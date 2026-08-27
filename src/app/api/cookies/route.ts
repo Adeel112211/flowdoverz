@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
-  analyzeCookieCoverage,
+  analyzeCookies,
   clearSlotCookies,
+  compareAccountFingerprints,
   getSlotCookies,
   listSlots,
   parseCookieJson,
@@ -34,6 +35,7 @@ export async function GET(request: NextRequest) {
   
   const record = await getSlotCookies(WORKSPACE_OWNER, slot);
   const slots = await listSlots(WORKSPACE_OWNER);
+  const analysis = record?.cookies.length ? analyzeCookies(record.cookies) : null;
 
   return NextResponse.json({
     success: true,
@@ -44,6 +46,11 @@ export async function GET(request: NextRequest) {
     updated_at: record?.updatedAt ?? null,
     cookie_names: record?.cookies.map((c) => c.name) ?? [],
     cookies: wantFull ? record?.cookies ?? [] : undefined,
+    hasLabsSession: analysis?.hasLabsSession ?? false,
+    hasGoogleSid: analysis?.hasGoogleSid ?? false,
+    freshness: analysis?.freshness ?? null,
+    warnings: analysis?.warnings ?? [],
+    account_fingerprint: record?.accountFingerprint ?? analysis?.accountFingerprint ?? null,
     available_slots: ["C1", "C2", "C3", "C4", "C5"].map((key) => {
       const saved = slots.find((s) => s.key === key)?.record;
       return {
@@ -81,7 +88,18 @@ export async function POST(request: NextRequest) {
         ? body.cookies
         : JSON.stringify(body.cookies ?? []);
     const cookiesList = parseCookieJson(raw);
-    const coverage = analyzeCookieCoverage(cookiesList);
+    const previous = await getSlotCookies(WORKSPACE_OWNER, slot);
+    const analysis = analyzeCookies(cookiesList);
+    const accountMatch = compareAccountFingerprints(
+      previous?.accountFingerprint,
+      analysis.accountFingerprint,
+    );
+    const warnings = [...analysis.warnings];
+    if (accountMatch === "different") {
+      warnings.unshift(
+        `Different Google account than before in ${slot}. Old Flow projects from the previous account will not appear.`,
+      );
+    }
     const record = await saveSlotCookies(WORKSPACE_OWNER, slot, cookiesList, body.label);
 
     await logAdminActivity({
@@ -97,11 +115,20 @@ export async function POST(request: NextRequest) {
       cookie_hash: record.hash,
       updated_at: record.updatedAt,
       cookie_names: record.cookies.map((cookie) => cookie.name),
-      warnings: coverage.warnings,
-      hasLabsSession: coverage.hasLabsSession,
-      message: coverage.warnings.length
-        ? `Saved ${record.cookies.length} cookies, but Flow may not stay signed in.`
-        : "Cookies saved. Clients will get them after they sign in.",
+      warnings,
+      hasLabsSession: analysis.hasLabsSession,
+      hasGoogleSid: analysis.hasGoogleSid,
+      freshness: analysis.freshness,
+      account_match: accountMatch,
+      account_fingerprint: record.accountFingerprint ?? analysis.accountFingerprint,
+      message:
+        accountMatch === "same"
+          ? `Same Google account — existing Flow projects will remain after clients sync to ${slot}.`
+          : accountMatch === "different"
+            ? `Saved to ${slot}, but this is a different Google account. Previous projects will not appear.`
+            : warnings.length
+              ? `Saved ${record.cookies.length} cookies, but Flow may not save projects reliably.`
+              : "Cookies saved. Clients will get them after they sign in.",
     });
   } catch (error) {
     return NextResponse.json(
