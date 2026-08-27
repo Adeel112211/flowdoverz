@@ -1294,7 +1294,7 @@ export async function generateResellerExtensionPack(
         Buffer.from(logo.base64, "base64"),
         logo.mime,
       );
-      brandingPayload.logoMime = "image/jpeg";
+      brandingPayload.logoMime = logo.mime;
       brandingPayload.hasLogo = true;
     } else if (keepLogo && saved?.logoStoragePath) {
       brandingPayload.logoStoragePath = saved.logoStoragePath;
@@ -1306,7 +1306,7 @@ export async function generateResellerExtensionPack(
         Buffer.from(saved.logoBase64, "base64"),
         saved.logoMime || "image/png",
       );
-      brandingPayload.logoMime = "image/jpeg";
+      brandingPayload.logoMime = saved.logoMime || "image/png";
       brandingPayload.hasLogo = true;
     } else {
       brandingPayload.hasLogo = false;
