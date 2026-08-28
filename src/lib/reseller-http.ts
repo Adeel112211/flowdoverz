@@ -9,7 +9,7 @@ import {
   websiteFromResellerRequest,
   type ResellerRecord,
 } from "@/lib/reseller-store";
-import { getAppUrl } from "@/lib/site-urls";
+import { getPublicAppUrl, toPublicAbsoluteUrl } from "@/lib/site-urls";
 import { getExtensionConfig } from "@/lib/extension-store";
 
 const BLOCKED_KEYS = new Set([
@@ -204,7 +204,7 @@ export async function buildResellerIntegration(reseller: {
     officialVersion?: string;
   } | null;
 }) {
-  const appUrl = getAppUrl();
+  const appUrl = getPublicAppUrl();
   const config = await getExtensionConfig();
   const version = config.activeVersion;
   let extensionDownloadUrl = version
@@ -212,19 +212,22 @@ export async function buildResellerIntegration(reseller: {
     : `${appUrl}/api/extension/download`;
   let branded = false;
   if (reseller.id && reseller.kind !== "official") {
+    const resellerPath = `/api/extension/download?reseller=${encodeURIComponent(reseller.id)}`;
     try {
       const { getResellerExtensionPackMeta, brandedExtensionDownloadUrl } = await import(
         "@/lib/extension-reseller-lookup"
       );
       const pack = await getResellerExtensionPackMeta(reseller.id);
       if (pack || reseller.brandedExtension?.downloadUrl) {
-        extensionDownloadUrl =
-          reseller.brandedExtension?.downloadUrl || brandedExtensionDownloadUrl(reseller.id);
+        extensionDownloadUrl = toPublicAbsoluteUrl(
+          reseller.brandedExtension?.downloadUrl || brandedExtensionDownloadUrl(reseller.id),
+          resellerPath,
+        );
         branded = true;
       }
     } catch {
       if (reseller.brandedExtension?.downloadUrl) {
-        extensionDownloadUrl = reseller.brandedExtension.downloadUrl;
+        extensionDownloadUrl = toPublicAbsoluteUrl(reseller.brandedExtension.downloadUrl, resellerPath);
         branded = true;
       }
     }

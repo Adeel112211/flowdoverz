@@ -25,12 +25,14 @@ export async function GET() {
   const used = users.length;
   const pricing = summarizeSeatGrants(grants);
   const now = Date.now();
+  const clientExpiresAt = (user: { trialExpiresAt: string | null; subscriptionExpiresAt: string | null }) =>
+    user.subscriptionExpiresAt || user.trialExpiresAt;
   const active = users.filter((user) => {
-    const at = Date.parse(user.subscriptionExpiresAt || "");
+    const at = Date.parse(clientExpiresAt(user) || "");
     return Number.isFinite(at) && at > now;
   }).length;
   const expired = users.filter((user) => {
-    const at = Date.parse(user.subscriptionExpiresAt || "");
+    const at = Date.parse(clientExpiresAt(user) || "");
     return Number.isFinite(at) && at <= now;
   }).length;
 
@@ -57,6 +59,7 @@ export async function GET() {
     recentClients: users.slice(0, 8).map((user) => ({
       email: user.email,
       name: user.name,
+      trialExpiresAt: user.trialExpiresAt,
       subscriptionExpiresAt: user.subscriptionExpiresAt,
       createdAt: user.createdAt,
     })),

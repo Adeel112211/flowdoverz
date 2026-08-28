@@ -3,6 +3,9 @@
 /** Dedicated official reseller panel. Not served on flow.doverz.com. */
 export const DEFAULT_RESELLER_HOST = "resellerflow.doverz.com";
 export const DEFAULT_RESELLER_URL = `https://${DEFAULT_RESELLER_HOST}`;
+/** Public client app — never use localhost for reseller/extension download links. */
+export const DEFAULT_APP_HOST = "flow.doverz.com";
+export const DEFAULT_APP_URL = `https://${DEFAULT_APP_HOST}`;
 
 function normalizeHost(host: string): string {
   return host.toLowerCase().split(":")[0];
@@ -81,14 +84,60 @@ export function getMarketingUrl(): string {
     process.env.NEXT_PUBLIC_MARKETING_URL ||
       process.env.NEXT_PUBLIC_APP_URL ||
       process.env.APP_URL ||
-      "http://localhost:3000",
+      (process.env.NODE_ENV === "production" ? DEFAULT_APP_URL : "http://localhost:3000"),
   );
 }
 
+function vercelHttpsUrl(): string {
+  const raw =
+    process.env.VERCEL_PROJECT_PRODUCTION_URL ||
+    process.env.NEXT_PUBLIC_VERCEL_URL ||
+    process.env.VERCEL_URL ||
+    "";
+  const host = String(raw).trim().replace(/^https?:\/\//i, "").replace(/\/$/, "");
+  if (!host || isLocalRequestHost(host)) return "";
+  return `https://${host}`;
+}
+
 export function getAppUrl(): string {
-  return stripTrailingSlash(
-    process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL || getMarketingUrl(),
-  );
+  const configured = process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL;
+  if (configured?.trim()) return stripTrailingSlash(configured);
+  const fromVercel = vercelHttpsUrl();
+  if (fromVercel) return fromVercel;
+  if (process.env.NODE_ENV === "production") return DEFAULT_APP_URL;
+  return stripTrailingSlash(getMarketingUrl());
+}
+
+/**
+ * Absolute URL for public links (extension download, reseller kit, emails).
+ * Never returns localhost — resellers cannot open your local machine.
+ */
+export function getPublicAppUrl(): string {
+  const url = getAppUrl();
+  try {
+    if (isLocalRequestHost(new URL(url).hostname)) return DEFAULT_APP_URL;
+  } catch {
+    return DEFAULT_APP_URL;
+  }
+  return url;
+}
+
+/** Rewrite a stored absolute URL if it still points at localhost. */
+export function toPublicAbsoluteUrl(url: string, fallbackPath = "/"): string {
+  const raw = String(url || "").trim();
+  const publicBase = getPublicAppUrl();
+  const path = fallbackPath.startsWith("/") ? fallbackPath : `/${fallbackPath}`;
+  if (!raw) return `${publicBase}${path}`;
+  if (raw.startsWith("/")) return `${publicBase}${raw}`;
+  try {
+    const parsed = new URL(raw);
+    if (isLocalRequestHost(parsed.hostname)) {
+      return `${publicBase}${parsed.pathname}${parsed.search}${parsed.hash}`;
+    }
+    return raw;
+  } catch {
+    return `${publicBase}${path}`;
+  }
 }
 
 export function getAdminUrl(): string {

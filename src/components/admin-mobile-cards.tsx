@@ -69,7 +69,7 @@ export function ClientMobileCard({
           />
           <AdminMobileMetaTile
             label="Trial"
-            value={client.trialExpiresAt ? new Date(client.trialExpiresAt).toLocaleDateString() : "—"}
+            value={client.trialExpiresAt ? new Date(client.trialExpiresAt).toLocaleString() : "—"}
             valueClassName="text-rose-300"
           />
           <AdminMobileMetaTile

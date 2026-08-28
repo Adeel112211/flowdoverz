@@ -28,6 +28,7 @@ export async function GET() {
       email: user.email,
       name: user.name,
       subscriptionPlan: user.subscriptionPlan,
+      trialExpiresAt: user.trialExpiresAt,
       subscriptionExpiresAt: user.subscriptionExpiresAt,
       createdAt: user.createdAt,
     })),

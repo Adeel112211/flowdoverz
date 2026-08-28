@@ -443,15 +443,15 @@ export async function registerClientUser(
   let assignedSlot: string | undefined;
 
   if (partner) {
-    const { resolveOfficialSignup, subscriptionExpiryFromNow } = await import("./reseller-store");
+    const { resolveOfficialSignup, resellerClientTrialExpiryFromNow } = await import("./reseller-store");
     const resolved = await resolveOfficialSignup(partner);
     if (!resolved.ok) {
       return { ok: false, error: resolved.error };
     }
-    trialGranted = false;
-    trialExpiresAt = now.toISOString();
-    subscriptionPlan = "solo";
-    subscriptionExpiresAt = subscriptionExpiryFromNow(resolved.reseller.seatDays);
+    trialGranted = true;
+    trialExpiresAt = resellerClientTrialExpiryFromNow(now.getTime());
+    subscriptionPlan = "trial";
+    subscriptionExpiresAt = null;
     resellerId = resolved.reseller.id;
     assignedSlot = resolved.slot;
   } else {

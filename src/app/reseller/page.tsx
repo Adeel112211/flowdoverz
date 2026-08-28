@@ -28,17 +28,28 @@ type Stats = {
 type RecentClient = {
   email: string;
   name: string;
+  trialExpiresAt?: string | null;
   subscriptionExpiresAt: string | null;
   createdAt: string | null;
 };
 
-function daysLeft(iso: string | null | undefined) {
+function timeLeft(iso: string | null | undefined) {
   if (!iso) return { label: "No timer", className: "text-slate-500" };
   const ms = Date.parse(iso) - Date.now();
   if (!Number.isFinite(ms)) return { label: "No timer", className: "text-slate-500" };
   if (ms <= 0) return { label: "Expired", className: "text-rose-400" };
-  const days = Math.max(1, Math.ceil(ms / (24 * 60 * 60 * 1000)));
-  return { label: `${days}d left`, className: "text-emerald-400" };
+  const hours = Math.floor(ms / (60 * 60 * 1000));
+  const minutes = Math.max(1, Math.ceil((ms % (60 * 60 * 1000)) / (60 * 1000)));
+  if (hours >= 24) {
+    const days = Math.max(1, Math.ceil(ms / (24 * 60 * 60 * 1000)));
+    return { label: `${days}d left`, className: "text-emerald-400" };
+  }
+  if (hours > 0) return { label: `${hours}h ${minutes}m left`, className: "text-emerald-400" };
+  return { label: `${minutes}m left`, className: "text-emerald-400" };
+}
+
+function clientTimer(user: { trialExpiresAt?: string | null; subscriptionExpiresAt?: string | null }) {
+  return timeLeft(user.subscriptionExpiresAt || user.trialExpiresAt);
 }
 
 export default function ResellerDashboardPage() {
@@ -176,8 +187,8 @@ export default function ResellerDashboardPage() {
                   <p className="truncate font-semibold text-white">{user.name || "—"}</p>
                   <p className="truncate font-mono text-xs text-cyan-300">{user.email}</p>
                 </div>
-                <p className={`shrink-0 text-xs font-semibold ${daysLeft(user.subscriptionExpiresAt).className}`}>
-                  {daysLeft(user.subscriptionExpiresAt).label}
+                <p className={`shrink-0 text-xs font-semibold ${clientTimer(user).className}`}>
+                  {clientTimer(user).label}
                 </p>
               </li>
             ))}

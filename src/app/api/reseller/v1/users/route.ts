@@ -10,7 +10,7 @@ import {
   listResellerUsers,
   pickAssignedSlot,
   remainingSeats,
-  subscriptionExpiryFromNow,
+  resellerClientTrialExpiryFromNow,
 } from "@/lib/reseller-store";
 import { createUserByAdmin, getUserRecord, issueResellerClientSession } from "@/lib/user-store";
 
@@ -95,7 +95,8 @@ export async function POST(request: NextRequest) {
         user: {
           email,
           assignedSlot: String(existing.assignedSlot || assignedSlot || "") || null,
-          plan: "solo",
+          plan: String(existing.subscriptionPlan || "trial"),
+          trialExpiresAt: existing.trialExpiresAt || null,
           subscriptionExpiresAt: existing.subscriptionExpiresAt || null,
           seatDays: auth.reseller.seatDays,
           remainingSeats: left,
@@ -118,15 +119,13 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const expiry = subscriptionExpiryFromNow(auth.reseller.seatDays);
-  const nowIso = new Date().toISOString();
+  const trialExpiresAt = resellerClientTrialExpiryFromNow();
   const result = await createUserByAdmin({
     email,
     name: String(body.name || ""),
     password: String(body.password || ""),
-    subscriptionPlan: "solo",
-    trialExpiresAt: nowIso,
-    subscriptionExpiresAt: expiry,
+    subscriptionPlan: "trial",
+    trialExpiresAt,
     resellerId: auth.reseller.id,
     assignedSlot,
   });
@@ -146,8 +145,9 @@ export async function POST(request: NextRequest) {
       user: {
         email,
         assignedSlot,
-        plan: "solo",
-        subscriptionExpiresAt: expiry,
+        plan: "trial",
+        trialExpiresAt,
+        subscriptionExpiresAt: null,
         seatDays: auth.reseller.seatDays,
         remainingSeats: left - 1,
         sid: session.ok ? session.sid : undefined,

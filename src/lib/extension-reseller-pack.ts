@@ -4,7 +4,7 @@ import { sanitizeForFirestore } from "@/lib/cookie-store";
 import { getReseller, normalizeOriginList } from "@/lib/reseller-store";
 import { getActiveExtensionDownload } from "@/lib/extension-store";
 import { sealOfficialExtensionZip, type OfficialIntegrityProfile } from "@/lib/extension-official-from-zip";
-import { getAppUrl, getResellerUrl } from "@/lib/site-urls";
+import { getPublicAppUrl, getResellerUrl } from "@/lib/site-urls";
 import {
   INTEGRITY_COLLECTION,
   PACKS_COLLECTION,
@@ -938,7 +938,7 @@ async function brandOfficialZip(
     normalizePublicUrl(String(branding.dashboardUrl || "")) || websiteUrl || getResellerUrl();
   const loginUrl = normalizePublicUrl(String(branding.loginUrl || "")) || dashboardUrl;
   const portalOrigin = portalOriginFromUrl(loginUrl || dashboardUrl);
-  const appUrl = getAppUrl();
+  const appUrl = getPublicAppUrl();
   const syncOrigin = portalOriginFromUrl(appUrl) || appUrl.replace(/\/$/, "");
   const primaryColor = normalizeHexColor(String(branding.primaryColor || ""), DEFAULT_BRAND_PRIMARY);
   const accentColor = normalizeHexColor(String(branding.accentColor || ""), DEFAULT_BRAND_ACCENT);

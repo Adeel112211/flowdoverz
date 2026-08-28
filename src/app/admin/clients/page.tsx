@@ -680,7 +680,7 @@ export default function ClientsPage() {
       header: "Trial Expiry",
       render: (client) => (
         <span className="whitespace-nowrap text-rose-400 font-medium">
-          {client.trialExpiresAt ? new Date(client.trialExpiresAt).toLocaleDateString() : "N/A"}
+          {client.trialExpiresAt ? new Date(client.trialExpiresAt).toLocaleString() : "N/A"}
         </span>
       ),
     },

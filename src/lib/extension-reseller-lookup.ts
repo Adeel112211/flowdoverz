@@ -1,5 +1,5 @@
 import { getDb } from "@/lib/firebase-admin";
-import { getAppUrl } from "@/lib/site-urls";
+import { getPublicAppUrl } from "@/lib/site-urls";
 import { getReseller } from "@/lib/reseller-store";
 import { getUserRecord } from "@/lib/user-store";
 import { getExtensionConfig, isPreviousOfficialHash } from "@/lib/extension-store";
@@ -34,7 +34,7 @@ export function brandedExtensionDownloadPath(resellerId: string) {
 }
 
 export function brandedExtensionDownloadUrl(resellerId: string) {
-  return `${getAppUrl()}/api/extension/download?reseller=${encodeURIComponent(resellerId)}`;
+  return `${getPublicAppUrl()}/api/extension/download?reseller=${encodeURIComponent(resellerId)}`;
 }
 
 export function asResellerPackMeta(id: string, data: Record<string, unknown>): ResellerExtensionMeta | null {

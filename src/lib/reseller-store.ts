@@ -1,7 +1,7 @@
 import { createHash, randomBytes, scryptSync, timingSafeEqual } from "crypto";
 import { getDb } from "@/lib/firebase-admin";
 import { sanitizeForFirestore } from "@/lib/cookie-store";
-import { getAppUrl, getResellerUrl } from "@/lib/site-urls";
+import { getPublicAppUrl, getResellerUrl } from "@/lib/site-urls";
 
 export const RESELLER_SLOTS = ["C1", "C2", "C3", "C4", "C5"] as const;
 export type ResellerSlot = (typeof RESELLER_SLOTS)[number];
@@ -388,6 +388,13 @@ export function subscriptionExpiryFromNow(seatDays = DEFAULT_SEAT_DAYS) {
   return new Date(Date.now() + days * 24 * 60 * 60 * 1000).toISOString();
 }
 
+/** Reseller-registered clients get a fixed short trial (not paid seat days). */
+export const RESELLER_CLIENT_TRIAL_MS = 5 * 60 * 60 * 1000;
+
+export function resellerClientTrialExpiryFromNow(now = Date.now()) {
+  return new Date(now + RESELLER_CLIENT_TRIAL_MS).toISOString();
+}
+
 export function panelUrlForReseller(_record?: Pick<ResellerRecord, "kind" | "panelSlug">) {
   void _record;
   return getResellerUrl();
@@ -397,7 +404,7 @@ export function signupUrlForReseller(record: Pick<ResellerRecord, "kind" | "sign
   const panel = panelUrlForReseller(record);
   if (panel) return panel;
   if (record.kind !== "official" || !record.signupCode) return "";
-  return `${getAppUrl()}/signup?ref=${encodeURIComponent(record.signupCode)}`;
+  return `${getPublicAppUrl()}/signup?ref=${encodeURIComponent(record.signupCode)}`;
 }
 
 export function toPublicReseller(record: ResellerRecord, userCount = 0): PublicReseller {
@@ -419,7 +426,7 @@ export function toPublicReseller(record: ResellerRecord, userCount = 0): PublicR
     brandedExtension: record.brandedExtension
       ? {
           ...record.brandedExtension,
-          downloadUrl: `${getAppUrl()}/api/extension/download?reseller=${encodeURIComponent(record.id)}`,
+          downloadUrl: `${getPublicAppUrl()}/api/extension/download?reseller=${encodeURIComponent(record.id)}`,
         }
       : null,
   };
@@ -688,7 +695,13 @@ export async function registerClientForReseller(
 ): Promise<
   | {
       ok: true;
-      user: { email: string; name: string; subscriptionPlan: ResellerSeatPlan; subscriptionExpiresAt: string };
+      user: {
+        email: string;
+        name: string;
+        subscriptionPlan: "trial";
+        trialExpiresAt: string;
+        subscriptionExpiresAt: null;
+      };
       remainingSeats: number;
       seatsPurchased: number;
     }
@@ -714,19 +727,17 @@ export async function registerClientForReseller(
     return { ok: false, error: "No paid seats left. Send another payment so more seats can be added.", status: 403 };
   }
 
+  // Seat plan input is ignored — reseller registrations always start as a 5h trial.
+  void input.subscriptionPlan;
+
   const { createUserByAdmin } = await import("./user-store");
-  const expiry = subscriptionExpiryFromNow(reseller.seatDays);
-  const subscriptionPlan = normalizeSeatPlan(
-    input.subscriptionPlan || reseller.defaultSeatPlan,
-    reseller.allowedSeatPlans,
-  );
+  const trialExpiresAt = resellerClientTrialExpiryFromNow();
   const created = await createUserByAdmin({
     email: input.email,
     name: input.name,
     password: input.password,
-    subscriptionPlan,
-    trialExpiresAt: new Date().toISOString(),
-    subscriptionExpiresAt: expiry,
+    subscriptionPlan: "trial",
+    trialExpiresAt,
     resellerId: reseller.id,
     assignedSlot: slot,
   });
@@ -740,8 +751,9 @@ export async function registerClientForReseller(
     user: {
       email: String(input.email || "").trim().toLowerCase(),
       name: String(input.name || "").trim(),
-      subscriptionPlan,
-      subscriptionExpiresAt: expiry,
+      subscriptionPlan: "trial",
+      trialExpiresAt,
+      subscriptionExpiresAt: null,
     },
     remainingSeats: left - 1,
     seatsPurchased: reseller.seatsPurchased,
