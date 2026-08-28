@@ -25,6 +25,7 @@ type UserStatus = {
   extensionTamperMessage?: string | null;
   extensionUpdateRequired?: boolean;
   extensionRequiredVersion?: string | null;
+  brand?: { name: string; logoUrl: string | null; resellerId: string } | null;
 };
 
 function getExpiryTimestamp(status: UserStatus) {
@@ -345,6 +346,8 @@ export function DashboardPage() {
   const liveExpired = status ? isLiveExpired(status, now) : false;
   const isExpired = !status?.active || liveExpired;
   const needsEmailVerification = status?.emailVerified === false;
+  const brandName = status?.brand?.name || extensionName || "FlowDoverz";
+  const brandLogoUrl = status?.brand?.logoUrl || null;
   const showUpdateExtensionBanner =
     liveTamper?.active === true && liveTamper.kind === "update"
       ? true
@@ -356,7 +359,7 @@ export function DashboardPage() {
     "Remove Modified or cookies extractor extensions.";
   const updateExtensionMessage =
     (liveTamper?.kind === "update" && liveTamper.message) ||
-    "A new FlowDoverz extension is required. This version no longer works until you install the latest official build.";
+    `A new ${brandName} extension is required. This version no longer works until you install the latest build.`;
   const downloadVersion = extensionVersion || status?.extensionRequiredVersion || null;
 
   async function resendVerification() {
@@ -388,7 +391,7 @@ export function DashboardPage() {
       const blob = await res.blob();
       const file = new Blob([blob], { type: "application/octet-stream" });
       const headerName = res.headers.get("content-disposition")?.match(/filename="?([^"]+)"?/i)?.[1];
-      const fileName = headerName || `FlowDoverz${extensionVersion ? `-v${extensionVersion}` : ""}.zip`;
+      const fileName = headerName || `${brandName.replace(/\s+/g, "")}${extensionVersion ? `-v${extensionVersion}` : ""}.zip`;
 
       const objectUrl = URL.createObjectURL(file);
       const a = document.createElement("a");
@@ -419,7 +422,7 @@ export function DashboardPage() {
       <header className="relative z-50 sticky top-0 shrink-0 border-b border-white/5 bg-[#080810]/80 backdrop-blur-md">
         <div className="mx-auto flex h-20 sm:h-24 w-full items-center justify-between px-4 sm:px-8 lg:px-24 xl:px-32 2xl:px-64">
           <Link href="/" className="hover:opacity-80 transition-opacity">
-            <BrandLogo size="lg" />
+            <BrandLogo size="lg" name={brandName} logoSrc={brandLogoUrl} tagline="" />
           </Link>
           <div className="relative">
             <button
@@ -496,7 +499,7 @@ export function DashboardPage() {
               <h3 className="font-bold text-cyan-100 text-lg mb-1">Extension update required</h3>
               <p className="text-cyan-100/85 text-sm">{updateExtensionMessage}</p>
               <p className="mt-2 text-cyan-200/70 text-xs">
-                Remove the old {extensionBranded && extensionName ? extensionName : "FlowDoverz"} extension, then install the latest ZIP from this page. Google Flow will not work until you do.
+                Remove the old {brandName} extension, then install the latest ZIP from this page. Google Flow will not work until you do.
               </p>
             </div>
             <button
@@ -564,7 +567,7 @@ export function DashboardPage() {
               Launch Google Flow AI
             </h2>
             <p className="text-slate-400 text-sm sm:text-base max-w-xl">
-              Install the {extensionBranded && extensionName ? extensionName : "official FlowDoverz"} extension and keep it connected. Then open Flow — we keep your session signed in automatically.
+              Install the {brandName} extension and keep it connected. Then open Flow — we keep your session signed in automatically.
             </p>
             <a
               href="https://labs.google/fx/tools/flow"
@@ -777,6 +780,7 @@ export function DashboardPage() {
             open={showInstallGuide}
             onClose={() => setShowInstallGuide(false)}
             extensionVersion={extensionVersion}
+            brandName={brandName}
           />,
           document.body
         )}
@@ -821,7 +825,7 @@ export function DashboardPage() {
                     : "Your trial has ended"}
                 </h2>
                 <p className="text-center text-sm text-slate-400 mb-6 leading-relaxed">
-                  Activate a plan to restore access and keep using FlowDoverz with Google Flow.
+                  Activate a plan to restore access and keep using {brandName} with Google Flow.
                 </p>
 
                 <div className="flex flex-col gap-3">

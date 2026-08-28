@@ -25,7 +25,7 @@ async function brandedSyncIdentity(email: string) {
       site_name: pack.displayName,
       primary_color: pack.primaryColor || fallback.primary_color,
       accent_color: pack.accentColor || fallback.accent_color,
-      logo_url: fallback.logo_url,
+      logo_url: pack.logoUrl || fallback.logo_url,
       support_email: pack.supportEmail || "",
     };
   } catch {

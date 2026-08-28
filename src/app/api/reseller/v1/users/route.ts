@@ -5,14 +5,15 @@ import {
   jsonSafe,
 } from "@/lib/reseller-http";
 import {
-  countResellerUsers,
+  countResellerSeatUsage,
   deleteResellerUser,
   listResellerUsers,
-  pickAssignedSlot,
   remainingSeats,
-  resellerClientTrialExpiryFromNow,
+  remainingTrialSeats,
+  remainingPaidSeats,
+  registerClientForReseller,
 } from "@/lib/reseller-store";
-import { createUserByAdmin, getUserRecord, issueResellerClientSession } from "@/lib/user-store";
+import { getUserRecord, issueResellerClientSession } from "@/lib/user-store";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -26,7 +27,7 @@ export async function GET(request: NextRequest) {
   if (!auth.ok) return auth.response;
 
   const users = await listResellerUsers(auth.reseller.id);
-  const used = users.length;
+  const usage = await countResellerSeatUsage(auth.reseller.id);
   return jsonSafe(
     {
       success: true,
@@ -39,9 +40,14 @@ export async function GET(request: NextRequest) {
         subscriptionExpiresAt: user.subscriptionExpiresAt,
         createdAt: user.createdAt,
       })),
-      userCount: used,
+      userCount: usage.total,
+      trialUserCount: usage.trial,
+      paidUserCount: usage.paid,
       seatsPurchased: auth.reseller.seatsPurchased,
-      remainingSeats: remainingSeats(auth.reseller, used),
+      trialSeatsGranted: auth.reseller.trialSeatsGranted || 0,
+      remainingSeats: remainingSeats(auth.reseller, usage),
+      remainingTrialSeats: remainingTrialSeats(auth.reseller, usage.trial),
+      remainingPaidSeats: remainingPaidSeats(auth.reseller, usage.paid),
       seatDays: auth.reseller.seatDays,
       maxUsers: auth.reseller.seatsPurchased,
     },
@@ -52,17 +58,6 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   const auth = await authenticateReseller(request);
   if (!auth.ok) return auth.response;
-
-  const slot = pickAssignedSlot(auth.reseller);
-  if (!slot) {
-    return jsonSafe(
-      { success: false, error: "No cookie slots assigned to this reseller." },
-      { status: 400, headers: auth.headers },
-    );
-  }
-
-  const used = await countResellerUsers(auth.reseller.id);
-  const left = remainingSeats(auth.reseller, used);
 
   let body: Record<string, unknown> = {};
   try {
@@ -75,9 +70,10 @@ export async function POST(request: NextRequest) {
   }
 
   const email = String(body.email || "").trim().toLowerCase();
-  const requestedSlot = pickAssignedSlot(auth.reseller, String(body.assignedSlot || ""));
-  const assignedSlot = requestedSlot || slot;
   const existing = email ? await getUserRecord(email) : null;
+  const usage = await countResellerSeatUsage(auth.reseller.id);
+  const left = remainingSeats(auth.reseller, usage);
+
   if (existing) {
     if (String(existing.resellerId || "") !== auth.reseller.id) {
       return jsonSafe(
@@ -94,12 +90,14 @@ export async function POST(request: NextRequest) {
         existing: true,
         user: {
           email,
-          assignedSlot: String(existing.assignedSlot || assignedSlot || "") || null,
+          assignedSlot: String(existing.assignedSlot || "") || null,
           plan: String(existing.subscriptionPlan || "trial"),
           trialExpiresAt: existing.trialExpiresAt || null,
           subscriptionExpiresAt: existing.subscriptionExpiresAt || null,
           seatDays: auth.reseller.seatDays,
           remainingSeats: left,
+          remainingTrialSeats: remainingTrialSeats(auth.reseller, usage.trial),
+          remainingPaidSeats: remainingPaidSeats(auth.reseller, usage.paid),
           sid: session.ok ? session.sid : undefined,
         },
       },
@@ -107,33 +105,17 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  if (left <= 0) {
-    return jsonSafe(
-      {
-        success: false,
-        error: "No paid seats left. Send another user payment, then the owner will add more seats.",
-        remainingSeats: 0,
-        seatsPurchased: auth.reseller.seatsPurchased,
-      },
-      { status: 403, headers: auth.headers },
-    );
-  }
-
-  const trialExpiresAt = resellerClientTrialExpiryFromNow();
-  const result = await createUserByAdmin({
+  const result = await registerClientForReseller(auth.reseller, {
     email,
     name: String(body.name || ""),
     password: String(body.password || ""),
-    subscriptionPlan: "trial",
-    trialExpiresAt,
-    resellerId: auth.reseller.id,
-    assignedSlot,
+    subscriptionPlan: String(body.plan || body.subscriptionPlan || "trial"),
   });
 
   if (!result.ok) {
     return jsonSafe(
       { success: false, error: result.error },
-      { status: 400, headers: auth.headers },
+      { status: result.status, headers: auth.headers },
     );
   }
 
@@ -144,12 +126,14 @@ export async function POST(request: NextRequest) {
       existing: false,
       user: {
         email,
-        assignedSlot,
-        plan: "trial",
-        trialExpiresAt,
-        subscriptionExpiresAt: null,
+        assignedSlot: null,
+        plan: result.user.subscriptionPlan,
+        trialExpiresAt: result.user.trialExpiresAt,
+        subscriptionExpiresAt: result.user.subscriptionExpiresAt,
         seatDays: auth.reseller.seatDays,
-        remainingSeats: left - 1,
+        remainingSeats: result.remainingSeats,
+        remainingTrialSeats: result.remainingTrialSeats,
+        remainingPaidSeats: result.remainingPaidSeats,
         sid: session.ok ? session.sid : undefined,
       },
     },

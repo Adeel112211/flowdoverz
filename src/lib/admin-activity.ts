@@ -23,6 +23,7 @@ export type ActivityAction =
   | "reseller_deleted"
   | "reseller_key_rotated"
   | "reseller_seats_added"
+  | "reseller_trial_seats_added"
   | "reseller_user_created"
   | "reseller_extension_generated";
 

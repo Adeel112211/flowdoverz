@@ -1,9 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { publicMaintenanceResponse } from "@/lib/maintenance";
 import {
+  countResellerSeatUsage,
   listResellerUsers,
   publicResellerPlanOptions,
   registerClientForReseller,
+  remainingPaidSeats,
+  remainingTrialSeats,
 } from "@/lib/reseller-store";
 import { getResellerSession } from "@/lib/reseller-session";
 
@@ -19,11 +22,18 @@ export async function GET() {
     return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
   }
 
-  const users = await listResellerUsers(reseller.id);
+  const [users, usage] = await Promise.all([
+    listResellerUsers(reseller.id),
+    countResellerSeatUsage(reseller.id),
+  ]);
   return NextResponse.json({
     success: true,
     defaultSeatPlan: reseller.defaultSeatPlan,
     planOptions: publicResellerPlanOptions(reseller),
+    trialSeatsGranted: reseller.trialSeatsGranted || 0,
+    remainingTrialSeats: remainingTrialSeats(reseller, usage.trial),
+    remainingPaidSeats: remainingPaidSeats(reseller, usage.paid),
+    seatsPurchased: reseller.seatsPurchased,
     users: users.map((user) => ({
       email: user.email,
       name: user.name,

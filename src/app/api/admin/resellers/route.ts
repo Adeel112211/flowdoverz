@@ -15,7 +15,9 @@ import {
   updateReseller,
   countResellerUsers,
   addResellerSeats,
+  addResellerTrialSeats,
   registerClientForReseller,
+  countResellerSeatUsage,
   RESELLER_SLOTS,
 } from "@/lib/reseller-store";
 import { buildResellerIntegration } from "@/lib/reseller-http";
@@ -68,7 +70,7 @@ export async function GET(request: NextRequest) {
       if (!record) {
         return NextResponse.json({ success: false, error: "Reseller not found" }, { status: 404 });
       }
-      const reseller = toPublicReseller(record, await countResellerUsers(id));
+      const reseller = toPublicReseller(record, await countResellerSeatUsage(id));
       const users = await listResellerUsers(id);
       const integration = await buildResellerIntegration(reseller);
       const usage = request.nextUrl.searchParams.get("usage") === "1" ? await listResellerApiUse(id) : null;
@@ -207,6 +209,24 @@ export async function PUT(request: NextRequest) {
       return NextResponse.json({ success: true, reseller });
     }
 
+    if (body.action === "add_trial_seats") {
+      const seats = Number(body.seats);
+      const reseller = await addResellerTrialSeats(id, seats, {
+        note: body.note ? String(body.note) : "",
+      });
+      await logAdminActivity({
+        action: "reseller_trial_seats_added",
+        detail: `Added ${Number(body.seats)} free 5h trial seats for ${reseller.brandName}`,
+        targetEmail: reseller.contactEmail,
+        meta: {
+          resellerId: id,
+          seats: Number(body.seats),
+          hours: 5,
+        },
+      });
+      return NextResponse.json({ success: true, reseller });
+    }
+
     if (body.action === "create_user") {
       const current = await getReseller(id);
       if (!current) {
@@ -229,7 +249,7 @@ export async function PUT(request: NextRequest) {
       });
       return NextResponse.json({
         success: true,
-        reseller: toPublicReseller(current, await countResellerUsers(id)),
+        reseller: toPublicReseller(current, await countResellerSeatUsage(id)),
       });
     }
 
@@ -266,7 +286,7 @@ export async function PUT(request: NextRequest) {
       if (!current) {
         return NextResponse.json({ success: false, error: "Reseller not found." }, { status: 404 });
       }
-      const reseller = toPublicReseller(current, await countResellerUsers(id));
+      const reseller = toPublicReseller(current, await countResellerSeatUsage(id));
       await logAdminActivity({
         action: "reseller_extension_generated",
         detail: `Generated branded extension for ${reseller.brandName} (${result.meta.version})`,

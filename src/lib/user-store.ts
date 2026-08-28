@@ -747,6 +747,7 @@ export async function getUserStatus(email: string): Promise<{
   extensionTamperMessage: string | null;
   extensionUpdateRequired: boolean;
   extensionRequiredVersion: string | null;
+  brand: { name: string; logoUrl: string | null; resellerId: string } | null;
 } | null> {
   const db = getDb();
   if (!db) return null;
@@ -776,6 +777,21 @@ export async function getUserStatus(email: string): Promise<{
   // Sticky until cleared: extension removed, healthy official bridge, or successful sync.
   const extensionTampered = user.extensionTampered === true;
 
+  let brand: { name: string; logoUrl: string | null; resellerId: string } | null = null;
+  try {
+    const { getResellerBrandForUserEmail } = await import("./extension-reseller-lookup");
+    const resellerBrand = await getResellerBrandForUserEmail(normalized);
+    if (resellerBrand) {
+      brand = {
+        name: resellerBrand.displayName,
+        logoUrl: resellerBrand.logoUrl,
+        resellerId: resellerBrand.resellerId,
+      };
+    }
+  } catch {
+    brand = null;
+  }
+
   return {
     active: trialActive || subscriptionActive,
     trialActive,
@@ -788,6 +804,7 @@ export async function getUserStatus(email: string): Promise<{
     extensionTamperMessage: extensionTampered ? user.extensionTamperMessage || null : null,
     extensionUpdateRequired: user.extensionUpdateRequired === true,
     extensionRequiredVersion: String(user.extensionRequiredVersion || "") || null,
+    brand,
   };
 }
 

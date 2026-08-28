@@ -1,10 +1,13 @@
 import { NextResponse } from "next/server";
 import { publicMaintenanceResponse } from "@/lib/maintenance";
 import {
+  countResellerSeatUsage,
   listResellerUsers,
   listSeatGrants,
   publicResellerPlanOptions,
+  remainingPaidSeats,
   remainingSeats,
+  remainingTrialSeats,
   summarizeSeatGrants,
 } from "@/lib/reseller-store";
 import { getResellerSession, publicResellerSession } from "@/lib/reseller-session";
@@ -21,8 +24,11 @@ export async function GET() {
     return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
   }
 
-  const [users, grants] = await Promise.all([listResellerUsers(reseller.id), listSeatGrants(reseller.id)]);
-  const used = users.length;
+  const [users, grants, usage] = await Promise.all([
+    listResellerUsers(reseller.id),
+    listSeatGrants(reseller.id),
+    countResellerSeatUsage(reseller.id),
+  ]);
   const pricing = summarizeSeatGrants(grants);
   const now = Date.now();
   const clientExpiresAt = (user: { trialExpiresAt: string | null; subscriptionExpiresAt: string | null }) =>
@@ -41,8 +47,13 @@ export async function GET() {
     reseller: publicResellerSession(reseller),
     stats: {
       seatsPurchased: reseller.seatsPurchased,
-      userCount: used,
-      remainingSeats: remainingSeats(reseller, used),
+      trialSeatsGranted: reseller.trialSeatsGranted || 0,
+      userCount: usage.total,
+      trialUserCount: usage.trial,
+      paidUserCount: usage.paid,
+      remainingSeats: remainingSeats(reseller, usage),
+      remainingTrialSeats: remainingTrialSeats(reseller, usage.trial),
+      remainingPaidSeats: remainingPaidSeats(reseller, usage.paid),
       activeClients: active,
       expiredClients: expired,
       seatDays: reseller.seatDays,

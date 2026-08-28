@@ -5,7 +5,7 @@ import {
   corsHeaders,
   jsonSafe,
 } from "@/lib/reseller-http";
-import { countResellerUsers, originsForReseller, remainingSeats } from "@/lib/reseller-store";
+import { countResellerSeatUsage, originsForReseller, remainingPaidSeats, remainingSeats, remainingTrialSeats } from "@/lib/reseller-store";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -18,7 +18,7 @@ export async function GET(request: NextRequest) {
   const auth = await authenticateReseller(request);
   if (!auth.ok) return auth.response;
 
-  const userCount = await countResellerUsers(auth.reseller.id);
+  const usage = await countResellerSeatUsage(auth.reseller.id);
   const integration = await buildResellerIntegration({
     ...auth.reseller,
     allowedOrigins: originsForReseller(auth.reseller),
@@ -29,9 +29,14 @@ export async function GET(request: NextRequest) {
       success: true,
       config: {
         ...integration,
-        userCount,
+        userCount: usage.total,
+        trialUserCount: usage.trial,
+        paidUserCount: usage.paid,
         seatsPurchased: auth.reseller.seatsPurchased,
-        remainingSeats: remainingSeats(auth.reseller, userCount),
+        trialSeatsGranted: auth.reseller.trialSeatsGranted || 0,
+        remainingSeats: remainingSeats(auth.reseller, usage),
+        remainingTrialSeats: remainingTrialSeats(auth.reseller, usage.trial),
+        remainingPaidSeats: remainingPaidSeats(auth.reseller, usage.paid),
         seatDays: auth.reseller.seatDays,
       },
     },

@@ -13,6 +13,7 @@ type InstallGuideModalProps = {
   open: boolean;
   onClose: () => void;
   extensionVersion?: string | null;
+  brandName?: string;
 };
 
 function detectIsMobile() {
@@ -70,6 +71,7 @@ export function InstallGuideModal({
   open,
   onClose,
   extensionVersion,
+  brandName = "FlowDoverz",
 }: InstallGuideModalProps) {
   const [tab, setTab] = useState<"pc" | "mobile">("pc");
 
@@ -112,7 +114,7 @@ export function InstallGuideModal({
             </div>
             <div>
               <h2 id="install-guide-title" className="text-xl font-black text-white">
-                Install FlowDoverz
+                Install {brandName}
                 {extensionVersion ? (
                   <span className="ml-2 text-sm font-bold text-slate-500">v{extensionVersion}</span>
                 ) : null}

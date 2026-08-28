@@ -28,6 +28,7 @@ export function SignupPage() {
   const [selectedPlan, setSelectedPlan] = useState("trial");
   const [planDropdownOpen, setPlanDropdownOpen] = useState(false);
   const [trialLabel, setTrialLabel] = useState("14 days");
+  const [partnerBrand, setPartnerBrand] = useState<{ name: string; logoUrl: string | null } | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -42,6 +43,26 @@ export function SignupPage() {
       active = false;
     };
   }, []);
+
+  useEffect(() => {
+    if (!partnerCode) {
+      setPartnerBrand(null);
+      return;
+    }
+    let active = true;
+    fetch(`/api/partner/brand?ref=${encodeURIComponent(partnerCode)}`, { cache: "no-store" })
+      .then((res) => res.json())
+      .then((data) => {
+        if (!active || !data?.success || !data.brand?.name) return;
+        setPartnerBrand({ name: String(data.brand.name), logoUrl: data.brand.logoUrl || null });
+      })
+      .catch(() => {
+        if (active) setPartnerBrand(null);
+      });
+    return () => {
+      active = false;
+    };
+  }, [partnerCode]);
 
   useEffect(() => {
     if (resendSeconds <= 0) return;
@@ -197,13 +218,22 @@ export function SignupPage() {
       <div className="animate-fade-up relative z-10 mx-auto w-full max-w-lg py-2 sm:py-4">
         <div className="mb-4 flex flex-col items-center overflow-visible pt-2 text-center sm:mb-5 sm:pt-3">
           <Link href={marketingPath("/")} className="inline-flex overflow-visible">
-            <BrandLogo size="xl" stacked showTagline={false} />
+            <BrandLogo
+              size="xl"
+              stacked
+              showTagline={false}
+              name={partnerBrand?.name}
+              logoSrc={partnerBrand?.logoUrl}
+              tagline=""
+            />
           </Link>
           <h1 className="mt-3 text-3xl font-black tracking-tight text-transparent bg-clip-text bg-gradient-to-br from-white via-white to-slate-400 sm:mt-4 md:text-4xl">
             Create workspace
           </h1>
           <p className="mt-1 text-sm text-slate-400 mx-auto sm:mt-2 sm:text-base">
-            Start your free trial today — no credit card required.
+            {partnerBrand
+              ? `Start your 5-hour ${partnerBrand.name} trial — no credit card required.`
+              : "Start your free trial today — no credit card required."}
           </p>
         </div>
 
@@ -306,7 +336,7 @@ export function SignupPage() {
 
             {partnerCode ? (
               <div className="rounded-2xl border border-cyan-500/30 bg-cyan-500/10 px-5 py-3.5 text-sm text-cyan-100">
-                You are joining FlowDoverz through a partner. You get 30 days of access starting today. Unused partner seats stay until someone signs up.
+                You are joining through {partnerBrand?.name || "a partner"}. You get a 5-hour trial starting today.
               </div>
             ) : (
             <div>

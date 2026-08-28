@@ -5,7 +5,13 @@ type BrandLogoProps = {
   showTagline?: boolean;
   stacked?: boolean;
   className?: string;
-  /** @deprecated Always uses /logo.png */
+  /** Override site name (reseller brand). Defaults to FlowDoverz. */
+  name?: string;
+  /** Override logo image URL. Defaults to /logo.png. */
+  logoSrc?: string | null;
+  /** Override or hide tagline. Pass empty string to hide. */
+  tagline?: string | null;
+  /** @deprecated Always uses /logo.png unless logoSrc is set */
   variant?: "svg" | "png";
 };
 
@@ -17,8 +23,10 @@ const sizes = {
   hero: { icon: 112, text: "text-5xl", gap: "gap-5", tagline: "text-xs" },
 } as const;
 
-/** Site-wide brand mark — always `public/logo.png`. */
+/** Site-wide brand mark — always `public/logo.png` unless overridden. */
 export const BRAND_LOGO_SRC = "/logo.png";
+export const BRAND_NAME = "FlowDoverz";
+export const BRAND_TAGLINE = "Google Flow Workspace";
 
 export function BrandLogo({
   size = "md",
@@ -27,11 +35,20 @@ export function BrandLogo({
   showTagline,
   stacked = false,
   className = "",
+  name,
+  logoSrc,
+  tagline,
 }: BrandLogoProps) {
-  const { icon, text, gap, tagline } = sizes[size];
+  const { icon, text, gap, tagline: taglineSize } = sizes[size];
+  const brandName = String(name || "").trim() || BRAND_NAME;
+  const imageSrc = String(logoSrc || "").trim() || BRAND_LOGO_SRC;
+  const resolvedTagline =
+    tagline === "" || tagline === null
+      ? ""
+      : String(tagline || "").trim() || (brandName === BRAND_NAME ? BRAND_TAGLINE : "");
   const taglineVisible =
-    showTagline ??
-    (stacked && (size === "lg" || size === "xl" || size === "hero"));
+    Boolean(resolvedTagline) &&
+    (showTagline ?? (stacked && (size === "lg" || size === "xl" || size === "hero")));
 
   return (
     <div
@@ -40,8 +57,8 @@ export function BrandLogo({
       {showIcon ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img
-          src={BRAND_LOGO_SRC}
-          alt="FlowDoverz"
+          src={imageSrc}
+          alt={brandName}
           width={icon}
           height={icon}
           className={`shrink-0 object-contain drop-shadow-[0_0_20px_rgba(34,211,238,0.22)] ${stacked ? "ml-0" : ""}`}
@@ -52,13 +69,13 @@ export function BrandLogo({
           <span
             className={`${text} block font-black tracking-tight bg-gradient-to-r from-white via-cyan-100 to-emerald-300 bg-clip-text text-transparent`}
           >
-            FlowDoverz
+            {brandName}
           </span>
           {taglineVisible && (
             <span
-              className={`${tagline} mt-2 block font-semibold uppercase tracking-[0.24em] text-cyan-400/75`}
+              className={`${taglineSize} mt-2 block font-semibold uppercase tracking-[0.24em] text-cyan-400/75`}
             >
-              Google Flow Workspace
+              {resolvedTagline}
             </span>
           )}
         </div>

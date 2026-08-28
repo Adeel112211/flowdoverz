@@ -116,17 +116,16 @@ export async function getResellerExtensionIntegrityByHash(
 }
 
 export async function getWhiteLabelResellerIdForUser(email: string): Promise<string | null> {
-  const user = await getUserRecord(email);
-  const resellerId = String(user?.resellerId || "").trim();
-  if (!resellerId) return null;
-  const reseller = await getReseller(resellerId);
-  if (!reseller || reseller.kind !== "white_label") return null;
-  return resellerId;
+  // Any reseller client with a built branded pack (official or white_label).
+  return getResellerIdWithBrandedPackForUser(email);
 }
 
-export async function getBrandedExtensionIdentityForUserEmail(email: string): Promise<{
+export async function getResellerBrandForUserEmail(email: string): Promise<{
+  resellerId: string;
   displayName: string;
   supportEmail: string;
+  logoUrl: string | null;
+  hasPack: boolean;
   primaryColor?: string;
   accentColor?: string;
   backgroundColor?: string;
@@ -137,18 +136,60 @@ export async function getBrandedExtensionIdentityForUserEmail(email: string): Pr
   const resellerId = String(user?.resellerId || "").trim();
   if (!resellerId) return null;
   const reseller = await getReseller(resellerId);
-  if (!reseller || reseller.kind !== "white_label") return null;
+  if (!reseller) return null;
   const branded = reseller.brandedExtension;
   const displayName = String(branded?.displayName || reseller.brandName || "").trim();
   if (!displayName) return null;
+  const pack = await getResellerExtensionPackMeta(resellerId);
   return {
+    resellerId,
     displayName,
-    supportEmail: String(branded?.supportEmail || "").trim().toLowerCase(),
-    primaryColor: String(branded?.primaryColor || "").trim(),
-    accentColor: String(branded?.accentColor || "").trim(),
-    backgroundColor: String(branded?.backgroundColor || "").trim(),
-    labelColor: String(branded?.labelColor || "").trim(),
-    onPrimaryColor: String(branded?.onPrimaryColor || "").trim(),
+    supportEmail: String(branded?.supportEmail || reseller.contactEmail || "").trim().toLowerCase(),
+    logoUrl: branded?.hasLogo || pack?.hasLogo ? resellerBrandLogoPath(resellerId) : null,
+    hasPack: Boolean(pack),
+    primaryColor: String(branded?.primaryColor || "").trim() || undefined,
+    accentColor: String(branded?.accentColor || "").trim() || undefined,
+    backgroundColor: String(branded?.backgroundColor || "").trim() || undefined,
+    labelColor: String(branded?.labelColor || "").trim() || undefined,
+    onPrimaryColor: String(branded?.onPrimaryColor || "").trim() || undefined,
+  };
+}
+
+export async function getResellerIdWithBrandedPackForUser(email: string): Promise<string | null> {
+  const brand = await getResellerBrandForUserEmail(email);
+  if (!brand?.hasPack) return null;
+  return brand.resellerId;
+}
+
+export function resellerBrandLogoPath(resellerId: string) {
+  return `/api/reseller/brand-logo?id=${encodeURIComponent(resellerId)}`;
+}
+
+export function resellerBrandLogoUrl(resellerId: string) {
+  return `${getPublicAppUrl()}${resellerBrandLogoPath(resellerId)}`;
+}
+
+export async function getBrandedExtensionIdentityForUserEmail(email: string): Promise<{
+  displayName: string;
+  supportEmail: string;
+  logoUrl?: string;
+  primaryColor?: string;
+  accentColor?: string;
+  backgroundColor?: string;
+  labelColor?: string;
+  onPrimaryColor?: string;
+} | null> {
+  const brand = await getResellerBrandForUserEmail(email);
+  if (!brand) return null;
+  return {
+    displayName: brand.displayName,
+    supportEmail: brand.supportEmail,
+    logoUrl: brand.logoUrl ? resellerBrandLogoUrl(brand.resellerId) : undefined,
+    primaryColor: brand.primaryColor,
+    accentColor: brand.accentColor,
+    backgroundColor: brand.backgroundColor,
+    labelColor: brand.labelColor,
+    onPrimaryColor: brand.onPrimaryColor,
   };
 }
 

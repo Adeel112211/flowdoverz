@@ -1151,8 +1151,8 @@ export async function generateResellerExtensionPack(
 }> {
   const reseller = await getReseller(resellerId);
   if (!reseller) throw new Error("Reseller not found.");
-  if (reseller.kind !== "white_label") {
-    throw new Error("Branded extensions are only for white-label resellers. Official partners use the FlowDoverz ZIP.");
+  if (reseller.kind !== "white_label" && reseller.kind !== "official") {
+    throw new Error("Reseller not found.");
   }
 
   const saved = await savedBrandingFor(reseller.id);
@@ -1162,16 +1162,19 @@ export async function generateResellerExtensionPack(
   ).trim();
   if (displayName.length < 2) throw new Error("Enter the name that should appear on the extension.");
   const supportEmail = String(
-    pickInputString(inputRec, ["supportEmail"]) || saved?.supportEmail || "",
+    pickInputString(inputRec, ["supportEmail"]) || saved?.supportEmail || reseller.contactEmail || "",
   ).trim().toLowerCase();
   if (supportEmail && !supportEmail.includes("@")) throw new Error("Enter a valid support email.");
+  const appBase = getPublicAppUrl().replace(/\/$/, "");
+  const defaultLoginUrl = `${appBase}/login`;
+  const defaultDashboardUrl = `${appBase}/dashboard`;
   const loginUrl = normalizePublicUrl(
     pickInputString(inputRec, ["loginUrl", "clientLoginUrl", "signinUrl", "signInUrl"]) ||
       saved?.loginUrl ||
       pickInputString(inputRec, ["dashboardUrl", "dashboardLink"]) ||
       saved?.dashboardUrl ||
       reseller.websiteUrl ||
-      "",
+      (reseller.kind === "official" ? defaultLoginUrl : ""),
   );
   if (!loginUrl) {
     throw new Error("Enter the client sign-in page. Example: https://their-site.vercel.app/painel");
@@ -1181,7 +1184,9 @@ export async function generateResellerExtensionPack(
     normalizePublicUrl(dashboardFromInput) ||
     (input && ("dashboardUrl" in inputRec || "dashboardLink" in inputRec)
       ? loginUrl
-      : normalizePublicUrl(String(saved?.dashboardUrl || "")) || loginUrl);
+      : normalizePublicUrl(String(saved?.dashboardUrl || "")) ||
+        (reseller.kind === "official" ? defaultDashboardUrl : "") ||
+        loginUrl);
 
   const keepLogo = input?.keepLogo !== false && inputRec.keepLogo !== "false";
   const primaryColor = normalizeHexColor(

@@ -88,6 +88,7 @@ export function publicResellerSession(record: ResellerRecord) {
     status: record.status,
     kind: record.kind,
     seatsPurchased: record.seatsPurchased,
+    trialSeatsGranted: record.trialSeatsGranted || 0,
     seatDays: record.seatDays,
     pricePerSeatPkr: record.pricePerSeatPkr,
     allowedSeatPlans: record.allowedSeatPlans,

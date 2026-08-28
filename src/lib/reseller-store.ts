@@ -41,9 +41,11 @@ export type ResellerRecord = {
   panelSlug: string;
   assignedSlots: ResellerSlot[];
   maxUsers: number;
-  /** Paid registration seats. Each new user uses one seat and gets a 30-day timer. */
+  /** Paid registration seats. Each new paid user uses one seat. */
   seatsPurchased: number;
-  /** Length of each user's access after they register. */
+  /** Free 5-hour trial seats granted by admin (separate from paid seats). */
+  trialSeatsGranted: number;
+  /** Length of each paid user's access after they register. */
   seatDays: number;
   /** Wholesale price per paid seat in PKR. Shown to admin and reseller dashboard. */
   pricePerSeatPkr: number;
@@ -73,7 +75,11 @@ export type PublicReseller = Omit<
   "apiKeyHash" | "passwordHash" | "passwordSalt"
 > & {
   userCount: number;
+  trialUserCount: number;
+  paidUserCount: number;
   remainingSeats: number;
+  remainingTrialSeats: number;
+  remainingPaidSeats: number;
   signupUrl: string;
   panelUrl: string;
   hasPanelPassword: boolean;
@@ -335,6 +341,7 @@ function asRecord(id: string, data: Record<string, unknown>): ResellerRecord {
     panelSlug: String(data.panelSlug || "").trim().toLowerCase(),
     assignedSlots: normalizeSlotList(data.assignedSlots),
     seatsPurchased: Math.max(0, Math.floor(Number(data.seatsPurchased ?? data.maxUsers) || 0)),
+    trialSeatsGranted: Math.max(0, Math.floor(Number(data.trialSeatsGranted) || 0)),
     seatDays: Math.max(1, Math.floor(Number(data.seatDays) || DEFAULT_SEAT_DAYS)),
     pricePerSeatPkr: normalizePricePerSeatPkr(data.pricePerSeatPkr),
     allowedSeatPlans,
@@ -356,8 +363,35 @@ function asRecord(id: string, data: Record<string, unknown>): ResellerRecord {
   };
 }
 
-export function remainingSeats(record: Pick<ResellerRecord, "seatsPurchased">, userCount = 0) {
-  return Math.max(0, record.seatsPurchased - userCount);
+export type ResellerSeatUsage = {
+  total: number;
+  trial: number;
+  paid: number;
+};
+
+function isResellerPaidPlan(plan?: string | null) {
+  const value = String(plan || "").toLowerCase();
+  return value === "solo" || value === "studio" || value === "team" || value === "nano" || value === "ultra";
+}
+
+export function remainingPaidSeats(record: Pick<ResellerRecord, "seatsPurchased">, paidCount = 0) {
+  return Math.max(0, record.seatsPurchased - paidCount);
+}
+
+export function remainingTrialSeats(record: Pick<ResellerRecord, "trialSeatsGranted">, trialCount = 0) {
+  return Math.max(0, (record.trialSeatsGranted || 0) - trialCount);
+}
+
+/** Total seats left (paid + free trial pools). */
+export function remainingSeats(
+  record: Pick<ResellerRecord, "seatsPurchased" | "trialSeatsGranted">,
+  usage: number | ResellerSeatUsage = 0,
+) {
+  if (typeof usage === "number") {
+    const capacity = record.seatsPurchased + (record.trialSeatsGranted || 0);
+    return Math.max(0, capacity - usage);
+  }
+  return remainingPaidSeats(record, usage.paid) + remainingTrialSeats(record, usage.trial);
 }
 
 export async function resolveOfficialSignup(code: string): Promise<
@@ -375,10 +409,10 @@ export async function resolveOfficialSignup(code: string): Promise<
   if (!slot) {
     return { ok: false, error: "This partner has no cookie slots assigned yet." };
   }
-  const used = await countResellerUsers(reseller.id);
-  const remaining = remainingSeats(reseller, used);
+  const usage = await countResellerSeatUsage(reseller.id);
+  const remaining = remainingTrialSeats(reseller, usage.trial);
   if (remaining <= 0) {
-    return { ok: false, error: "No paid seats left for this partner. Ask them to buy more users." };
+    return { ok: false, error: "No free trial seats left for this partner. Ask the owner to add trial seats." };
   }
   return { ok: true, reseller, slot, remaining };
 }
@@ -407,19 +441,29 @@ export function signupUrlForReseller(record: Pick<ResellerRecord, "kind" | "sign
   return `${getPublicAppUrl()}/signup?ref=${encodeURIComponent(record.signupCode)}`;
 }
 
-export function toPublicReseller(record: ResellerRecord, userCount = 0): PublicReseller {
+export function toPublicReseller(record: ResellerRecord, usage: number | ResellerSeatUsage = 0): PublicReseller {
   const { apiKeyHash: _hash, passwordHash: _passwordHash, passwordSalt: _passwordSalt, ...rest } = record;
   void _hash;
   void _passwordHash;
   void _passwordSalt;
+  const seatUsage: ResellerSeatUsage =
+    typeof usage === "number"
+      ? { total: usage, trial: 0, paid: usage }
+      : usage;
   const purchased = record.seatsPurchased;
+  const trialSeatsGranted = record.trialSeatsGranted || 0;
   const panelUrl = panelUrlForReseller(record);
   return {
     ...rest,
+    trialSeatsGranted,
     maxUsers: purchased,
     seatsPurchased: purchased,
-    userCount,
-    remainingSeats: remainingSeats(record, userCount),
+    userCount: seatUsage.total,
+    trialUserCount: seatUsage.trial,
+    paidUserCount: seatUsage.paid,
+    remainingSeats: remainingSeats(record, seatUsage),
+    remainingTrialSeats: remainingTrialSeats(record, seatUsage.trial),
+    remainingPaidSeats: remainingPaidSeats(record, seatUsage.paid),
     panelUrl,
     signupUrl: panelUrl,
     hasPanelPassword: Boolean(record.passwordHash && record.passwordSalt),
@@ -464,10 +508,19 @@ function validateInput(input: ResellerInput, creating: boolean) {
 }
 
 export async function countResellerUsers(resellerId: string) {
-  const db = getDb();
-  if (!db) return 0;
-  const snap = await db.collection("users").where("resellerId", "==", resellerId).get();
-  return snap.size;
+  const usage = await countResellerSeatUsage(resellerId);
+  return usage.total;
+}
+
+export async function countResellerSeatUsage(resellerId: string): Promise<ResellerSeatUsage> {
+  const users = await listResellerUsers(resellerId, 500);
+  let trial = 0;
+  let paid = 0;
+  for (const user of users) {
+    if (isResellerPaidPlan(user.subscriptionPlan)) paid += 1;
+    else trial += 1;
+  }
+  return { total: users.length, trial, paid };
 }
 
 export async function listResellerUsers(resellerId: string, limit = 200): Promise<ResellerUserRow[]> {
@@ -531,7 +584,7 @@ export async function listResellers(): Promise<PublicReseller[]> {
   return Promise.all(
     rows.map(async (row) => {
       const ready = await ensurePanelSlug(row);
-      return toPublicReseller(ready, await countResellerUsers(ready.id));
+      return toPublicReseller(ready, await countResellerSeatUsage(ready.id));
     }),
   );
 }
@@ -606,7 +659,7 @@ export async function setResellerPanelPassword(id: string, password: string) {
   );
   return toPublicReseller(
     { ...current, ...secret, sessionVersion, updatedAt },
-    await countResellerUsers(id),
+    await countResellerSeatUsage(id),
   );
 }
 
@@ -698,12 +751,15 @@ export async function registerClientForReseller(
       user: {
         email: string;
         name: string;
-        subscriptionPlan: "trial";
-        trialExpiresAt: string;
-        subscriptionExpiresAt: null;
+        subscriptionPlan: string;
+        trialExpiresAt: string | null;
+        subscriptionExpiresAt: string | null;
       };
       remainingSeats: number;
+      remainingTrialSeats: number;
+      remainingPaidSeats: number;
       seatsPurchased: number;
+      trialSeatsGranted: number;
     }
   | { ok: false; error: string; status: number }
 > {
@@ -721,23 +777,71 @@ export async function registerClientForReseller(
   if (!slot) {
     return { ok: false, error: "No cookie slots assigned yet. Ask the owner to assign a slot.", status: 400 };
   }
-  const used = await countResellerUsers(reseller.id);
-  const left = remainingSeats(reseller, used);
-  if (left <= 0) {
-    return { ok: false, error: "No paid seats left. Send another payment so more seats can be added.", status: 403 };
-  }
 
-  // Seat plan input is ignored — reseller registrations always start as a 5h trial.
-  void input.subscriptionPlan;
+  const usage = await countResellerSeatUsage(reseller.id);
+  const trialLeft = remainingTrialSeats(reseller, usage.trial);
+  const paidLeft = remainingPaidSeats(reseller, usage.paid);
+  const requested = String(input.subscriptionPlan || "").trim().toLowerCase();
+  const wantTrial = !requested || requested === "trial" || requested === "none";
 
   const { createUserByAdmin } = await import("./user-store");
-  const trialExpiresAt = resellerClientTrialExpiryFromNow();
+
+  if (wantTrial) {
+    if (trialLeft <= 0) {
+      return {
+        ok: false,
+        error: "No free trial seats left. Ask the owner to add 5-hour trial seats.",
+        status: 403,
+      };
+    }
+    const trialExpiresAt = resellerClientTrialExpiryFromNow();
+    const created = await createUserByAdmin({
+      email: input.email,
+      name: input.name,
+      password: input.password,
+      subscriptionPlan: "trial",
+      trialExpiresAt,
+      resellerId: reseller.id,
+      assignedSlot: slot,
+    });
+    if (!created.ok) {
+      return { ok: false, error: created.error, status: 400 };
+    }
+    void touchResellerUsage(reseller.id);
+    return {
+      ok: true,
+      user: {
+        email: String(input.email || "").trim().toLowerCase(),
+        name: String(input.name || "").trim(),
+        subscriptionPlan: "trial",
+        trialExpiresAt,
+        subscriptionExpiresAt: null,
+      },
+      remainingSeats: trialLeft + paidLeft - 1,
+      remainingTrialSeats: trialLeft - 1,
+      remainingPaidSeats: paidLeft,
+      seatsPurchased: reseller.seatsPurchased,
+      trialSeatsGranted: reseller.trialSeatsGranted || 0,
+    };
+  }
+
+  if (paidLeft <= 0) {
+    return {
+      ok: false,
+      error: "No paid seats left. Send another payment so more seats can be added.",
+      status: 403,
+    };
+  }
+
+  const subscriptionPlan = normalizeSeatPlan(requested || reseller.defaultSeatPlan, reseller.allowedSeatPlans);
+  const expiry = subscriptionExpiryFromNow(reseller.seatDays);
   const created = await createUserByAdmin({
     email: input.email,
     name: input.name,
     password: input.password,
-    subscriptionPlan: "trial",
-    trialExpiresAt,
+    subscriptionPlan,
+    trialExpiresAt: new Date().toISOString(),
+    subscriptionExpiresAt: expiry,
     resellerId: reseller.id,
     assignedSlot: slot,
   });
@@ -751,12 +855,15 @@ export async function registerClientForReseller(
     user: {
       email: String(input.email || "").trim().toLowerCase(),
       name: String(input.name || "").trim(),
-      subscriptionPlan: "trial",
-      trialExpiresAt,
-      subscriptionExpiresAt: null,
+      subscriptionPlan,
+      trialExpiresAt: null,
+      subscriptionExpiresAt: expiry,
     },
-    remainingSeats: left - 1,
+    remainingSeats: trialLeft + paidLeft - 1,
+    remainingTrialSeats: trialLeft,
+    remainingPaidSeats: paidLeft - 1,
     seatsPurchased: reseller.seatsPurchased,
+    trialSeatsGranted: reseller.trialSeatsGranted || 0,
   };
 }
 
@@ -1017,6 +1124,7 @@ export async function createReseller(input: ResellerInput): Promise<{
       0,
       Math.floor(Number(input.seatsPurchased ?? input.maxUsers) || 0),
     ),
+    trialSeatsGranted: 0,
     seatDays: Math.max(1, Math.floor(Number(input.seatDays) || DEFAULT_SEAT_DAYS)),
     pricePerSeatPkr: normalizePricePerSeatPkr(input.pricePerSeatPkr),
     allowedSeatPlans: normalizeAllowedSeatPlans(input.allowedSeatPlans),
@@ -1107,6 +1215,7 @@ export async function updateReseller(id: string, input: ResellerInput): Promise<
     assignedSlots:
       input.assignedSlots !== undefined ? normalizeSlotList(input.assignedSlots) : current.assignedSlots,
     seatsPurchased: current.seatsPurchased,
+    trialSeatsGranted: current.trialSeatsGranted || 0,
     seatDays:
       input.seatDays !== undefined
         ? Math.max(1, Math.floor(Number(input.seatDays) || DEFAULT_SEAT_DAYS))
@@ -1149,7 +1258,7 @@ export async function updateReseller(id: string, input: ResellerInput): Promise<
   await db.collection(COLLECTION).doc(id).set(sanitizeForFirestore(next), { merge: true });
   const { touchLive } = await import("./live-tick");
   void touchLive({ topic: "reseller", action: "updated", id });
-  return toPublicReseller(next, await countResellerUsers(id));
+  return toPublicReseller(next, await countResellerSeatUsage(id));
 }
 
 export async function rotateResellerKey(id: string): Promise<{
@@ -1176,7 +1285,7 @@ export async function rotateResellerKey(id: string): Promise<{
   return {
     reseller: toPublicReseller(
       { ...current, apiKeyPrefix: generated.prefix, updatedAt: now },
-      await countResellerUsers(id),
+      await countResellerSeatUsage(id),
     ),
     apiKey: generated.key,
   };
@@ -1272,6 +1381,43 @@ export async function addResellerSeats(
   void touchLive({ topic: "reseller", action: "updated", id });
   return toPublicReseller(
     { ...current, seatsPurchased, maxUsers: seatsPurchased, updatedAt: now },
-    await countResellerUsers(id),
+    await countResellerSeatUsage(id),
+  );
+}
+
+export async function addResellerTrialSeats(
+  id: string,
+  seats: number,
+  meta?: { note?: string },
+): Promise<PublicReseller> {
+  const count = Math.floor(Number(seats));
+  if (!Number.isFinite(count) || count < 1) {
+    throw new Error("Enter how many free 5-hour trial seats to grant.");
+  }
+  const current = await getReseller(id);
+  if (!current) throw new Error("Reseller not found.");
+  const now = new Date().toISOString();
+  const trialSeatsGranted = (current.trialSeatsGranted || 0) + count;
+  const db = requireDb();
+  await db.collection(COLLECTION).doc(id).set(
+    {
+      trialSeatsGranted,
+      updatedAt: now,
+    },
+    { merge: true },
+  );
+  await db.collection(COLLECTION).doc(id).collection("trial_seat_grants").add(
+    sanitizeForFirestore({
+      seats: count,
+      note: String(meta?.note || "").trim(),
+      hours: 5,
+      createdAt: now,
+    }),
+  );
+  const { touchLive } = await import("./live-tick");
+  void touchLive({ topic: "reseller", action: "updated", id });
+  return toPublicReseller(
+    { ...current, trialSeatsGranted, updatedAt: now },
+    await countResellerSeatUsage(id),
   );
 }
