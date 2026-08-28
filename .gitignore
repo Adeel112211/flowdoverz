@@ -46,4 +46,10 @@ next-env.d.ts
 # Local Chrome extension folders (not shipped with the website)
 /extension/
 /extension 2/
+/extension 3/
 /Jin Tools Official Extension/
+
+# Local migration / pack artifacts
+migration-output.log
+FlowDoverz.zip
+*.zip
