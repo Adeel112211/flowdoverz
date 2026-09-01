@@ -23,6 +23,11 @@ export type StoredUser = {
   signupIpHash?: string | null;
   resellerId?: string;
   assignedSlot?: string;
+  /** E.164 phone, e.g. +923001234567 */
+  phone?: string;
+  phoneCountryIso?: string;
+  phoneCountryCode?: string;
+  phoneNational?: string;
 };
 
 export function normalizeEmail(email: string) {
@@ -367,6 +372,7 @@ export async function registerClientUser(
   verificationCode: string,
   signupIp?: string,
   partnerCode?: string,
+  phoneInput?: { countryIso?: string; nationalNumber?: string },
 ): Promise<
   | { ok: true; user: { email: string; name: string; sid: string }; trialGranted: boolean }
   | { ok: false; error: string }
@@ -377,6 +383,7 @@ export async function registerClientUser(
   }
 
   const { consumeSignupVerification } = await import("./signup-verification-code");
+  const { normalizePhoneInput } = await import("./phone");
   const normalized = normalizeEmail(email);
   const trimmedName = name.trim();
   const security = await getSignupSecuritySettings();
@@ -386,6 +393,14 @@ export async function registerClientUser(
   });
   if (!emailCheck.ok) {
     return { ok: false, error: emailCheck.error };
+  }
+
+  const phoneCheck = normalizePhoneInput(
+    String(phoneInput?.countryIso || ""),
+    String(phoneInput?.nationalNumber || ""),
+  );
+  if (!phoneCheck.ok) {
+    return { ok: false, error: phoneCheck.error };
   }
 
   const { hashSignupIp, isSignupIpAvailable, recordSignupIpUsage, SIGNUP_IP_REJECTED } = await import(
@@ -465,6 +480,10 @@ export async function registerClientUser(
     subscriptionPlan,
     subscriptionExpiresAt,
     emailVerified: true,
+    phone: phoneCheck.phone.e164,
+    phoneCountryIso: phoneCheck.phone.countryIso,
+    phoneCountryCode: phoneCheck.phone.countryCode,
+    phoneNational: phoneCheck.phone.nationalNumber,
     signupIpHash: signupIp ? hashSignupIp(signupIp) : null,
     ...(resellerId ? { resellerId } : {}),
     ...(assignedSlot ? { assignedSlot } : {}),

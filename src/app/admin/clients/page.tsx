@@ -38,9 +38,13 @@ import { AdminPageLayout } from "@/components/admin-page-layout";
 import { ClientMobileCard } from "@/components/admin-mobile-cards";
 import { useAdminLiveRefresh } from "@/hooks/use-admin-live-refresh";
 import { CLIENT_PAGE_SIZE } from "@/lib/admin-client-constants";
+import { formatPhoneDisplay } from "@/lib/phone";
 type Client = {
   email: string;
   name?: string;
+  phone?: string;
+  phoneCountryCode?: string;
+  phoneNational?: string;
   subscriptionPlan?: string;
   trialExpiresAt?: string;
   subscriptionExpiresAt?: string;
@@ -643,6 +647,16 @@ export default function ClientsPage() {
         >
           {client.email}
         </Link>
+      ),
+    },
+    {
+      key: "phone",
+      header: "Phone",
+      mobileLabel: "Phone",
+      render: (client) => (
+        <span className="font-mono text-sm text-slate-300">
+          {formatPhoneDisplay(client) || "—"}
+        </span>
       ),
     },
     {

@@ -6,6 +6,7 @@ import {
   Link2,
   CirclePlus,
   Copy,
+  Timer,
   Eye,
   EyeOff,
   KeyRound,
@@ -66,6 +67,11 @@ type Reseller = {
   seatsPurchased: number;
   remainingSeats: number;
   remainingPaidSeats?: number;
+  remainingTrialSeats?: number;
+  trialSeatsGranted?: number;
+  trialSeatsEnabled?: boolean;
+  trialSeatHours?: number;
+  trialUserCount?: number;
   paidUserCount?: number;
   seatDays: number;
   pricePerSeatPkr: number;
@@ -128,6 +134,10 @@ type FormState = {
   kind: "white_label" | "official";
   assignedSlots: string[];
   maxUsers: string;
+  seatDays: string;
+  trialSeatsEnabled: boolean;
+  trialSeatHours: string;
+  trialSeatsInitial: string;
   pricePerSeatPkr: string;
   allowSolo: boolean;
   allowTeam: boolean;
@@ -149,6 +159,10 @@ const EMPTY_FORM: FormState = {
   kind: "white_label",
   assignedSlots: [],
   maxUsers: "0",
+  seatDays: "30",
+  trialSeatsEnabled: false,
+  trialSeatHours: "5",
+  trialSeatsInitial: "0",
   pricePerSeatPkr: "0",
   allowSolo: true,
   allowTeam: true,
@@ -171,6 +185,10 @@ function formFromReseller(row: Reseller): FormState {
     kind: row.kind === "official" ? "official" : "white_label",
     assignedSlots: [...(row.assignedSlots || [])],
     maxUsers: String(row.seatsPurchased || row.maxUsers || 0),
+    seatDays: String(row.seatDays || 30),
+    trialSeatsEnabled: Boolean(row.trialSeatsEnabled),
+    trialSeatHours: String(row.trialSeatHours || 5),
+    trialSeatsInitial: String(row.trialSeatsGranted || 0),
     pricePerSeatPkr: String(row.pricePerSeatPkr || 0),
     allowSolo: (row.allowedSeatPlans || ["solo", "team"]).includes("solo"),
     allowTeam: (row.allowedSeatPlans || ["solo", "team"]).includes("team"),
@@ -183,7 +201,7 @@ function formFromReseller(row: Reseller): FormState {
   };
 }
 
-function payloadFromForm(form: FormState) {
+function payloadFromForm(form: FormState, isEdit = false) {
   const allowedSeatPlans: ("solo" | "team")[] = [
     ...(form.allowSolo ? (["solo"] as const) : []),
     ...(form.allowTeam ? (["team"] as const) : []),
@@ -203,6 +221,10 @@ function payloadFromForm(form: FormState) {
     assignedSlots: form.assignedSlots,
     seatsPurchased: Number(form.maxUsers) || 0,
     maxUsers: Number(form.maxUsers) || 0,
+    seatDays: Number(form.seatDays) || 30,
+    trialSeatsEnabled: form.trialSeatsEnabled,
+    trialSeatHours: Number(form.trialSeatHours) || 5,
+    ...(isEdit ? {} : { trialSeatsGranted: Number(form.trialSeatsInitial) || 0 }),
     pricePerSeatPkr: Number(form.pricePerSeatPkr) || 0,
     allowedSeatPlans: plans,
     defaultSeatPlan,
@@ -360,12 +382,24 @@ export default function AdminResellersPage() {
   const [seatNote, setSeatNote] = useState("");
   const [seatPayment, setSeatPayment] = useState("");
   const [addingSeats, setAddingSeats] = useState(false);
+  const [trialSeatsTarget, setTrialSeatsTarget] = useState<Reseller | null>(null);
+  const [trialSeatCount, setTrialSeatCount] = useState("5");
+  const [trialSeatNote, setTrialSeatNote] = useState("");
+  const [trialSeatHoursInput, setTrialSeatHoursInput] = useState("5");
+  const [addingTrialSeats, setAddingTrialSeats] = useState(false);
 
   const openAddSeats = (row: Reseller, seats = "10") => {
     setSeatCount(seats);
     setSeatNote("");
     setSeatPayment(seatPaymentPreview(Number(seats), row.pricePerSeatPkr || 0));
     setSeatsTarget(row);
+  };
+
+  const openAddTrialSeats = (row: Reseller, seats = "5") => {
+    setTrialSeatCount(seats);
+    setTrialSeatNote("");
+    setTrialSeatHoursInput(String(row.trialSeatHours || 5));
+    setTrialSeatsTarget(row);
   };
 
   useEffect(() => {
@@ -483,7 +517,9 @@ export default function AdminResellersPage() {
         method: editing ? "PUT" : "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "same-origin",
-        body: JSON.stringify(editing ? { id: editing.id, ...payloadFromForm(form) } : payloadFromForm(form)),
+        body: JSON.stringify(
+          editing ? { id: editing.id, ...payloadFromForm(form, true) } : payloadFromForm(form),
+        ),
       });
       const data = await res.json();
       if (!data.success) {
@@ -794,6 +830,41 @@ export default function AdminResellersPage() {
     }
   };
 
+  const addTrialSeats = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!trialSeatsTarget) return;
+    setAddingTrialSeats(true);
+    try {
+      const res = await fetch("/api/admin/resellers", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        credentials: "same-origin",
+        body: JSON.stringify({
+          id: trialSeatsTarget.id,
+          action: "add_trial_seats",
+          seats: Number(trialSeatCount),
+          note: trialSeatNote,
+          hours: Number(trialSeatHoursInput),
+        }),
+      });
+      const data = await res.json();
+      if (!data.success) {
+        toast(data.error || "Could not add trial seats", "error");
+        return;
+      }
+      toast(`Added ${Number(trialSeatCount)} trial seats for ${trialSeatsTarget.brandName}`);
+      setTrialSeatsTarget(null);
+      setTrialSeatCount("5");
+      setTrialSeatNote("");
+      setTrialSeatHoursInput("5");
+      await load(true);
+    } catch {
+      toast("Could not add trial seats", "error");
+    } finally {
+      setAddingTrialSeats(false);
+    }
+  };
+
   const copyText = async (value: string, label: string) => {
     try {
       await navigator.clipboard.writeText(value);
@@ -829,6 +900,7 @@ export default function AdminResellersPage() {
         <ActionIconButton label="Where this API key was used" icon={Globe} onClick={() => void openUsage(row)} bgClass="bg-sky-500/10" colorClass="text-sky-300" />
       )}
       <ActionIconButton label="Add paid seats" icon={CirclePlus} onClick={() => openAddSeats(row)} bgClass="bg-emerald-500/10" colorClass="text-emerald-300" />
+      <ActionIconButton label="Add trial seats" icon={Timer} onClick={() => openAddTrialSeats(row)} bgClass="bg-cyan-500/10" colorClass="text-cyan-300" />
       {row.kind === "official" ? null : (
         <ActionIconButton label="Rotate API key" icon={KeyRound} onClick={() => void rotateKey(row)} bgClass="bg-amber-500/10" colorClass="text-amber-400" />
       )}
@@ -898,11 +970,17 @@ export default function AdminResellersPage() {
       render: (row) => (
         <div className="text-sm">
           <p className="tabular-nums text-slate-200">
-            {row.paidUserCount ?? row.userCount} / {row.seatsPurchased || row.maxUsers || 0} used
-          </p>
-          <p className={`text-xs ${(row.remainingPaidSeats ?? row.remainingSeats ?? 0) > 0 ? "text-emerald-400" : "text-amber-400"}`}>
+            Paid: {row.paidUserCount ?? row.userCount} / {row.seatsPurchased || row.maxUsers || 0} ·{" "}
             {row.remainingPaidSeats ?? row.remainingSeats ?? 0} left
           </p>
+          {row.trialSeatsEnabled ? (
+            <p className="mt-1 tabular-nums text-xs text-cyan-300">
+              Trial ({row.trialSeatHours || 5}h): {row.trialUserCount ?? 0} / {row.trialSeatsGranted ?? 0} ·{" "}
+              {row.remainingTrialSeats ?? 0} left
+            </p>
+          ) : (
+            <p className="mt-1 text-xs text-slate-500">Trial off</p>
+          )}
         </div>
       ),
     },
@@ -1202,6 +1280,41 @@ export default function AdminResellersPage() {
                 </select>
               </div>
             </div>
+            <div className="grid gap-4 lg:grid-cols-3">
+              <div>
+                <label className="mb-2 block text-sm font-bold text-slate-400">Paid seat days</label>
+                <input
+                  type="number"
+                  min={1}
+                  value={form.seatDays}
+                  onChange={(e) => setForm({ ...form, seatDays: e.target.value })}
+                  className={INPUT_CLASS}
+                />
+                <p className="mt-1 text-xs text-slate-500">Each paid Solo/Team register starts this many days.</p>
+              </div>
+              <div>
+                <label className="mb-2 block text-sm font-bold text-slate-400">Trial length (hours)</label>
+                <input
+                  type="number"
+                  min={0.25}
+                  step={0.25}
+                  value={form.trialSeatHours}
+                  onChange={(e) => setForm({ ...form, trialSeatHours: e.target.value })}
+                  className={INPUT_CLASS}
+                />
+                <p className="mt-1 text-xs text-slate-500">Default 5 hours. Used when a trial seat is consumed.</p>
+              </div>
+              <div className="flex items-end">
+                <label className="flex w-full items-center gap-2 rounded-xl border border-white/10 bg-[#080810] px-4 py-3 text-sm text-slate-300">
+                  <input
+                    type="checkbox"
+                    checked={form.trialSeatsEnabled}
+                    onChange={(e) => setForm({ ...form, trialSeatsEnabled: e.target.checked })}
+                  />
+                  Allow trial registration
+                </label>
+              </div>
+            </div>
             <div className="grid gap-4 lg:grid-cols-2">
               <div>
                 <label className="mb-2 block text-sm font-bold text-slate-400">Solo price / seat (PKR)</label>
@@ -1262,7 +1375,32 @@ export default function AdminResellersPage() {
                 ) : (
                   <>
                     <input type="number" min={0} value={form.maxUsers} onChange={(e) => setForm({ ...form, maxUsers: e.target.value })} className={INPUT_CLASS} />
-                    <p className="mt-1 text-xs text-slate-500">If they paid for 10 users today, enter 10. Each register starts a 30-day timer.</p>
+                    <p className="mt-1 text-xs text-slate-500">If they paid for 10 users today, enter 10. Each register starts a paid timer.</p>
+                  </>
+                )}
+              </div>
+              <div>
+                <label className="mb-2 block text-sm font-bold text-slate-400">
+                  {editing ? "Trial seats" : "Initial trial seats"}
+                </label>
+                {editing ? (
+                  <div className="rounded-xl border border-white/10 bg-[#080810] px-4 py-3 text-sm text-slate-300">
+                    {editing.trialUserCount ?? 0} used · {editing.remainingTrialSeats ?? 0} left · {editing.trialSeatsGranted ?? 0} granted
+                    <p className="mt-1 text-xs text-slate-500">
+                      Use Add trial seats on the row. Trial length: {editing.trialSeatHours || 5}h
+                      {editing.trialSeatsEnabled ? "" : " · Trial registration is off"}
+                    </p>
+                  </div>
+                ) : (
+                  <>
+                    <input
+                      type="number"
+                      min={0}
+                      value={form.trialSeatsInitial}
+                      onChange={(e) => setForm({ ...form, trialSeatsInitial: e.target.value })}
+                      className={INPUT_CLASS}
+                    />
+                    <p className="mt-1 text-xs text-slate-500">Optional free trial seats. Enable trial registration above.</p>
                   </>
                 )}
               </div>
@@ -1826,6 +1964,61 @@ export default function AdminResellersPage() {
                 </button>
                 <button type="submit" disabled={addingSeats} className="flex-1 rounded-xl bg-gradient-to-r from-cyan-400 to-emerald-400 px-4 py-3 text-sm font-bold text-slate-950 disabled:opacity-60">
                   {addingSeats ? "Adding..." : "Add seats"}
+                </button>
+              </div>
+            </form>
+          ) : null}
+        </AdminGlassPanel>
+      </AdminGlassModal>
+
+      <AdminGlassModal open={Boolean(trialSeatsTarget)} align="end" closeOnBackdrop onClose={() => setTrialSeatsTarget(null)}>
+        <AdminGlassPanel accent="cyan" sheet>
+          {trialSeatsTarget ? (
+            <form onSubmit={addTrialSeats} className="space-y-4">
+              <div>
+                <h2 className="text-xl font-black text-white">Add trial seats — {trialSeatsTarget.brandName}</h2>
+                <p className="mt-1 text-sm text-slate-400">
+                  Free trial seats are separate from paid seats. Each trial register uses one seat and starts the timer below.
+                </p>
+                <p className="mt-2 text-xs text-slate-500">
+                  Now: {trialSeatsTarget.trialUserCount ?? 0} used · {trialSeatsTarget.remainingTrialSeats ?? 0} left ·{" "}
+                  {trialSeatsTarget.trialSeatsGranted ?? 0} granted
+                </p>
+              </div>
+              <div>
+                <label className="mb-2 block text-sm font-bold text-slate-400">Trial seats to add</label>
+                <input
+                  type="number"
+                  min={1}
+                  required
+                  value={trialSeatCount}
+                  onChange={(e) => setTrialSeatCount(e.target.value)}
+                  className={INPUT_CLASS}
+                />
+              </div>
+              <div>
+                <label className="mb-2 block text-sm font-bold text-slate-400">Trial length (hours)</label>
+                <input
+                  type="number"
+                  min={0.25}
+                  step={0.25}
+                  required
+                  value={trialSeatHoursInput}
+                  onChange={(e) => setTrialSeatHoursInput(e.target.value)}
+                  className={INPUT_CLASS}
+                />
+                <p className="mt-1 text-xs text-slate-500">Applies to new trial registrations for this reseller.</p>
+              </div>
+              <div>
+                <label className="mb-2 block text-sm font-bold text-slate-400">Note (optional)</label>
+                <input value={trialSeatNote} onChange={(e) => setTrialSeatNote(e.target.value)} className={INPUT_CLASS} placeholder="Promo / test batch" />
+              </div>
+              <div className="flex flex-col-reverse gap-3 sm:flex-row">
+                <button type="button" onClick={() => setTrialSeatsTarget(null)} className="flex-1 rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-bold text-slate-300">
+                  Cancel
+                </button>
+                <button type="submit" disabled={addingTrialSeats} className="flex-1 rounded-xl bg-gradient-to-r from-cyan-400 to-emerald-400 px-4 py-3 text-sm font-bold text-slate-950 disabled:opacity-60">
+                  {addingTrialSeats ? "Adding..." : "Add trial seats"}
                 </button>
               </div>
             </form>

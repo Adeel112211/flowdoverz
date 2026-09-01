@@ -2,6 +2,12 @@ import { createHash, randomBytes, scryptSync, timingSafeEqual } from "crypto";
 import { getDb } from "@/lib/firebase-admin";
 import { sanitizeForFirestore } from "@/lib/cookie-store";
 import { getPublicAppUrl, getResellerUrl } from "@/lib/site-urls";
+import {
+  DEFAULT_TRIAL_SEAT_HOURS,
+  normalizeTrialSeatHours,
+  resellerClientTrialExpiryFromNow,
+  trialSeatHoursLabel,
+} from "@/lib/reseller-trial";
 
 export const RESELLER_SLOTS = ["C1", "C2", "C3", "C4", "C5"] as const;
 export type ResellerSlot = (typeof RESELLER_SLOTS)[number];
@@ -43,8 +49,12 @@ export type ResellerRecord = {
   maxUsers: number;
   /** Paid registration seats. Each new paid user uses one seat. */
   seatsPurchased: number;
-  /** Free 5-hour trial seats granted by admin (separate from paid seats). */
+  /** Free trial seats granted by admin (separate from paid seats). */
   trialSeatsGranted: number;
+  /** When true, reseller can register clients on trial seats. */
+  trialSeatsEnabled: boolean;
+  /** Hours each trial seat lasts after registration (default 5). */
+  trialSeatHours: number;
   /** Length of each paid user's access after they register. */
   seatDays: number;
   /** Wholesale price per paid seat in PKR. Shown to admin and reseller dashboard. */
@@ -107,6 +117,9 @@ export type ResellerInput = {
   assignedSlots?: string[];
   maxUsers?: number;
   seatsPurchased?: number;
+  trialSeatsGranted?: number;
+  trialSeatsEnabled?: boolean;
+  trialSeatHours?: number;
   seatDays?: number;
   pricePerSeatPkr?: number;
   allowedSeatPlans?: string[] | string;
@@ -117,6 +130,8 @@ export type ResellerInput = {
   expiresAt?: string | null;
   panelPassword?: string;
 };
+
+export { DEFAULT_TRIAL_SEAT_HOURS, trialSeatHoursLabel } from "@/lib/reseller-trial";
 
 export const DEFAULT_SEAT_DAYS = 30;
 export const RESELLER_SEAT_PLANS = ["solo", "team"] as const;
@@ -181,11 +196,21 @@ export function pricePerSeatForPlan(
 }
 
 export function publicResellerPlanOptions(record: ResellerRecord) {
-  return record.allowedSeatPlans.map((plan) => ({
+  const paid = record.allowedSeatPlans.map((plan) => ({
     id: plan,
     label: plan === "team" ? "Team" : "Solo",
     pricePerSeatPkr: pricePerSeatForPlan(record, plan),
   }));
+  if (!record.trialSeatsEnabled) return paid;
+  const hours = normalizeTrialSeatHours(record.trialSeatHours);
+  return [
+    {
+      id: "trial" as const,
+      label: `${trialSeatHoursLabel(hours)} trial`,
+      pricePerSeatPkr: 0,
+    },
+    ...paid,
+  ];
 }
 
 const COLLECTION = "resellers";
@@ -342,6 +367,11 @@ function asRecord(id: string, data: Record<string, unknown>): ResellerRecord {
     assignedSlots: normalizeSlotList(data.assignedSlots),
     seatsPurchased: Math.max(0, Math.floor(Number(data.seatsPurchased ?? data.maxUsers) || 0)),
     trialSeatsGranted: Math.max(0, Math.floor(Number(data.trialSeatsGranted) || 0)),
+    trialSeatsEnabled:
+      data.trialSeatsEnabled !== undefined
+        ? Boolean(data.trialSeatsEnabled)
+        : Math.max(0, Math.floor(Number(data.trialSeatsGranted) || 0)) > 0,
+    trialSeatHours: normalizeTrialSeatHours(data.trialSeatHours),
     seatDays: Math.max(1, Math.floor(Number(data.seatDays) || DEFAULT_SEAT_DAYS)),
     pricePerSeatPkr: normalizePricePerSeatPkr(data.pricePerSeatPkr),
     allowedSeatPlans,
@@ -382,7 +412,6 @@ export function remainingTrialSeats(record: Pick<ResellerRecord, "trialSeatsGran
   return Math.max(0, (record.trialSeatsGranted || 0) - trialCount);
 }
 
-/** Paid seats left (trial seat pool is no longer used for new registrations). */
 export function remainingSeats(
   record: Pick<ResellerRecord, "seatsPurchased" | "trialSeatsGranted">,
   usage: number | ResellerSeatUsage = 0,
@@ -390,7 +419,7 @@ export function remainingSeats(
   if (typeof usage === "number") {
     return Math.max(0, record.seatsPurchased - usage);
   }
-  return remainingPaidSeats(record, usage.paid);
+  return remainingPaidSeats(record, usage.paid) + remainingTrialSeats(record, usage.trial);
 }
 
 export async function resolveOfficialSignup(code: string): Promise<
@@ -421,12 +450,10 @@ export function subscriptionExpiryFromNow(seatDays = DEFAULT_SEAT_DAYS) {
   return new Date(Date.now() + days * 24 * 60 * 60 * 1000).toISOString();
 }
 
-/** Reseller-registered clients get a fixed short trial (not paid seat days). */
-export const RESELLER_CLIENT_TRIAL_MS = 5 * 60 * 60 * 1000;
+/** @deprecated use DEFAULT_TRIAL_SEAT_HOURS from reseller-trial */
+export const RESELLER_CLIENT_TRIAL_MS = DEFAULT_TRIAL_SEAT_HOURS * 60 * 60 * 1000;
 
-export function resellerClientTrialExpiryFromNow(now = Date.now()) {
-  return new Date(now + RESELLER_CLIENT_TRIAL_MS).toISOString();
-}
+export { resellerClientTrialExpiryFromNow };
 
 export function panelUrlForReseller(_record?: Pick<ResellerRecord, "kind" | "panelSlug">) {
   void _record;
@@ -750,13 +777,15 @@ export async function registerClientForReseller(
       user: {
         email: string;
         name: string;
-        subscriptionPlan: ResellerSeatPlan;
-        trialExpiresAt: null;
-        subscriptionExpiresAt: string;
+        subscriptionPlan: string;
+        trialExpiresAt: string | null;
+        subscriptionExpiresAt: string | null;
       };
       remainingSeats: number;
+      remainingTrialSeats: number;
       remainingPaidSeats: number;
       seatsPurchased: number;
+      trialSeatsGranted: number;
     }
   | { ok: false; error: string; status: number }
 > {
@@ -777,6 +806,59 @@ export async function registerClientForReseller(
 
   const usage = await countResellerSeatUsage(reseller.id);
   const paidLeft = remainingPaidSeats(reseller, usage.paid);
+  const trialLeft = remainingTrialSeats(reseller, usage.trial);
+  const requested = String(input.subscriptionPlan || "").trim().toLowerCase();
+  const wantsTrial = requested === "trial";
+
+  if (wantsTrial) {
+    if (!reseller.trialSeatsEnabled) {
+      return {
+        ok: false,
+        error: "Trial registration is not enabled for this partner. Ask the owner to turn it on.",
+        status: 403,
+      };
+    }
+    if (trialLeft <= 0) {
+      return {
+        ok: false,
+        error: "No trial seats left. Ask the owner to add more trial seats.",
+        status: 403,
+      };
+    }
+
+    const trialExpiry = resellerClientTrialExpiryFromNow(reseller.trialSeatHours);
+    const { createUserByAdmin } = await import("./user-store");
+    const created = await createUserByAdmin({
+      email: input.email,
+      name: input.name,
+      password: input.password,
+      subscriptionPlan: "trial",
+      trialExpiresAt: trialExpiry,
+      resellerId: reseller.id,
+      assignedSlot: slot,
+    });
+    if (!created.ok) {
+      return { ok: false, error: created.error, status: 400 };
+    }
+
+    void touchResellerUsage(reseller.id);
+    return {
+      ok: true,
+      user: {
+        email: String(input.email || "").trim().toLowerCase(),
+        name: String(input.name || "").trim(),
+        subscriptionPlan: "trial",
+        trialExpiresAt: trialExpiry,
+        subscriptionExpiresAt: null,
+      },
+      remainingSeats: trialLeft - 1 + paidLeft,
+      remainingTrialSeats: trialLeft - 1,
+      remainingPaidSeats: paidLeft,
+      seatsPurchased: reseller.seatsPurchased,
+      trialSeatsGranted: reseller.trialSeatsGranted || 0,
+    };
+  }
+
   if (paidLeft <= 0) {
     return {
       ok: false,
@@ -785,9 +867,8 @@ export async function registerClientForReseller(
     };
   }
 
-  const requested = String(input.subscriptionPlan || "").trim().toLowerCase();
   const subscriptionPlan = normalizeSeatPlan(
-    requested === "trial" || requested === "none" ? reseller.defaultSeatPlan : requested || reseller.defaultSeatPlan,
+    requested === "none" ? reseller.defaultSeatPlan : requested || reseller.defaultSeatPlan,
     reseller.allowedSeatPlans,
   );
   const expiry = subscriptionExpiryFromNow(reseller.seatDays);
@@ -816,9 +897,11 @@ export async function registerClientForReseller(
       trialExpiresAt: null,
       subscriptionExpiresAt: expiry,
     },
-    remainingSeats: paidLeft - 1,
+    remainingSeats: paidLeft - 1 + trialLeft,
+    remainingTrialSeats: trialLeft,
     remainingPaidSeats: paidLeft - 1,
     seatsPurchased: reseller.seatsPurchased,
+    trialSeatsGranted: reseller.trialSeatsGranted || 0,
   };
 }
 
@@ -1079,7 +1162,9 @@ export async function createReseller(input: ResellerInput): Promise<{
       0,
       Math.floor(Number(input.seatsPurchased ?? input.maxUsers) || 0),
     ),
-    trialSeatsGranted: 0,
+    trialSeatsGranted: Math.max(0, Math.floor(Number(input.trialSeatsGranted) || 0)),
+    trialSeatsEnabled: Boolean(input.trialSeatsEnabled),
+    trialSeatHours: normalizeTrialSeatHours(input.trialSeatHours),
     seatDays: Math.max(1, Math.floor(Number(input.seatDays) || DEFAULT_SEAT_DAYS)),
     pricePerSeatPkr: normalizePricePerSeatPkr(input.pricePerSeatPkr),
     allowedSeatPlans: normalizeAllowedSeatPlans(input.allowedSeatPlans),
@@ -1170,7 +1255,18 @@ export async function updateReseller(id: string, input: ResellerInput): Promise<
     assignedSlots:
       input.assignedSlots !== undefined ? normalizeSlotList(input.assignedSlots) : current.assignedSlots,
     seatsPurchased: current.seatsPurchased,
-    trialSeatsGranted: current.trialSeatsGranted || 0,
+    trialSeatsGranted:
+      input.trialSeatsGranted !== undefined
+        ? Math.max(0, Math.floor(Number(input.trialSeatsGranted) || 0))
+        : current.trialSeatsGranted || 0,
+    trialSeatsEnabled:
+      input.trialSeatsEnabled !== undefined
+        ? Boolean(input.trialSeatsEnabled)
+        : current.trialSeatsEnabled,
+    trialSeatHours:
+      input.trialSeatHours !== undefined
+        ? normalizeTrialSeatHours(input.trialSeatHours)
+        : current.trialSeatHours || DEFAULT_TRIAL_SEAT_HOURS,
     seatDays:
       input.seatDays !== undefined
         ? Math.max(1, Math.floor(Number(input.seatDays) || DEFAULT_SEAT_DAYS))
@@ -1343,20 +1439,26 @@ export async function addResellerSeats(
 export async function addResellerTrialSeats(
   id: string,
   seats: number,
-  meta?: { note?: string },
+  meta?: { note?: string; hours?: number },
 ): Promise<PublicReseller> {
   const count = Math.floor(Number(seats));
   if (!Number.isFinite(count) || count < 1) {
-    throw new Error("Enter how many free 5-hour trial seats to grant.");
+    throw new Error("Enter how many trial seats to grant.");
   }
   const current = await getReseller(id);
   if (!current) throw new Error("Reseller not found.");
   const now = new Date().toISOString();
   const trialSeatsGranted = (current.trialSeatsGranted || 0) + count;
+  const trialSeatHours =
+    meta?.hours !== undefined
+      ? normalizeTrialSeatHours(meta.hours)
+      : current.trialSeatHours || DEFAULT_TRIAL_SEAT_HOURS;
   const db = requireDb();
   await db.collection(COLLECTION).doc(id).set(
     {
       trialSeatsGranted,
+      trialSeatsEnabled: true,
+      trialSeatHours,
       updatedAt: now,
     },
     { merge: true },
@@ -1365,14 +1467,20 @@ export async function addResellerTrialSeats(
     sanitizeForFirestore({
       seats: count,
       note: String(meta?.note || "").trim(),
-      hours: 5,
+      hours: trialSeatHours,
       createdAt: now,
     }),
   );
   const { touchLive } = await import("./live-tick");
   void touchLive({ topic: "reseller", action: "updated", id });
   return toPublicReseller(
-    { ...current, trialSeatsGranted, updatedAt: now },
+    {
+      ...current,
+      trialSeatsGranted,
+      trialSeatsEnabled: true,
+      trialSeatHours,
+      updatedAt: now,
+    },
     await countResellerSeatUsage(id),
   );
 }

@@ -7,8 +7,10 @@ import { AlertCircle, Eye, EyeOff } from "lucide-react";
 import { BrandLogo } from "@/components/brand-logo";
 import { AuthPageBackground } from "@/components/auth-page-background";
 import { appPath, marketingPath } from "@/lib/site-urls";
+import { PhoneInputFields } from "@/components/phone-input-fields";
 import { signUp } from "@/lib/auth";
 import { applyMaintenanceFromPayload } from "@/lib/maintenance-client";
+import { DEFAULT_PHONE_COUNTRY_ISO, normalizePhoneInput } from "@/lib/phone";
 import { validateSignupEmailClient, SIGNUP_EMAIL_REJECTED } from "@/lib/signup-email-rules";
 
 export function SignupPage() {
@@ -18,6 +20,8 @@ export function SignupPage() {
   const [error, setError] = useState("");
   const [emailInvalid, setEmailInvalid] = useState(false);
   const [email, setEmail] = useState("");
+  const [phoneCountryIso, setPhoneCountryIso] = useState(DEFAULT_PHONE_COUNTRY_ISO);
+  const [phoneNational, setPhoneNational] = useState("");
   const [verificationCode, setVerificationCode] = useState("");
   const [codeSent, setCodeSent] = useState(false);
   const [sendingCode, setSendingCode] = useState(false);
@@ -127,9 +131,14 @@ export function SignupPage() {
     const name = String(form.get("name") ?? "");
     const formEmail = String(form.get("email") ?? "");
     const password = String(form.get("password") ?? "");
+    const phoneCheck = normalizePhoneInput(phoneCountryIso, phoneNational);
 
     if (!checkEmail(formEmail)) {
       showTempMailPopup();
+      return;
+    }
+    if (!phoneCheck.ok) {
+      setError(phoneCheck.error);
       return;
     }
     if (!codeSent) {
@@ -143,7 +152,10 @@ export function SignupPage() {
 
     setLoading(true);
 
-    const result = await signUp(formEmail, password, name, verificationCode, partnerCode);
+    const result = await signUp(formEmail, password, name, verificationCode, partnerCode, {
+      countryIso: phoneCheck.phone.countryIso,
+      nationalNumber: phoneCheck.phone.nationalNumber,
+    });
     if (!result.ok) {
       if (result.code === "MAINTENANCE") {
         setLoading(false);
@@ -162,9 +174,11 @@ export function SignupPage() {
     }
   }
 
+  const phoneReady = normalizePhoneInput(phoneCountryIso, phoneNational).ok;
   const canCreate =
     !loading &&
     !emailInvalid &&
+    phoneReady &&
     codeSent &&
     verificationCode.replace(/\D/g, "").length === 6;
 
@@ -227,6 +241,13 @@ export function SignupPage() {
                 className="w-full rounded-2xl border border-white/10 bg-white/5 px-5 py-3.5 text-sm text-white outline-none transition-all duration-300 placeholder:text-slate-500 focus:border-cyan-400 focus:bg-white/10 focus:shadow-[0_0_20px_rgba(34,211,238,0.25)] focus:ring-2 focus:ring-cyan-500/20"
               />
             </div>
+
+            <PhoneInputFields
+              countryIso={phoneCountryIso}
+              nationalNumber={phoneNational}
+              onCountryIsoChange={setPhoneCountryIso}
+              onNationalNumberChange={setPhoneNational}
+            />
 
             <div>
               <label htmlFor="email" className="mb-1.5 block text-sm font-medium text-slate-300">

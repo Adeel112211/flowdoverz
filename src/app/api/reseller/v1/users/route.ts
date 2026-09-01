@@ -9,6 +9,7 @@ import {
   deleteResellerUser,
   listResellerUsers,
   remainingPaidSeats,
+  remainingTrialSeats,
   registerClientForReseller,
 } from "@/lib/reseller-store";
 import { getUserRecord, issueResellerClientSession } from "@/lib/user-store";
@@ -26,6 +27,8 @@ export async function GET(request: NextRequest) {
 
   const users = await listResellerUsers(auth.reseller.id);
   const usage = await countResellerSeatUsage(auth.reseller.id);
+  const left = remainingPaidSeats(auth.reseller, usage.paid);
+  const trialLeft = remainingTrialSeats(auth.reseller, usage.trial);
   return jsonSafe(
     {
       success: true,
@@ -40,9 +43,14 @@ export async function GET(request: NextRequest) {
       })),
       userCount: usage.total,
       paidUserCount: usage.paid,
+      trialUserCount: usage.trial,
       seatsPurchased: auth.reseller.seatsPurchased,
-      remainingSeats: remainingPaidSeats(auth.reseller, usage.paid),
-      remainingPaidSeats: remainingPaidSeats(auth.reseller, usage.paid),
+      trialSeatsGranted: auth.reseller.trialSeatsGranted,
+      trialSeatsEnabled: auth.reseller.trialSeatsEnabled,
+      trialSeatHours: auth.reseller.trialSeatHours,
+      remainingSeats: left + trialLeft,
+      remainingPaidSeats: left,
+      remainingTrialSeats: trialLeft,
       seatDays: auth.reseller.seatDays,
       maxUsers: auth.reseller.seatsPurchased,
     },
@@ -68,6 +76,7 @@ export async function POST(request: NextRequest) {
   const existing = email ? await getUserRecord(email) : null;
   const usage = await countResellerSeatUsage(auth.reseller.id);
   const left = remainingPaidSeats(auth.reseller, usage.paid);
+  const trialLeft = remainingTrialSeats(auth.reseller, usage.trial);
 
   if (existing) {
     if (String(existing.resellerId || "") !== auth.reseller.id) {
@@ -90,8 +99,9 @@ export async function POST(request: NextRequest) {
           trialExpiresAt: existing.trialExpiresAt || null,
           subscriptionExpiresAt: existing.subscriptionExpiresAt || null,
           seatDays: auth.reseller.seatDays,
-          remainingSeats: left,
+          remainingSeats: left + trialLeft,
           remainingPaidSeats: left,
+          remainingTrialSeats: trialLeft,
           sid: session.ok ? session.sid : undefined,
         },
       },
@@ -127,6 +137,7 @@ export async function POST(request: NextRequest) {
         seatDays: auth.reseller.seatDays,
         remainingSeats: result.remainingSeats,
         remainingPaidSeats: result.remainingPaidSeats,
+        remainingTrialSeats: result.remainingTrialSeats,
         sid: session.ok ? session.sid : undefined,
       },
     },

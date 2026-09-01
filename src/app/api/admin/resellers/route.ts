@@ -15,6 +15,7 @@ import {
   updateReseller,
   countResellerUsers,
   addResellerSeats,
+  addResellerTrialSeats,
   registerClientForReseller,
   countResellerSeatUsage,
   RESELLER_SLOTS,
@@ -203,6 +204,25 @@ export async function PUT(request: NextRequest) {
           resellerId: id,
           seats: Number(body.seats),
           paymentAmount: body.paymentAmount || null,
+        },
+      });
+      return NextResponse.json({ success: true, reseller });
+    }
+
+    if (body.action === "add_trial_seats") {
+      const seats = Number(body.seats);
+      const reseller = await addResellerTrialSeats(id, seats, {
+        note: body.note ? String(body.note) : "",
+        hours: body.hours !== undefined ? Number(body.hours) : undefined,
+      });
+      await logAdminActivity({
+        action: "reseller_trial_seats_added",
+        detail: `Added ${Number(body.seats)} trial seats for ${reseller.brandName}`,
+        targetEmail: reseller.contactEmail,
+        meta: {
+          resellerId: id,
+          seats: Number(body.seats),
+          hours: reseller.trialSeatHours,
         },
       });
       return NextResponse.json({ success: true, reseller });

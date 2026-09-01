@@ -6,6 +6,7 @@ import {
   listSeatGrants,
   publicResellerPlanOptions,
   remainingPaidSeats,
+  remainingTrialSeats,
   summarizeSeatGrants,
 } from "@/lib/reseller-store";
 import { getResellerSession, publicResellerSession } from "@/lib/reseller-session";
@@ -47,8 +48,13 @@ export async function GET() {
       seatsPurchased: reseller.seatsPurchased,
       userCount: usage.total,
       paidUserCount: usage.paid,
-      remainingSeats: remainingPaidSeats(reseller, usage.paid),
+      trialUserCount: usage.trial,
+      remainingSeats: remainingPaidSeats(reseller, usage.paid) + remainingTrialSeats(reseller, usage.trial),
       remainingPaidSeats: remainingPaidSeats(reseller, usage.paid),
+      remainingTrialSeats: remainingTrialSeats(reseller, usage.trial),
+      trialSeatsEnabled: reseller.trialSeatsEnabled,
+      trialSeatHours: reseller.trialSeatHours,
+      trialSeatsGranted: reseller.trialSeatsGranted,
       activeClients: active,
       expiredClients: expired,
       seatDays: reseller.seatDays,

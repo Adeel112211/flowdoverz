@@ -22,10 +22,14 @@ import { AdminPlanSelect, normalizePlanValue } from "@/components/admin-plan-sel
 import { AdminDateTimeInput } from "@/components/admin-datetime-input";
 import { useAdminToast } from "@/components/admin-toast";
 import { useAdminLiveRefresh } from "@/hooks/use-admin-live-refresh";
+import { formatPhoneDisplay } from "@/lib/phone";
 
 type Client = {
   email: string;
   name?: string;
+  phone?: string;
+  phoneCountryCode?: string;
+  phoneNational?: string;
   subscriptionPlan?: string;
   trialExpiresAt?: string;
   subscriptionExpiresAt?: string;
@@ -175,6 +179,10 @@ export default function ClientDetailPage() {
         <AdminGlassPanel className="p-6">
           <h3 className="text-sm font-bold uppercase tracking-wide text-slate-400 mb-4">Profile</h3>
           <dl className="space-y-3 text-sm">
+            <div className="flex justify-between gap-4">
+              <dt className="text-slate-500">Phone</dt>
+              <dd className="font-mono text-slate-200">{formatPhoneDisplay(client) || "—"}</dd>
+            </div>
             <div className="flex justify-between gap-4">
               <dt className="text-slate-500">Plan</dt>
               <dd className="font-semibold text-slate-200 capitalize">{client.subscriptionPlan || "none"}</dd>

@@ -122,6 +122,7 @@ export async function signUp(
   name: string,
   verificationCode: string,
   partnerCode?: string,
+  phone?: { countryIso: string; nationalNumber: string },
 ): Promise<AuthResult> {
   if (password.length < 8) {
     return { ok: false, error: "Password must be at least 8 characters." };
@@ -129,12 +130,17 @@ export async function signUp(
   if (verificationCode.replace(/\D/g, "").length !== 6) {
     return { ok: false, error: "Enter the 6-digit verification code." };
   }
+  if (!phone?.countryIso || !phone?.nationalNumber) {
+    return { ok: false, error: "Enter your phone number." };
+  }
 
   return postAuth("/api/auth/register", {
     email: email.trim(),
     password,
     name: name.trim(),
     verificationCode: verificationCode.replace(/\D/g, ""),
+    phoneCountryIso: phone.countryIso,
+    phoneNational: phone.nationalNumber,
     ...(partnerCode ? { partnerCode: partnerCode.trim() } : {}),
   });
 }

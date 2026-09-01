@@ -5,7 +5,7 @@ import {
   corsHeaders,
   jsonSafe,
 } from "@/lib/reseller-http";
-import { countResellerSeatUsage, originsForReseller, remainingPaidSeats } from "@/lib/reseller-store";
+import { countResellerSeatUsage, originsForReseller, remainingPaidSeats, remainingTrialSeats } from "@/lib/reseller-store";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -31,9 +31,14 @@ export async function GET(request: NextRequest) {
         ...integration,
         userCount: usage.total,
         paidUserCount: usage.paid,
+        trialUserCount: usage.trial,
         seatsPurchased: auth.reseller.seatsPurchased,
-        remainingSeats: remainingPaidSeats(auth.reseller, usage.paid),
+        trialSeatsGranted: auth.reseller.trialSeatsGranted,
+        trialSeatsEnabled: auth.reseller.trialSeatsEnabled,
+        trialSeatHours: auth.reseller.trialSeatHours,
+        remainingSeats: remainingPaidSeats(auth.reseller, usage.paid) + remainingTrialSeats(auth.reseller, usage.trial),
         remainingPaidSeats: remainingPaidSeats(auth.reseller, usage.paid),
+        remainingTrialSeats: remainingTrialSeats(auth.reseller, usage.trial),
         seatDays: auth.reseller.seatDays,
       },
     },

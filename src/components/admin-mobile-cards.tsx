@@ -21,10 +21,14 @@ import { PayToMethodBadge } from "@/components/pay-to-method-badge";
 import { normalizePlanValue } from "@/components/admin-plan-select";
 import { senderPaymentLabel } from "@/lib/sender-payment-options";
 import { formatPkr } from "@/lib/pricing-config";
+import { formatPhoneDisplay } from "@/lib/phone";
 
 type ClientRow = {
   email: string;
   name?: string;
+  phone?: string;
+  phoneCountryCode?: string;
+  phoneNational?: string;
   subscriptionPlan?: string;
   trialExpiresAt?: string;
   subscriptionExpiresAt?: string;
@@ -57,6 +61,11 @@ export function ClientMobileCard({
           subtitle={
             <span>
               {client.email}
+              {formatPhoneDisplay(client) ? (
+                <span className="mt-0.5 block font-mono text-[11px] text-slate-400">
+                  {formatPhoneDisplay(client)}
+                </span>
+              ) : null}
               {resellerName ? <span className="mt-0.5 block text-[11px] font-semibold text-emerald-400">{resellerName}</span> : null}
             </span>
           }

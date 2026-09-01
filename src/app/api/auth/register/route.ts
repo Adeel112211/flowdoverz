@@ -28,7 +28,16 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  let body: { email?: string; password?: string; name?: string; verificationCode?: string; partnerCode?: string; ref?: string };
+  let body: {
+    email?: string;
+    password?: string;
+    name?: string;
+    verificationCode?: string;
+    partnerCode?: string;
+    ref?: string;
+    phoneCountryIso?: string;
+    phoneNational?: string;
+  };
   try {
     body = await request.json();
   } catch {
@@ -45,6 +54,10 @@ export async function POST(request: NextRequest) {
     String(body.verificationCode || ""),
     ip,
     String(body.partnerCode || body.ref || ""),
+    {
+      countryIso: String(body.phoneCountryIso || ""),
+      nationalNumber: String(body.phoneNational || ""),
+    },
   );
 
   if (!result.ok) {
