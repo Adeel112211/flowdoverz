@@ -187,6 +187,8 @@ export default function ResellerClientsPage() {
           password,
           subscriptionPlan: planToRegister,
           plan: planToRegister,
+          isTrial: planToRegister === "trial",
+          trialSeat: planToRegister === "trial",
         }),
       });
       const data = await res.json();

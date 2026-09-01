@@ -236,12 +236,11 @@ export async function PUT(request: NextRequest) {
       }
       const requestedPlan = parseResellerClientPlanRequest(body);
       const result = await registerClientForReseller(current, {
+        ...body,
         email: String(body.email || ""),
         name: String(body.name || ""),
         password: String(body.password || ""),
-        ...body,
-        subscriptionPlan: requestedPlan || undefined,
-        plan: requestedPlan || undefined,
+        ...(requestedPlan ? { subscriptionPlan: requestedPlan, plan: requestedPlan } : {}),
       });
       if (!result.ok) {
         return NextResponse.json({ success: false, error: result.error }, { status: result.status });

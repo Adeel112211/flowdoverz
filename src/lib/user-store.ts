@@ -586,6 +586,7 @@ export async function createUserByAdmin(input: {
   const normalized = normalizeEmail(input.email);
   const displayName = input.name.trim().replace(/\s+/g, " ");
   const subscriptionPlan = String(input.subscriptionPlan || "trial").trim().toLowerCase();
+  const isTrialPlan = subscriptionPlan === "trial";
 
   if (!normalized || !normalized.includes("@")) {
     return { ok: false, error: "Enter a valid email address." };
@@ -612,9 +613,10 @@ export async function createUserByAdmin(input: {
   const defaultTrialExpiry = new Date(now.getTime() + getTrialDurationMs(settings)).toISOString();
   const defaultSubExpiry = new Date(now.getTime() + getSubscriptionDurationMs(settings)).toISOString();
 
-  const trialExpiresAt =
-    input.trialExpiresAt ||
-    (PAID_PLANS.includes(subscriptionPlan) ? now.toISOString() : defaultTrialExpiry);
+  const trialExpiresAt = isTrialPlan
+    ? input.trialExpiresAt || defaultTrialExpiry
+    : input.trialExpiresAt ||
+      (PAID_PLANS.includes(subscriptionPlan) ? now.toISOString() : defaultTrialExpiry);
   const subscriptionExpiresAt = PAID_PLANS.includes(subscriptionPlan)
     ? input.subscriptionExpiresAt || defaultSubExpiry
     : null;
@@ -627,11 +629,11 @@ export async function createUserByAdmin(input: {
     passwordHash: hashPassword(input.password, salt),
     createdAt: now.toISOString(),
     trialExpiresAt,
-    subscriptionPlan,
+    subscriptionPlan: isTrialPlan ? "trial" : subscriptionPlan,
     emailVerified: true,
     ...(input.resellerId ? { resellerId: input.resellerId } : {}),
     ...(input.assignedSlot ? { assignedSlot: input.assignedSlot } : {}),
-    ...(PAID_PLANS.includes(subscriptionPlan)
+    ...(PAID_PLANS.includes(subscriptionPlan) && subscriptionExpiresAt
       ? { subscriptionExpiresAt: subscriptionExpiresAt }
       : {}),
   };
@@ -668,6 +670,7 @@ export async function createUserByAdmin(input: {
     }
     throw error;
   }
+  invalidateUserDocCache(normalized);
   const { touchLive } = await import("./live-tick");
   void touchLive({ topic: "user", action: "created", id: normalized, userId: normalized });
   return { ok: true };

@@ -112,12 +112,11 @@ export async function POST(request: NextRequest) {
 
   const requestedPlan = parseResellerClientPlanRequest(body);
   const result = await registerClientForReseller(auth.reseller, {
+    ...body,
     email,
     name: String(body.name || ""),
     password: String(body.password || ""),
-    ...body,
-    subscriptionPlan: requestedPlan || undefined,
-    plan: requestedPlan || undefined,
+    ...(requestedPlan ? { subscriptionPlan: requestedPlan, plan: requestedPlan } : {}),
   });
 
   if (!result.ok) {

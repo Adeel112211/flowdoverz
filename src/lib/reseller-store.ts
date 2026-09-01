@@ -445,6 +445,8 @@ export function resellerClientPlanLooksLikeTrial(input: Record<string, unknown>)
 
 /** Normalize plan sent from reseller panel/API (`plan` or `subscriptionPlan`). */
 export function parseResellerClientPlanRequest(input: Record<string, unknown>) {
+  if (resellerClientPlanLooksLikeTrial(input)) return "trial";
+
   const candidates = [
     input.subscriptionPlan,
     input.plan,
@@ -454,17 +456,25 @@ export function parseResellerClientPlanRequest(input: Record<string, unknown>) {
     input.mode,
     input.seatType,
   ];
+
   for (const candidate of candidates) {
     const raw = String(candidate ?? "")
       .trim()
       .toLowerCase();
     if (!raw) continue;
     if (planTokenMeansTrial(raw)) return "trial";
+  }
+
+  for (const candidate of candidates) {
+    const raw = String(candidate ?? "")
+      .trim()
+      .toLowerCase();
+    if (!raw) continue;
     if (raw === "team") return "team";
     if (raw === "solo" || raw === "studio") return "solo";
     return raw;
   }
-  if (resellerClientPlanLooksLikeTrial(input)) return "trial";
+
   return "";
 }
 
@@ -920,7 +930,7 @@ export async function registerClientForReseller(
       const paidLeft = remainingPaidSeats(reseller, usage.paid);
       const trialLeft = remainingTrialSeats(reseller, usage.trial);
       const requested = parseResellerClientPlanRequest(input);
-      const wantsTrial = requested === "trial";
+      const wantsTrial = requested === "trial" || resellerClientPlanLooksLikeTrial(input);
 
       if (wantsTrial) {
         if (!resellerTrialRegistrationEnabled(reseller)) {
@@ -953,9 +963,16 @@ export async function registerClientForReseller(
           return { ok: false, error: created.error, status: 400 };
         }
 
+        const { invalidateUserDocCache } = await import("./user-store");
+        invalidateUserDocCache(normalizedEmail);
         const saved = await getUserRecord(normalizedEmail);
         const savedPlan = String(saved?.subscriptionPlan || "").trim().toLowerCase();
         if (savedPlan !== "trial") {
+          const db = getDb();
+          if (db) {
+            await db.collection("users").doc(normalizedEmail).delete().catch(() => undefined);
+          }
+          invalidateUserDocCache(normalizedEmail);
           return {
             ok: false,
             error: "Trial registration did not save correctly. Refresh and try again.",
@@ -1019,8 +1036,17 @@ export async function registerClientForReseller(
         return { ok: false, error: created.error, status: 400 };
       }
 
+      const { invalidateUserDocCache } = await import("./user-store");
+      invalidateUserDocCache(normalizedEmail);
       const saved = await getUserRecord(normalizedEmail);
-      const savedPlan = String(saved?.subscriptionPlan || subscriptionPlan).trim().toLowerCase();
+      const savedPlan = String(saved?.subscriptionPlan || "").trim().toLowerCase();
+      if (!saved || !savedPlan) {
+        return {
+          ok: false,
+          error: "Registration saved but could not be verified. Refresh and check the client list.",
+          status: 500,
+        };
+      }
       void touchResellerUsage(reseller.id);
       return {
         ok: true,
