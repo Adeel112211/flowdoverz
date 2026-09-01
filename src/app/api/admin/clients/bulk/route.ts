@@ -61,6 +61,16 @@ export async function POST(request: NextRequest) {
     if (action === "extend_trial_7") {
       const base = data.trialExpiresAt ? new Date(data.trialExpiresAt).getTime() : now;
       batch.update(ref, { trialExpiresAt: new Date(Math.max(base, now) + 7 * 86400000).toISOString() });
+    } else if (action === "expire_trial") {
+      batch.update(ref, {
+        trialExpiresAt: new Date(now).toISOString(),
+        subscriptionPlan: PAID_PLANS.includes(String(data.subscriptionPlan || ""))
+          ? data.subscriptionPlan
+          : "none",
+        ...(PAID_PLANS.includes(String(data.subscriptionPlan || ""))
+          ? {}
+          : { subscriptionExpiresAt: null }),
+      });
     } else if (action === "extend_sub_30") {
       const base = data.subscriptionExpiresAt ? new Date(data.subscriptionExpiresAt).getTime() : now;
       batch.update(ref, {
