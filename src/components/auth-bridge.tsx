@@ -21,19 +21,38 @@ type StatusPayload = {
 function daysUntilExpiry(status: StatusPayload, now = Date.now()) {
   const plan = String(status.subscriptionPlan || "none").toLowerCase();
   const expiryStr =
-    status.subscriptionActive && plan && !["none", "trial", "pending"].includes(plan)
-      ? status.subscriptionExpiresAt
-      : status.trialExpiresAt;
+    plan === "trial" || status.trialActive
+      ? status.trialExpiresAt
+      : status.subscriptionActive && plan && !["none", "trial", "pending"].includes(plan)
+        ? status.subscriptionExpiresAt
+        : status.trialExpiresAt || status.subscriptionExpiresAt;
   if (!expiryStr) return 0;
   const expiry = new Date(expiryStr).getTime();
   if (!Number.isFinite(expiry)) return 0;
   return Math.max(0, Math.ceil((expiry - now) / (1000 * 60 * 60 * 24)));
 }
 
+function hoursUntilExpiry(status: StatusPayload, now = Date.now()) {
+  const plan = String(status.subscriptionPlan || "none").toLowerCase();
+  const expiryStr =
+    plan === "trial" || status.trialActive
+      ? status.trialExpiresAt
+      : status.subscriptionActive && plan && !["none", "trial", "pending"].includes(plan)
+        ? status.subscriptionExpiresAt
+        : status.trialExpiresAt || status.subscriptionExpiresAt;
+  if (!expiryStr) return 0;
+  const expiry = new Date(expiryStr).getTime();
+  if (!Number.isFinite(expiry)) return 0;
+  return Math.max(0, Math.ceil((expiry - now) / (1000 * 60 * 60)));
+}
+
 /** Invisible DOM bridge the Chrome extension reads to detect portal login. */
 export function AuthBridge({ session, daysRemaining }: AuthBridgeProps) {
   const [baseUrl, setBaseUrl] = useState("");
   const [resolvedDays, setResolvedDays] = useState(daysRemaining ?? DEFAULT_SUBSCRIPTION_DAYS);
+  const [resolvedHours, setResolvedHours] = useState(0);
+  const [resolvedPlan, setResolvedPlan] = useState("none");
+  const [accessActive, setAccessActive] = useState(false);
 
   useEffect(() => {
     setBaseUrl(window.location.origin);
@@ -46,6 +65,9 @@ export function AuthBridge({ session, daysRemaining }: AuthBridgeProps) {
     }
     if (!session) {
       setResolvedDays(0);
+      setResolvedHours(0);
+      setResolvedPlan("none");
+      setAccessActive(false);
       return;
     }
 
@@ -55,7 +77,11 @@ export function AuthBridge({ session, daysRemaining }: AuthBridgeProps) {
       .then((data) => {
         if (!active) return;
         if (data.success && data.status) {
-          setResolvedDays(daysUntilExpiry(data.status));
+          const status = data.status as StatusPayload;
+          setResolvedDays(daysUntilExpiry(status));
+          setResolvedHours(hoursUntilExpiry(status));
+          setResolvedPlan(String(status.subscriptionPlan || "none"));
+          setAccessActive(Boolean(status.active));
         }
       })
       .catch(() => {});
@@ -80,9 +106,12 @@ export function AuthBridge({ session, daysRemaining }: AuthBridgeProps) {
     <div
       id="flowdoverz-auth-bridge"
       data-logged-in={session ? "1" : "0"}
+      data-active={session && accessActive ? "1" : "0"}
       data-email={session?.email ?? ""}
       data-sid={session?.sid ?? ""}
       data-days={String(resolvedDays)}
+      data-hours={String(resolvedHours)}
+      data-plan={resolvedPlan}
       data-base-url={baseUrl}
       hidden
       aria-hidden="true"

@@ -812,12 +812,17 @@ export async function getUserStatus(email: string): Promise<{
   const emailVerified = user.emailVerified !== false;
 
   const plan = String(user.subscriptionPlan || "none").trim().toLowerCase();
+  const trialEndMs = user.trialExpiresAt ? Date.parse(String(user.trialExpiresAt)) : NaN;
   const trialActive =
-    emailVerified && user.trialExpiresAt
-      ? new Date(user.trialExpiresAt) > now && (plan === "trial" || !isPaidPlan(plan))
-      : false;
+    plan === "trial"
+      ? emailVerified && Number.isFinite(trialEndMs) && trialEndMs > now.getTime()
+      : emailVerified && user.trialExpiresAt
+        ? new Date(user.trialExpiresAt) > now && !isPaidPlan(plan)
+        : false;
   const subscriptionActive =
-    isPaidPlan(user.subscriptionPlan) && user.subscriptionExpiresAt
+    plan !== "trial" &&
+    isPaidPlan(user.subscriptionPlan) &&
+    user.subscriptionExpiresAt
       ? new Date(user.subscriptionExpiresAt) > now
       : false;
 
@@ -845,7 +850,8 @@ export async function getUserStatus(email: string): Promise<{
     subscriptionActive,
     trialExpiresAt: user.trialExpiresAt || null,
     subscriptionPlan: user.subscriptionPlan || "none",
-    subscriptionExpiresAt: user.subscriptionExpiresAt || null,
+    subscriptionExpiresAt:
+      plan === "trial" ? null : user.subscriptionExpiresAt || null,
     emailVerified,
     extensionTampered,
     extensionTamperMessage: extensionTampered ? user.extensionTamperMessage || null : null,

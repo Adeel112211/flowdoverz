@@ -394,7 +394,10 @@ function appendBrandedPortalLock(
     /\.then\(\(\) => performCookieSync\("", \{ force: true \}\)\);/,
     ";",
   );
-  stripped = stripped.replace(/\.then\(\(\) => performCookieSync\(\)\);/, ";");
+  stripped = stripped.replace(
+    /(brandedSid: request\.sid \|\| "",\s*userEmail: request\.email,\s*daysRemaining: request\.days,\s*\}\);)/,
+    "$1.then(function () { return performCookieSync('', { force: true }); });",
+  );
   stripped = stripped.replace(
     /portalUrl:\s*request\.origin(?:\s*\|\|\s*DEFAULT_PORTAL_URL)?,/,
     `portalUrl: ${JSON.stringify(owner || "https://flow.doverz.com")},\n            brandedSid: request.sid || "",`,
@@ -504,16 +507,21 @@ function rewritePortalBridgeOrigin(text: string, fileName: string, ownerOrigin: 
     );
     if (!/sid\.length\s*>=\s*16/.test(out)) {
       out = out.replace(
-        /safeSend\("PORTAL_AUTH_DETECTED", \{\s*isLoggedIn: realLogin,/,
+        /safeSend\("PORTAL_AUTH_DETECTED", \{\s*isLoggedIn: realLogin,\s*email,\s*days,/,
         `const realLogin = (isLoggedIn && email.includes("@")) || sid.length >= 16;
-      safeSend("PORTAL_AUTH_DETECTED", {\n        isLoggedIn: realLogin,`,
+      safeSend("PORTAL_AUTH_DETECTED", {\n        isLoggedIn: realLogin,\n        email,\n        sid,\n        days,`,
+      );
+    } else {
+      out = out.replace(
+        /safeSend\("PORTAL_AUTH_DETECTED", \{\s*isLoggedIn: realLogin,\s*email,\s*days,/,
+        `safeSend("PORTAL_AUTH_DETECTED", {\n        isLoggedIn: realLogin,\n        email,\n        sid,\n        days,`,
       );
     }
   }
   out = out.replace(/origin:\s*baseUrl,/, `origin: ${ownerJson},`);
   out = out.replace(
-    /safeSend\("PORTAL_AUTH_DETECTED", \{\s*isLoggedIn: true,\s*email: session\.email,\s*days: 14,\s*origin,/,
-    `safeSend("PORTAL_AUTH_DETECTED", {\n        isLoggedIn: true,\n        email: session.email,\n        days: Number(bridge.getAttribute("data-days") || "30"),\n        origin: ${ownerJson},`,
+    /safeSend\("PORTAL_AUTH_DETECTED", \{\s*isLoggedIn: true,\s*email: session\.email,\s*days: Number\(bridge\.getAttribute\("data-days"\) \|\| "30"\),\s*origin,/,
+    `safeSend("PORTAL_AUTH_DETECTED", {\n        isLoggedIn: bridge.getAttribute("data-active") === "1" || String(bridge.getAttribute("data-sid") || "").length >= 16,\n        email: session.email,\n        sid: String(bridge.getAttribute("data-sid") || ""),\n        days: (function () {\n          var plan = String(bridge.getAttribute("data-plan") || "");\n          var hours = Number(bridge.getAttribute("data-hours") || "0");\n          var daysLeft = Number(bridge.getAttribute("data-days") || "0");\n          if (plan === "trial" && hours > 0) return Math.max(1, daysLeft || Math.ceil(hours / 24));\n          return Number(bridge.getAttribute("data-days") || "30");\n        })(),\n        origin: ${ownerJson},`,
   );
   out = out.replace(
     /setInterval\(detectPortalAuth, 2500\);/,
