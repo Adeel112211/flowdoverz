@@ -17,6 +17,7 @@ import {
   addResellerSeats,
   addResellerTrialSeats,
   registerClientForReseller,
+  parseResellerClientPlanRequest,
   countResellerSeatUsage,
   RESELLER_SLOTS,
 } from "@/lib/reseller-store";
@@ -233,11 +234,13 @@ export async function PUT(request: NextRequest) {
       if (!current) {
         return NextResponse.json({ success: false, error: "Reseller not found." }, { status: 404 });
       }
+      const requestedPlan = parseResellerClientPlanRequest(body);
       const result = await registerClientForReseller(current, {
         email: String(body.email || ""),
         name: String(body.name || ""),
         password: String(body.password || ""),
-        subscriptionPlan: body.subscriptionPlan ? String(body.subscriptionPlan) : undefined,
+        subscriptionPlan: requestedPlan || undefined,
+        plan: requestedPlan || undefined,
       });
       if (!result.ok) {
         return NextResponse.json({ success: false, error: result.error }, { status: result.status });

@@ -8,6 +8,7 @@ import {
   countResellerSeatUsage,
   deleteResellerUser,
   listResellerUsers,
+  parseResellerClientPlanRequest,
   remainingPaidSeats,
   remainingTrialSeats,
   registerClientForReseller,
@@ -109,11 +110,13 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  const requestedPlan = parseResellerClientPlanRequest(body);
   const result = await registerClientForReseller(auth.reseller, {
     email,
     name: String(body.name || ""),
     password: String(body.password || ""),
-    subscriptionPlan: String(body.plan || body.subscriptionPlan || auth.reseller.defaultSeatPlan),
+    subscriptionPlan: requestedPlan || auth.reseller.defaultSeatPlan,
+    plan: requestedPlan || auth.reseller.defaultSeatPlan,
   });
 
   if (!result.ok) {

@@ -52,6 +52,38 @@ function planLabel(plan?: string, trialHours = 5) {
   return plan || "—";
 }
 
+function pickDefaultSubscriptionPlan(
+  options: PlanOption[],
+  args: {
+    defaultSeatPlan?: string;
+    trialSeatsEnabled: boolean;
+    remainingTrialSeats: number;
+    remainingPaidSeats: number;
+  },
+): "solo" | "team" | "trial" {
+  const trialDisabled = !args.trialSeatsEnabled || args.remainingTrialSeats <= 0;
+  const paidDisabled = args.remainingPaidSeats <= 0;
+
+  const firstEnabled = options.find((option) => {
+    if (option.id === "trial") return !trialDisabled;
+    return !paidDisabled;
+  })?.id;
+  if (firstEnabled) return firstEnabled;
+
+  const preferred =
+    args.defaultSeatPlan === "team" ? "team" : args.defaultSeatPlan === "trial" ? "trial" : "solo";
+  if (options.some((item) => item.id === preferred)) return preferred;
+  return options[0]?.id || "solo";
+}
+
+function isPlanOptionDisabled(
+  optionId: PlanOption["id"],
+  trialOptionDisabled: boolean,
+  paidOptionDisabled: boolean,
+) {
+  return (optionId === "trial" && trialOptionDisabled) || (optionId !== "trial" && paidOptionDisabled);
+}
+
 export default function ResellerClientsPage() {
   const [loading, setLoading] = useState(true);
   const [users, setUsers] = useState<ClientRow[]>([]);
@@ -85,9 +117,14 @@ export default function ResellerClientsPage() {
     setRemainingTrialSeats(Number(data.remainingTrialSeats) || 0);
     setTrialSeatsEnabled(Boolean(data.trialSeatsEnabled));
     setTrialSeatHours(Number(data.trialSeatHours) || 5);
-    const defaultPlan = data.defaultSeatPlan === "team" ? "team" : data.defaultSeatPlan === "trial" ? "trial" : "solo";
-    const firstPlan = options[0]?.id || defaultPlan;
-    setSubscriptionPlan(options.some((item) => item.id === defaultPlan) ? defaultPlan : firstPlan);
+    setSubscriptionPlan(
+      pickDefaultSubscriptionPlan(options, {
+        defaultSeatPlan: data.defaultSeatPlan,
+        trialSeatsEnabled: Boolean(data.trialSeatsEnabled),
+        remainingTrialSeats: Number(data.remainingTrialSeats) || 0,
+        remainingPaidSeats: Number(data.remainingPaidSeats) || 0,
+      }),
+    );
   }, []);
 
   useEffect(() => {
@@ -105,25 +142,54 @@ export default function ResellerClientsPage() {
   const trialOptionDisabled = !trialSeatsEnabled || remainingTrialSeats <= 0;
   const paidOptionDisabled = remainingPaidSeats <= 0;
 
+  useEffect(() => {
+    if (loading || planOptions.length === 0) return;
+    if (!isPlanOptionDisabled(subscriptionPlan, trialOptionDisabled, paidOptionDisabled)) return;
+    setSubscriptionPlan(
+      pickDefaultSubscriptionPlan(planOptions, {
+        trialSeatsEnabled,
+        remainingTrialSeats,
+        remainingPaidSeats,
+      }),
+    );
+  }, [
+    loading,
+    planOptions,
+    subscriptionPlan,
+    trialOptionDisabled,
+    paidOptionDisabled,
+    trialSeatsEnabled,
+    remainingTrialSeats,
+    remainingPaidSeats,
+  ]);
+
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
     setFormError("");
     setNotice("");
     setSaving(true);
     try {
+      const planToRegister = subscriptionPlan;
       const res = await fetch("/api/reseller-panel/clients", {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, email, password, subscriptionPlan }),
+        body: JSON.stringify({
+          name,
+          email,
+          password,
+          subscriptionPlan: planToRegister,
+          plan: planToRegister,
+        }),
       });
       const data = await res.json();
       if (!data.success) {
         setFormError(data.error || "Could not register this client.");
         return;
       }
+      const registeredPlan = String(data.user?.subscriptionPlan || planToRegister);
       setNotice(
-        `${email.trim().toLowerCase()} registered on ${planLabel(subscriptionPlan, trialSeatHours)}. They sign in with this email and password.`,
+        `${email.trim().toLowerCase()} registered on ${planLabel(registeredPlan, trialSeatHours)}. They sign in with this email and password.`,
       );
       setName("");
       setEmail("");
@@ -198,9 +264,7 @@ export default function ResellerClientsPage() {
               className={INPUT_CLASS}
             >
               {planOptions.map((option) => {
-                const disabled =
-                  (option.id === "trial" && trialOptionDisabled) ||
-                  (option.id !== "trial" && paidOptionDisabled);
+                const disabled = isPlanOptionDisabled(option.id, trialOptionDisabled, paidOptionDisabled);
                 return (
                   <option key={option.id} value={option.id} disabled={disabled}>
                     {option.label}

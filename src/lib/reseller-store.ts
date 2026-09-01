@@ -404,6 +404,23 @@ function isResellerPaidPlan(plan?: string | null) {
   return value === "solo" || value === "studio" || value === "team" || value === "nano" || value === "ultra";
 }
 
+function isResellerTrialSeatPlan(plan?: string | null) {
+  return String(plan || "").trim().toLowerCase() === "trial";
+}
+
+/** Normalize plan sent from reseller panel/API (`plan` or `subscriptionPlan`). */
+export function parseResellerClientPlanRequest(input: {
+  subscriptionPlan?: string | null;
+  plan?: string | null;
+}) {
+  const raw = String(input.subscriptionPlan ?? input.plan ?? "")
+    .trim()
+    .toLowerCase();
+  if (!raw) return "";
+  if (raw === "trial" || raw === "trail" || raw === "free_trial" || raw === "free-trial") return "trial";
+  return raw;
+}
+
 export function remainingPaidSeats(record: Pick<ResellerRecord, "seatsPurchased">, paidCount = 0) {
   return Math.max(0, record.seatsPurchased - paidCount);
 }
@@ -544,7 +561,7 @@ export async function countResellerSeatUsage(resellerId: string): Promise<Resell
   let paid = 0;
   for (const user of users) {
     if (isResellerPaidPlan(user.subscriptionPlan)) paid += 1;
-    else trial += 1;
+    else if (isResellerTrialSeatPlan(user.subscriptionPlan)) trial += 1;
   }
   return { total: users.length, trial, paid };
 }
@@ -770,7 +787,7 @@ export async function resolveOfficialPanel(slug: string): Promise<
 
 export async function registerClientForReseller(
   reseller: ResellerRecord,
-  input: { email: string; name: string; password: string; subscriptionPlan?: string },
+  input: { email: string; name: string; password: string; subscriptionPlan?: string; plan?: string },
 ): Promise<
   | {
       ok: true;
@@ -807,7 +824,7 @@ export async function registerClientForReseller(
   const usage = await countResellerSeatUsage(reseller.id);
   const paidLeft = remainingPaidSeats(reseller, usage.paid);
   const trialLeft = remainingTrialSeats(reseller, usage.trial);
-  const requested = String(input.subscriptionPlan || "").trim().toLowerCase();
+  const requested = parseResellerClientPlanRequest(input);
   const wantsTrial = requested === "trial";
 
   if (wantsTrial) {
@@ -867,6 +884,14 @@ export async function registerClientForReseller(
     };
   }
 
+  if (requested === "trial") {
+    return {
+      ok: false,
+      error: "Could not register a trial seat. Refresh the page and try again.",
+      status: 400,
+    };
+  }
+
   const subscriptionPlan = normalizeSeatPlan(
     requested === "none" ? reseller.defaultSeatPlan : requested || reseller.defaultSeatPlan,
     reseller.allowedSeatPlans,
@@ -907,7 +932,7 @@ export async function registerClientForReseller(
 
 export async function registerPartnerClient(
   slug: string,
-  input: { email: string; name: string; password: string },
+  input: { email: string; name: string; password: string; subscriptionPlan?: string; plan?: string },
 ) {
   const resolved = await resolveOfficialPanel(slug);
   if (!resolved.ok) return resolved;

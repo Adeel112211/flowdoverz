@@ -258,6 +258,7 @@ export async function buildResellerIntegration(reseller: {
         : "Users install the official FlowDoverz extension only. Ask the owner to generate your branded ZIP in Admin → Resellers.",
       "Cookie slots stay on FlowDoverz. Your admin panel must not copy Cookie Manager.",
       "Each paid seat lets one user register. That user's 30-day timer starts at registration, not when you paid.",
+      "When trials are enabled, send plan: \"trial\" to register a short trial seat instead of a paid Solo/Team seat.",
       "When seats run out, send another user payment so more seats can be added.",
       "Rotating the API key only changes server authentication. Previously registered clients keep working — update your server to the new key.",
     ],
