@@ -1,6 +1,6 @@
 import { getDb } from "@/lib/firebase-admin";
 import { getPublicAppUrl } from "@/lib/site-urls";
-import { getReseller } from "@/lib/reseller-store";
+import { getReseller, originFromUrl, originsForReseller, getResellerBySignupCode, listResellers } from "@/lib/reseller-store";
 import { getUserRecord } from "@/lib/user-store";
 import { getExtensionConfig, isPreviousOfficialHash } from "@/lib/extension-store";
 import type { OfficialIntegrityProfile } from "@/lib/extension-official-from-zip";
@@ -219,4 +219,83 @@ export async function isResellerExtensionUpdateRequired(
     // ignore
   }
   return false;
+}
+
+export type ResellerPortalBrand = {
+  displayName: string;
+  logoUrl: string | null;
+  supportEmail: string;
+  tagline: string;
+  primaryColor?: string;
+  accentColor?: string;
+  backgroundColor?: string;
+  labelColor?: string;
+  onPrimaryColor?: string;
+};
+
+function portalBrandFromRecord(
+  reseller: Awaited<ReturnType<typeof getReseller>>,
+): ResellerPortalBrand | null {
+  if (!reseller) return null;
+  const branded = reseller.brandedExtension;
+  const displayName = String(
+    branded?.displayName || (reseller.kind === "white_label" ? reseller.brandName : ""),
+  ).trim();
+  if (!displayName) return null;
+  return {
+    displayName,
+    logoUrl: branded?.hasLogo ? resellerBrandLogoPath(reseller.id) : null,
+    supportEmail: String(branded?.supportEmail || reseller.contactEmail || "").trim(),
+    tagline: `${displayName} Workspace`,
+    primaryColor: String(branded?.primaryColor || "").trim() || undefined,
+    accentColor: String(branded?.accentColor || "").trim() || undefined,
+    backgroundColor: String(branded?.backgroundColor || "").trim() || undefined,
+    labelColor: String(branded?.labelColor || "").trim() || undefined,
+    onPrimaryColor: String(branded?.onPrimaryColor || "").trim() || undefined,
+  };
+}
+
+function portalOriginsForReseller(
+  reseller: NonNullable<Awaited<ReturnType<typeof getReseller>>>,
+) {
+  const origins = new Set<string>(originsForReseller(reseller).map((item) => item.toLowerCase()));
+  for (const url of [
+    reseller.websiteUrl,
+    reseller.brandedExtension?.loginUrl,
+    reseller.brandedExtension?.dashboardUrl,
+  ]) {
+    const origin = originFromUrl(String(url || ""));
+    if (origin) origins.add(origin);
+  }
+  return origins;
+}
+
+/** Match reseller branding from the page origin (custom domain) or signup ref code. */
+export async function resolveResellerPortalBrand(input: {
+  origin?: string;
+  ref?: string;
+}): Promise<ResellerPortalBrand | null> {
+  const ref = String(input.ref || "").trim();
+  if (ref) {
+    const reseller = await getResellerBySignupCode(ref);
+    return portalBrandFromRecord(reseller);
+  }
+
+  const origin = String(input.origin || "")
+    .trim()
+    .toLowerCase()
+    .replace(/\/$/, "");
+  if (!origin) return null;
+
+  const rows = await listResellers();
+  const matches: string[] = [];
+  for (const row of rows) {
+    if (row.kind !== "white_label") continue;
+    const reseller = await getReseller(row.id);
+    if (!reseller) continue;
+    const origins = portalOriginsForReseller(reseller);
+    if (origins.has(origin)) matches.push(reseller.id);
+  }
+  if (matches.length !== 1) return null;
+  return portalBrandFromRecord(await getReseller(matches[0]!));
 }

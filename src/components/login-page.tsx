@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState, type CSSProperties } from "react";
 import { useRouter } from "next/navigation";
 import { AuthBridge } from "@/components/auth-bridge";
 import { AuthPageBackground } from "@/components/auth-page-background";
@@ -9,13 +9,24 @@ import { BrandLogo } from "@/components/brand-logo";
 import { appPath, marketingPath } from "@/lib/site-urls";
 import { useClientSession } from "@/hooks/use-client-session";
 import { signIn } from "@/lib/auth";
-import { Eye, EyeOff, AlertCircle, X } from "lucide-react";
+import { Eye, EyeOff, AlertCircle } from "lucide-react";
+
+type PortalBrand = {
+  displayName: string;
+  logoUrl: string | null;
+  tagline: string;
+  primaryColor?: string;
+  accentColor?: string;
+  labelColor?: string;
+  onPrimaryColor?: string;
+};
 
 export function LoginPage() {
   const router = useRouter();
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [portalBrand, setPortalBrand] = useState<PortalBrand | null>(null);
   const session = useClientSession();
 
   useEffect(() => {
@@ -26,8 +37,40 @@ export function LoginPage() {
   }, []);
 
   useEffect(() => {
+    let active = true;
+    const params = new URLSearchParams(window.location.search);
+    const ref = params.get("ref") || params.get("partner") || params.get("reseller") || "";
+    const url = ref
+      ? `/api/reseller/portal-brand?ref=${encodeURIComponent(ref)}`
+      : "/api/reseller/portal-brand";
+    void fetch(url, { cache: "no-store" })
+      .then((res) => res.json())
+      .then((data) => {
+        if (!active || !data.success || !data.brand) return;
+        setPortalBrand(data.brand as PortalBrand);
+        document.title = `Login — ${String(data.brand.displayName || "Workspace")}`;
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
     if (session && !error) router.replace("/dashboard");
   }, [session, error, router]);
+
+  const brandName = portalBrand?.displayName;
+  const brandStyles = useMemo(
+    () =>
+      ({
+        "--brand-primary": portalBrand?.primaryColor || "#22d3ee",
+        "--brand-accent": portalBrand?.accentColor || "#34d399",
+        "--brand-label": portalBrand?.labelColor || "#a5f3fc",
+        "--brand-on-primary": portalBrand?.onPrimaryColor || "#041016",
+      }) as CSSProperties,
+    [portalBrand],
+  );
 
   async function handleSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -53,7 +96,10 @@ export function LoginPage() {
   }
 
   return (
-    <div className="relative flex min-h-dvh w-full max-w-full items-start justify-center overflow-x-hidden overflow-y-auto px-4 py-10 sm:py-12 max-md:pt-8 max-md:pb-10 md:items-center">
+    <div
+      className="relative flex min-h-dvh w-full max-w-full items-start justify-center overflow-x-hidden overflow-y-auto px-4 py-10 sm:py-12 max-md:pt-8 max-md:pb-10 md:items-center"
+      style={brandStyles}
+    >
       <AuthPageBackground />
       {/* Error Modal */}
       {error && (
@@ -81,19 +127,46 @@ export function LoginPage() {
 
       <div className="animate-fade-up relative w-full max-w-xl">
         <div className="mb-4 flex flex-col items-center overflow-visible pt-2 text-center max-md:mb-3 sm:pt-3">
-          <Link href={marketingPath("/")} className="inline-flex overflow-visible">
-            <BrandLogo size="xl" stacked showTagline={false} />
+          <Link href={portalBrand ? appPath("/login") : marketingPath("/")} className="inline-flex overflow-visible">
+            <BrandLogo
+              size="xl"
+              stacked
+              showTagline={Boolean(portalBrand)}
+              name={brandName}
+              logoSrc={portalBrand?.logoUrl}
+              tagline={portalBrand?.tagline || ""}
+            />
           </Link>
           <h1 className="mt-3 max-md:mt-2 text-3xl md:text-4xl font-black tracking-tight text-transparent bg-clip-text bg-gradient-to-br from-white via-white to-slate-400">
             Welcome back
           </h1>
           <p className="mt-1 text-base text-slate-400 mx-auto sm:mt-1.5">
-            Enter your FlowDoverz workspace credentials to continue generating.
+            {portalBrand
+              ? `Sign in to your ${portalBrand.displayName} workspace to continue.`
+              : "Enter your FlowDoverz workspace credentials to continue generating."}
           </p>
         </div>
 
-        <div className="relative overflow-hidden rounded-[2rem] border border-white/10 bg-[#06080d]/80 p-6 sm:p-8 md:p-10 shadow-[0_0_60px_rgba(34,211,238,0.15)] backdrop-blur-3xl group max-md:shadow-[0_10px_40px_rgba(34,211,238,0.2)]">
-          <div className="absolute inset-0 bg-gradient-to-b from-cyan-500/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-700 pointer-events-none" />
+        <div
+          className="relative overflow-hidden rounded-[2rem] border border-white/10 bg-[#06080d]/80 p-6 sm:p-8 md:p-10 shadow-[0_0_60px_rgba(34,211,238,0.15)] backdrop-blur-3xl group max-md:shadow-[0_10px_40px_rgba(34,211,238,0.2)]"
+          style={
+            portalBrand
+              ? {
+                  boxShadow: `0 0 60px color-mix(in srgb, var(--brand-primary) 25%, transparent)`,
+                }
+              : undefined
+          }
+        >
+          <div
+            className="absolute inset-0 bg-gradient-to-b from-cyan-500/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-700 pointer-events-none"
+            style={
+              portalBrand
+                ? {
+                    backgroundImage: `linear-gradient(to bottom, color-mix(in srgb, var(--brand-primary) 12%, transparent), transparent)`,
+                  }
+                : undefined
+            }
+          />
 
 
           <form onSubmit={handleSubmit} className="space-y-5">
@@ -111,7 +184,7 @@ export function LoginPage() {
                 autoComplete="email"
                 required
                 placeholder="you@company.com"
-                className="w-full rounded-2xl border border-white/10 bg-white/5 px-5 py-3.5 text-sm text-white outline-none transition-all duration-300 placeholder:text-slate-500 focus:border-cyan-400 focus:bg-white/10 focus:shadow-[0_0_20px_rgba(34,211,238,0.25)] focus:ring-2 focus:ring-cyan-500/20"
+                className="w-full rounded-2xl border border-white/10 bg-white/5 px-5 py-3.5 text-sm text-white outline-none transition-all duration-300 placeholder:text-slate-500 focus:border-[var(--brand-primary)] focus:bg-white/10 focus:ring-2 focus:ring-[color-mix(in_srgb,var(--brand-primary)_20%,transparent)]"
               />
             </div>
 
@@ -130,7 +203,7 @@ export function LoginPage() {
                   autoComplete="current-password"
                   required
                   placeholder="Enter password"
-                  className="w-full rounded-2xl border border-white/10 bg-white/5 px-5 py-3.5 pr-12 text-sm text-white outline-none transition-all duration-300 placeholder:text-slate-500 focus:border-cyan-400 focus:bg-white/10 focus:shadow-[0_0_20px_rgba(34,211,238,0.25)] focus:ring-2 focus:ring-cyan-500/20"
+                  className="w-full rounded-2xl border border-white/10 bg-white/5 px-5 py-3.5 pr-12 text-sm text-white outline-none transition-all duration-300 placeholder:text-slate-500 focus:border-[var(--brand-primary)] focus:bg-white/10 focus:ring-2 focus:ring-[color-mix(in_srgb,var(--brand-primary)_20%,transparent)]"
                 />
                 <button
                   type="button"
@@ -150,18 +223,25 @@ export function LoginPage() {
             <button
               type="submit"
               disabled={loading}
-              className="relative z-10 mt-4 w-full rounded-2xl bg-gradient-to-r from-cyan-400 to-emerald-400 px-8 py-4 text-sm font-black tracking-wide text-slate-950 transition-all duration-300 hover:scale-[1.02] shadow-[0_0_20px_rgba(34,211,238,0.4)] hover:shadow-[0_0_35px_rgba(34,211,238,0.6)] disabled:opacity-60 disabled:hover:scale-100 max-md:hover:scale-100 max-md:shadow-[0_8px_24px_rgba(34,211,238,0.35)]"
+              className="relative z-10 mt-4 w-full rounded-2xl px-8 py-4 text-sm font-black tracking-wide transition-all duration-300 hover:scale-[1.02] disabled:opacity-60 disabled:hover:scale-100 max-md:hover:scale-100"
+              style={{
+                backgroundImage: `linear-gradient(to right, var(--brand-primary), var(--brand-accent))`,
+                color: "var(--brand-on-primary)",
+                boxShadow: "0 0 20px color-mix(in srgb, var(--brand-primary) 35%, transparent)",
+              }}
             >
               {loading ? "Authenticating..." : "Login"}
             </button>
           </form>
 
-          <p className="mt-6 text-center text-sm text-slate-400">
-            No account yet?{" "}
-            <Link href={appPath("/signup")} className="font-semibold text-cyan-300 hover:text-cyan-200">
-              Create one free
-            </Link>
-          </p>
+          {!portalBrand ? (
+            <p className="mt-6 text-center text-sm text-slate-400">
+              No account yet?{" "}
+              <Link href={appPath("/signup")} className="font-semibold text-[var(--brand-label)] hover:opacity-90">
+                Create one free
+              </Link>
+            </p>
+          ) : null}
         </div>
       </div>
     </div>

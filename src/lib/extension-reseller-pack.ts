@@ -166,8 +166,43 @@ function portalOriginFromUrl(raw: string) {
     const url = new URL(full);
     return `${url.protocol}//${url.host}`;
   } catch {
-    return full.replace(/\/+(login|signup|dashboard)\/?$/i, "").replace(/\/$/, "");
+    return full.replace(/\/+(login|signup|dashboard|painel)\/?$/i, "").replace(/\/$/, "");
   }
+}
+
+function ensurePortalHostAccess(manifest: Record<string, unknown>, origins: string[]) {
+  const unique = [
+    ...new Set(
+      origins
+        .map((item) => String(item || "").trim().replace(/\/$/, ""))
+        .filter(Boolean),
+    ),
+  ];
+  if (!unique.length) return;
+
+  for (const origin of unique) {
+    const perm = `${origin}/*`;
+    const perms = Array.isArray(manifest.host_permissions) ? [...(manifest.host_permissions as string[])] : [];
+    if (!perms.includes(perm) && !perms.some((item) => item === "https://*/*" || item === "*://*/*")) {
+      perms.push(perm);
+      manifest.host_permissions = perms;
+    }
+  }
+
+  const scripts = Array.isArray(manifest.content_scripts)
+    ? (manifest.content_scripts as Array<Record<string, unknown>>).map((entry) => ({ ...entry }))
+    : [];
+  for (const entry of scripts) {
+    const jsFiles = Array.isArray(entry.js) ? entry.js.map((item) => String(item)) : [];
+    if (!jsFiles.some((file) => /portal-bridge/i.test(file))) continue;
+    const matches = Array.isArray(entry.matches) ? [...(entry.matches as string[])] : [];
+    for (const origin of unique) {
+      const match = `${origin}/*`;
+      if (!matches.includes(match)) matches.push(match);
+    }
+    entry.matches = matches;
+  }
+  if (scripts.length) manifest.content_scripts = scripts;
 }
 
 /**
@@ -948,6 +983,7 @@ async function brandOfficialZip(
   const portalOrigin = portalOriginFromUrl(loginUrl || dashboardUrl);
   const appUrl = getPublicAppUrl();
   const syncOrigin = portalOriginFromUrl(appUrl) || appUrl.replace(/\/$/, "");
+  const appOrigin = syncOrigin;
   const primaryColor = normalizeHexColor(String(branding.primaryColor || ""), DEFAULT_BRAND_PRIMARY);
   const accentColor = normalizeHexColor(String(branding.accentColor || ""), DEFAULT_BRAND_ACCENT);
   const backgroundColor = normalizeHexColor(String(branding.backgroundColor || ""), DEFAULT_BRAND_BG);
@@ -979,10 +1015,10 @@ async function brandOfficialZip(
       text,
       file.name,
       portalOrigin,
-      portalOriginFromUrl(appUrl) || appUrl,
+      appOrigin,
       loginUrl,
     );
-    text = rewritePortalBridgeOrigin(text, file.name, portalOriginFromUrl(appUrl) || appUrl);
+    text = rewritePortalBridgeOrigin(text, file.name, portalOrigin || appOrigin);
     text = rewriteDashboardOpen(text, dashboardUrl);
     text = rewriteSyncTimeoutCopy(text);
     text = replaceDashboardUrls(text, dashboardUrl, appUrl);
@@ -1004,14 +1040,7 @@ async function brandOfficialZip(
   if (loginUrl) {
     manifest.homepage_url = loginUrl;
   }
-  if (portalOrigin) {
-    const perms = Array.isArray(manifest.host_permissions) ? [...(manifest.host_permissions as string[])] : [];
-    const perm = `${portalOrigin}/*`;
-    if (!perms.includes(perm) && !perms.some((item) => item === "https://*/*" || item === "*://*/*")) {
-      perms.push(perm);
-      manifest.host_permissions = perms;
-    }
-  }
+  ensurePortalHostAccess(manifest, [portalOrigin, syncOrigin]);
   if (branding.version) {
     manifest.version = branding.version;
     manifest.version_name = branding.version;
