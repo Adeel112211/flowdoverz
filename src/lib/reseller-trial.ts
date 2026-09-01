@@ -21,3 +21,21 @@ export function resellerClientTrialExpiryFromNow(
 export function normalizeTrialSeatHours(raw: unknown) {
   return Math.max(0.25, Math.min(720, Number(raw) || DEFAULT_TRIAL_SEAT_HOURS));
 }
+
+const PAID_CLIENT_PLANS = new Set(["solo", "studio", "team", "nano", "ultra"]);
+
+export function isResellerTrialClientPlan(plan?: string | null) {
+  return String(plan || "").trim().toLowerCase() === "trial";
+}
+
+/** Which expiry timestamp drives access/timer UI for a reseller-registered client. */
+export function resellerClientActiveExpiry(user: {
+  subscriptionPlan?: string | null;
+  trialExpiresAt?: string | null;
+  subscriptionExpiresAt?: string | null;
+}) {
+  const plan = String(user.subscriptionPlan || "").trim().toLowerCase();
+  if (isResellerTrialClientPlan(plan)) return user.trialExpiresAt || null;
+  if (PAID_CLIENT_PLANS.has(plan)) return user.subscriptionExpiresAt || null;
+  return user.trialExpiresAt || user.subscriptionExpiresAt || null;
+}

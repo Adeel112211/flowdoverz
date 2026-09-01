@@ -7,9 +7,11 @@ import {
   publicResellerPlanOptions,
   remainingPaidSeats,
   remainingTrialSeats,
+  resellerTrialRegistrationEnabled,
   summarizeSeatGrants,
 } from "@/lib/reseller-store";
 import { getResellerSession, publicResellerSession } from "@/lib/reseller-session";
+import { resellerClientActiveExpiry } from "@/lib/reseller-trial";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -30,14 +32,12 @@ export async function GET() {
   ]);
   const pricing = summarizeSeatGrants(grants);
   const now = Date.now();
-  const clientExpiresAt = (user: { trialExpiresAt: string | null; subscriptionExpiresAt: string | null }) =>
-    user.subscriptionExpiresAt || user.trialExpiresAt;
   const active = users.filter((user) => {
-    const at = Date.parse(clientExpiresAt(user) || "");
+    const at = Date.parse(resellerClientActiveExpiry(user) || "");
     return Number.isFinite(at) && at > now;
   }).length;
   const expired = users.filter((user) => {
-    const at = Date.parse(clientExpiresAt(user) || "");
+    const at = Date.parse(resellerClientActiveExpiry(user) || "");
     return Number.isFinite(at) && at <= now;
   }).length;
 
@@ -52,7 +52,7 @@ export async function GET() {
       remainingSeats: remainingPaidSeats(reseller, usage.paid) + remainingTrialSeats(reseller, usage.trial),
       remainingPaidSeats: remainingPaidSeats(reseller, usage.paid),
       remainingTrialSeats: remainingTrialSeats(reseller, usage.trial),
-      trialSeatsEnabled: reseller.trialSeatsEnabled,
+      trialSeatsEnabled: resellerTrialRegistrationEnabled(reseller),
       trialSeatHours: reseller.trialSeatHours,
       trialSeatsGranted: reseller.trialSeatsGranted,
       activeClients: active,
@@ -71,6 +71,7 @@ export async function GET() {
     recentClients: users.slice(0, 8).map((user) => ({
       email: user.email,
       name: user.name,
+      subscriptionPlan: user.subscriptionPlan,
       trialExpiresAt: user.trialExpiresAt,
       subscriptionExpiresAt: user.subscriptionExpiresAt,
       createdAt: user.createdAt,

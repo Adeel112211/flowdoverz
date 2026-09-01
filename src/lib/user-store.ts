@@ -538,6 +538,14 @@ export function resolveBillingPresentation(status: {
   subscriptionExpiresAt: string | null;
   subscriptionPlan: string;
 }) {
+  const plan = String(status.subscriptionPlan || "none").trim().toLowerCase();
+  if (plan === "trial") {
+    return {
+      expiryAt: status.trialExpiresAt,
+      planName: "Free Trial",
+      userType: "trial",
+    };
+  }
   if (status.subscriptionActive && isPaidPlan(status.subscriptionPlan)) {
     return {
       expiryAt: status.subscriptionExpiresAt,
@@ -577,7 +585,7 @@ export async function createUserByAdmin(input: {
 
   const normalized = normalizeEmail(input.email);
   const displayName = input.name.trim().replace(/\s+/g, " ");
-  const subscriptionPlan = input.subscriptionPlan || "trial";
+  const subscriptionPlan = String(input.subscriptionPlan || "trial").trim().toLowerCase();
 
   if (!normalized || !normalized.includes("@")) {
     return { ok: false, error: "Enter a valid email address." };
@@ -615,7 +623,8 @@ export async function createUserByAdmin(input: {
     ? input.subscriptionExpiresAt || defaultSubExpiry
     : null;
 
-  const newUser: StoredUser = {
+  const { FieldValue } = await import("firebase-admin/firestore");
+  const userDoc: Record<string, unknown> = {
     email: normalized,
     name: displayName,
     nameLower: normalizeClientNameKey(displayName),
@@ -624,13 +633,31 @@ export async function createUserByAdmin(input: {
     createdAt: now.toISOString(),
     trialExpiresAt,
     subscriptionPlan,
-    subscriptionExpiresAt,
     emailVerified: true,
     ...(input.resellerId ? { resellerId: input.resellerId } : {}),
     ...(input.assignedSlot ? { assignedSlot: input.assignedSlot } : {}),
   };
+  if (PAID_PLANS.includes(subscriptionPlan)) {
+    userDoc.subscriptionExpiresAt = subscriptionExpiresAt;
+  } else {
+    userDoc.subscriptionExpiresAt = FieldValue.delete();
+  }
 
-  await usersRef.doc(normalized).set(newUser);
+  try {
+    await db.runTransaction(async (transaction) => {
+      const ref = usersRef.doc(normalized);
+      const snap = await transaction.get(ref);
+      if (snap.exists) {
+        throw new Error("DUPLICATE_EMAIL");
+      }
+      transaction.set(ref, userDoc);
+    });
+  } catch (error) {
+    if (error instanceof Error && error.message === "DUPLICATE_EMAIL") {
+      return { ok: false, error: "A client with this email already exists." };
+    }
+    throw error;
+  }
   const { touchLive } = await import("./live-tick");
   void touchLive({ topic: "user", action: "created", id: normalized, userId: normalized });
   return { ok: true };

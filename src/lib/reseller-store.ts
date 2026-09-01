@@ -201,7 +201,7 @@ export function publicResellerPlanOptions(record: ResellerRecord) {
     label: plan === "team" ? "Team" : "Solo",
     pricePerSeatPkr: pricePerSeatForPlan(record, plan),
   }));
-  if (!record.trialSeatsEnabled) return paid;
+  if (!resellerTrialRegistrationEnabled(record)) return paid;
   const hours = normalizeTrialSeatHours(record.trialSeatHours);
   return [
     {
@@ -211,6 +211,15 @@ export function publicResellerPlanOptions(record: ResellerRecord) {
     },
     ...paid,
   ];
+}
+
+/** Reseller-only short trials — separate from public website free trial (removed). */
+export function resellerTrialRegistrationEnabled(
+  record: Pick<ResellerRecord, "trialSeatsEnabled" | "trialSeatsGranted">,
+) {
+  const granted = Math.max(0, Math.floor(Number(record.trialSeatsGranted) || 0));
+  if (granted > 0) return true;
+  return Boolean(record.trialSeatsEnabled);
 }
 
 const COLLECTION = "resellers";
@@ -368,9 +377,9 @@ function asRecord(id: string, data: Record<string, unknown>): ResellerRecord {
     seatsPurchased: Math.max(0, Math.floor(Number(data.seatsPurchased ?? data.maxUsers) || 0)),
     trialSeatsGranted: Math.max(0, Math.floor(Number(data.trialSeatsGranted) || 0)),
     trialSeatsEnabled:
-      data.trialSeatsEnabled !== undefined
-        ? Boolean(data.trialSeatsEnabled)
-        : Math.max(0, Math.floor(Number(data.trialSeatsGranted) || 0)) > 0,
+      Math.max(0, Math.floor(Number(data.trialSeatsGranted) || 0)) > 0
+        ? data.trialSeatsEnabled !== false
+        : Boolean(data.trialSeatsEnabled),
     trialSeatHours: normalizeTrialSeatHours(data.trialSeatHours),
     seatDays: Math.max(1, Math.floor(Number(data.seatDays) || DEFAULT_SEAT_DAYS)),
     pricePerSeatPkr: normalizePricePerSeatPkr(data.pricePerSeatPkr),
@@ -580,7 +589,7 @@ export async function listResellerUsers(resellerId: string, limit = 200): Promis
       return {
         email: doc.id,
         name: String(data.name || ""),
-        subscriptionPlan: String(data.subscriptionPlan || "trial"),
+        subscriptionPlan: String(data.subscriptionPlan || "none"),
         trialExpiresAt: data.trialExpiresAt ? String(data.trialExpiresAt) : null,
         subscriptionExpiresAt: data.subscriptionExpiresAt ? String(data.subscriptionExpiresAt) : null,
         assignedSlot: String(data.assignedSlot || ""),
@@ -821,6 +830,12 @@ export async function registerClientForReseller(
     return { ok: false, error: "No cookie slots assigned yet. Ask the owner to assign a slot.", status: 400 };
   }
 
+  const { getUserRecord, normalizeEmail } = await import("./user-store");
+  const normalizedEmail = normalizeEmail(String(input.email || ""));
+  if (normalizedEmail && (await getUserRecord(normalizedEmail))) {
+    return { ok: false, error: "A client with this email already exists.", status: 400 };
+  }
+
   const usage = await countResellerSeatUsage(reseller.id);
   const paidLeft = remainingPaidSeats(reseller, usage.paid);
   const trialLeft = remainingTrialSeats(reseller, usage.trial);
@@ -828,7 +843,7 @@ export async function registerClientForReseller(
   const wantsTrial = requested === "trial";
 
   if (wantsTrial) {
-    if (!reseller.trialSeatsEnabled) {
+    if (!resellerTrialRegistrationEnabled(reseller)) {
       return {
         ok: false,
         error: "Trial registration is not enabled for this partner. Ask the owner to turn it on.",
@@ -893,7 +908,7 @@ export async function registerClientForReseller(
   }
 
   const subscriptionPlan = normalizeSeatPlan(
-    requested === "none" ? reseller.defaultSeatPlan : requested || reseller.defaultSeatPlan,
+    requested === "none" || requested === "trial" ? reseller.defaultSeatPlan : requested || reseller.defaultSeatPlan,
     reseller.allowedSeatPlans,
   );
   const expiry = subscriptionExpiryFromNow(reseller.seatDays);
@@ -1284,10 +1299,16 @@ export async function updateReseller(id: string, input: ResellerInput): Promise<
       input.trialSeatsGranted !== undefined
         ? Math.max(0, Math.floor(Number(input.trialSeatsGranted) || 0))
         : current.trialSeatsGranted || 0,
-    trialSeatsEnabled:
-      input.trialSeatsEnabled !== undefined
+    trialSeatsEnabled: (() => {
+      const granted =
+        input.trialSeatsGranted !== undefined
+          ? Math.max(0, Math.floor(Number(input.trialSeatsGranted) || 0))
+          : current.trialSeatsGranted || 0;
+      if (granted > 0) return true;
+      return input.trialSeatsEnabled !== undefined
         ? Boolean(input.trialSeatsEnabled)
-        : current.trialSeatsEnabled,
+        : current.trialSeatsEnabled;
+    })(),
     trialSeatHours:
       input.trialSeatHours !== undefined
         ? normalizeTrialSeatHours(input.trialSeatHours)

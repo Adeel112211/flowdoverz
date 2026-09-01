@@ -186,7 +186,7 @@ function formFromReseller(row: Reseller): FormState {
     assignedSlots: [...(row.assignedSlots || [])],
     maxUsers: String(row.seatsPurchased || row.maxUsers || 0),
     seatDays: String(row.seatDays || 30),
-    trialSeatsEnabled: Boolean(row.trialSeatsEnabled),
+    trialSeatsEnabled: Boolean(row.trialSeatsEnabled) || (row.trialSeatsGranted || 0) > 0,
     trialSeatHours: String(row.trialSeatHours || 5),
     trialSeatsInitial: String(row.trialSeatsGranted || 0),
     pricePerSeatPkr: String(row.pricePerSeatPkr || 0),

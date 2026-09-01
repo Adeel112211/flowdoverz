@@ -6,7 +6,7 @@ import { AdminPageHeader } from "@/components/admin-page-header";
 import { AdminPageLayout } from "@/components/admin-page-layout";
 import { AdminLoadingState } from "@/components/admin-loading-state";
 import { formatPkr } from "@/lib/pricing-config";
-import { trialSeatHoursLabel } from "@/lib/reseller-trial";
+import { trialSeatHoursLabel, resellerClientActiveExpiry } from "@/lib/reseller-trial";
 
 type ClientRow = {
   email: string;
@@ -42,7 +42,7 @@ function timeLeft(iso: string | null | undefined) {
 }
 
 function clientTimer(user: ClientRow) {
-  return timeLeft(user.subscriptionExpiresAt || user.trialExpiresAt);
+  return timeLeft(resellerClientActiveExpiry(user));
 }
 
 function planLabel(plan?: string, trialHours = 5) {
@@ -165,6 +165,7 @@ export default function ResellerClientsPage() {
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
+    if (saving) return;
     setFormError("");
     setNotice("");
     setSaving(true);

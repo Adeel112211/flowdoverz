@@ -8,6 +8,7 @@ import {
   remainingPaidSeats,
   remainingTrialSeats,
   countResellerSeatUsage,
+  resellerTrialRegistrationEnabled,
 } from "@/lib/reseller-store";
 import { getResellerSession } from "@/lib/reseller-session";
 
@@ -31,7 +32,7 @@ export async function GET() {
     success: true,
     defaultSeatPlan: reseller.defaultSeatPlan,
     planOptions: publicResellerPlanOptions(reseller),
-    trialSeatsEnabled: reseller.trialSeatsEnabled,
+    trialSeatsEnabled: resellerTrialRegistrationEnabled(reseller),
     trialSeatHours: reseller.trialSeatHours,
     trialSeatsGranted: reseller.trialSeatsGranted,
     remainingTrialSeats: remainingTrialSeats(reseller, usage.trial),

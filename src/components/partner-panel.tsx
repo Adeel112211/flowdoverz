@@ -7,10 +7,12 @@ import { AlertCircle, Eye, EyeOff } from "lucide-react";
 import { BrandLogo } from "@/components/brand-logo";
 import { AuthPageBackground } from "@/components/auth-page-background";
 import { appPath } from "@/lib/site-urls";
+import { resellerClientActiveExpiry } from "@/lib/reseller-trial";
 
 type PartnerUser = {
   email: string;
   name: string;
+  subscriptionPlan?: string | null;
   trialExpiresAt?: string | null;
   subscriptionExpiresAt: string | null;
   createdAt: string | null;
@@ -41,8 +43,12 @@ function timeLeft(iso: string | null | undefined) {
   return { label: `${minutes}m left`, className: "text-emerald-400" };
 }
 
-function clientTimer(user: { trialExpiresAt?: string | null; subscriptionExpiresAt?: string | null }) {
-  return timeLeft(user.subscriptionExpiresAt || user.trialExpiresAt);
+function clientTimer(user: {
+  subscriptionPlan?: string | null;
+  trialExpiresAt?: string | null;
+  subscriptionExpiresAt?: string | null;
+}) {
+  return timeLeft(resellerClientActiveExpiry(user));
 }
 
 const INPUT_CLASS =

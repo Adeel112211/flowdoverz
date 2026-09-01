@@ -8,6 +8,7 @@ import { AdminPageLayout } from "@/components/admin-page-layout";
 import { AdminLoadingState } from "@/components/admin-loading-state";
 import { useResellerNav } from "@/components/reseller-nav";
 import { formatPkr } from "@/lib/pricing-config";
+import { resellerClientActiveExpiry } from "@/lib/reseller-trial";
 
 type Stats = {
   seatsPurchased: number;
@@ -28,6 +29,7 @@ type Stats = {
 type RecentClient = {
   email: string;
   name: string;
+  subscriptionPlan?: string | null;
   trialExpiresAt?: string | null;
   subscriptionExpiresAt: string | null;
   createdAt: string | null;
@@ -48,8 +50,12 @@ function timeLeft(iso: string | null | undefined) {
   return { label: `${minutes}m left`, className: "text-emerald-400" };
 }
 
-function clientTimer(user: { trialExpiresAt?: string | null; subscriptionExpiresAt?: string | null }) {
-  return timeLeft(user.subscriptionExpiresAt || user.trialExpiresAt);
+function clientTimer(user: {
+  subscriptionPlan?: string | null;
+  trialExpiresAt?: string | null;
+  subscriptionExpiresAt?: string | null;
+}) {
+  return timeLeft(resellerClientActiveExpiry(user));
 }
 
 export default function ResellerDashboardPage() {
