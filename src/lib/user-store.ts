@@ -645,7 +645,8 @@ export async function createUserByAdmin(input: {
         return { ok: false, error: "A client with this email already exists." };
       }
       try {
-        await ref.set(userDoc);
+        const { supabaseCreateDocOnly } = await import("./supabase-firestore");
+        await supabaseCreateDocOnly("users", normalized, userDoc);
       } catch (error) {
         if (error instanceof SupabaseDocumentAlreadyExistsError) {
           return { ok: false, error: "A client with this email already exists." };

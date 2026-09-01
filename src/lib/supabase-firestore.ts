@@ -18,6 +18,16 @@ function isFieldDeleteSentinel(value: unknown) {
   return Object.keys(value as object).length === 0;
 }
 
+type SetDocOptions = {
+  merge?: boolean;
+  createOnly?: boolean;
+};
+
+function resolveSetDocOptions(options?: boolean | SetDocOptions): SetDocOptions {
+  if (typeof options === "boolean") return { merge: options };
+  return options || {};
+}
+
 /** Strip Firestore delete sentinels and apply deletions on merge payloads. */
 function sanitizeFirestorePayload(data: DocData): { payload: DocData; deleteKeys: string[] } {
   const payload: DocData = {};
@@ -93,8 +103,8 @@ class SupabaseDocumentReference {
     return this.db.getDoc(this.path, this.collectionPath, this.id);
   }
 
-  async set(data: DocData, options?: { merge?: boolean }) {
-    await this.db.setDoc(this.path, this.collectionPath, this.id, data, options?.merge === true);
+  async set(data: DocData, options?: boolean | SetDocOptions) {
+    await this.db.setDoc(this.path, this.collectionPath, this.id, data, options);
   }
 
   async update(data: DocData) {
@@ -210,7 +220,7 @@ export class SupabaseQuerySnapshot {
 
 class SupabaseTransaction {
   private writes: Array<
-    | { type: "set"; ref: SupabaseDocumentReference; data: DocData; merge: boolean }
+    | { type: "set"; ref: SupabaseDocumentReference; data: DocData; merge: boolean; createOnly: boolean }
     | { type: "delete"; ref: SupabaseDocumentReference }
   > = [];
 
@@ -220,12 +230,13 @@ class SupabaseTransaction {
     return ref.get();
   }
 
-  set(ref: SupabaseDocumentReference, data: DocData, options?: { merge?: boolean }) {
-    this.writes.push({ type: "set", ref, data, merge: options?.merge === true });
+  set(ref: SupabaseDocumentReference, data: DocData, options?: boolean | SetDocOptions) {
+    const resolved = resolveSetDocOptions(options);
+    this.writes.push({ type: "set", ref, data, merge: resolved.merge === true, createOnly: resolved.createOnly === true });
   }
 
   update(ref: SupabaseDocumentReference, data: DocData) {
-    this.writes.push({ type: "set", ref, data, merge: true });
+    this.writes.push({ type: "set", ref, data, merge: true, createOnly: false });
   }
 
   delete(ref: SupabaseDocumentReference) {
@@ -238,28 +249,33 @@ class SupabaseTransaction {
         await write.ref.delete();
         continue;
       }
-      await write.ref.set(write.data, { merge: write.merge });
+      await write.ref.set(write.data, {
+        merge: write.merge,
+        createOnly: write.createOnly,
+      });
     }
   }
 }
 
 class SupabaseWriteBatch {
   private ops: Array<
-    | { type: "set"; path: string; collectionPath: string; id: string; data: DocData; merge: boolean }
+    | { type: "set"; path: string; collectionPath: string; id: string; data: DocData; merge: boolean; createOnly: boolean }
     | { type: "update"; path: string; collectionPath: string; id: string; data: DocData }
     | { type: "delete"; path: string }
   > = [];
 
   constructor(private readonly db: SupabaseFirestore) {}
 
-  set(ref: SupabaseDocumentReference, data: DocData, options?: { merge?: boolean }) {
+  set(ref: SupabaseDocumentReference, data: DocData, options?: boolean | SetDocOptions) {
+    const resolved = resolveSetDocOptions(options);
     this.ops.push({
       type: "set",
       path: ref.path,
       collectionPath: ref.collectionPath,
       id: ref.id,
       data,
-      merge: options?.merge === true,
+      merge: resolved.merge === true,
+      createOnly: resolved.createOnly === true,
     });
     return this;
   }
@@ -283,7 +299,10 @@ class SupabaseWriteBatch {
   async commit() {
     for (const op of this.ops) {
       if (op.type === "set") {
-        await this.db.setDoc(op.path, op.collectionPath, op.id, op.data, op.merge);
+        await this.db.setDoc(op.path, op.collectionPath, op.id, op.data, {
+          merge: op.merge,
+          createOnly: op.createOnly,
+        });
       } else if (op.type === "update") {
         await this.db.updateDoc(op.path, op.collectionPath, op.id, op.data);
       } else {
@@ -328,8 +347,9 @@ export class SupabaseFirestore {
     collectionPath: string,
     id: string,
     data: DocData,
-    merge: boolean,
+    options?: boolean | SetDocOptions,
   ) {
+    const { merge, createOnly } = resolveSetDocOptions(options);
     const client = getSupabaseAdmin();
     if (!client) throw new Error("Supabase not configured.");
     if (!id.trim()) throw new Error("Document id is required.");
@@ -352,7 +372,7 @@ export class SupabaseFirestore {
       updated_at: new Date().toISOString(),
     };
 
-    if (!merge) {
+    if (createOnly) {
       const { error } = await client.from("app_documents").insert(row);
       if (error?.code === "23505") {
         throw new SupabaseDocumentAlreadyExistsError(path);
@@ -368,7 +388,7 @@ export class SupabaseFirestore {
   async updateDoc(path: string, collectionPath: string, id: string, data: DocData) {
     const existing = await this.getDoc(path, collectionPath, id);
     if (!existing.exists) throw new Error(`Document ${path} not found.`);
-    await this.setDoc(path, collectionPath, id, data, true);
+    await this.setDoc(path, collectionPath, id, data, { merge: true });
   }
 
   async deleteDoc(path: string) {
@@ -484,4 +504,13 @@ let supabaseFirestore: SupabaseFirestore | null = null;
 export function getSupabaseFirestore() {
   if (!supabaseFirestore) supabaseFirestore = new SupabaseFirestore();
   return supabaseFirestore;
+}
+
+/** Insert a new document; throws SupabaseDocumentAlreadyExistsError if the id already exists. */
+export async function supabaseCreateDocOnly(
+  collectionPath: string,
+  id: string,
+  data: DocData,
+) {
+  await getSupabaseFirestore().collection(collectionPath).doc(id).set(data, { createOnly: true });
 }
