@@ -1,5 +1,5 @@
 import { randomBytes, scryptSync, timingSafeEqual } from "crypto";
-import { getDb, FIREBASE_QUOTA_MESSAGE, isFirebaseQuotaError } from "./firebase-admin";
+import { getDb, FIREBASE_QUOTA_MESSAGE, isFirebaseQuotaError, isSupabaseBackend } from "./firebase-admin";
 import { validateSignupEmail } from "./signup-email-policy";
 import { canonicalizeMailboxEmail } from "./signup-email-rules";
 import { getSignupSecuritySettings } from "./signup-security";
@@ -619,7 +619,6 @@ export async function createUserByAdmin(input: {
     ? input.subscriptionExpiresAt || defaultSubExpiry
     : null;
 
-  const { FieldValue } = await import("firebase-admin/firestore");
   const userDoc: Record<string, unknown> = {
     email: normalized,
     name: displayName,
@@ -632,22 +631,36 @@ export async function createUserByAdmin(input: {
     emailVerified: true,
     ...(input.resellerId ? { resellerId: input.resellerId } : {}),
     ...(input.assignedSlot ? { assignedSlot: input.assignedSlot } : {}),
+    ...(PAID_PLANS.includes(subscriptionPlan)
+      ? { subscriptionExpiresAt: subscriptionExpiresAt }
+      : {}),
   };
-  if (PAID_PLANS.includes(subscriptionPlan)) {
-    userDoc.subscriptionExpiresAt = subscriptionExpiresAt;
-  } else {
-    userDoc.subscriptionExpiresAt = FieldValue.delete();
-  }
 
+  const ref = usersRef.doc(normalized);
   try {
-    await db.runTransaction(async (transaction) => {
-      const ref = usersRef.doc(normalized);
-      const snap = await transaction.get(ref);
-      if (snap.exists) {
-        throw new Error("DUPLICATE_EMAIL");
+    if (isSupabaseBackend()) {
+      const { SupabaseDocumentAlreadyExistsError } = await import("./supabase-firestore");
+      const existing = await ref.get();
+      if (existing.exists) {
+        return { ok: false, error: "A client with this email already exists." };
       }
-      transaction.set(ref, userDoc);
-    });
+      try {
+        await ref.set(userDoc);
+      } catch (error) {
+        if (error instanceof SupabaseDocumentAlreadyExistsError) {
+          return { ok: false, error: "A client with this email already exists." };
+        }
+        throw error;
+      }
+    } else {
+      await db.runTransaction(async (transaction) => {
+        const snap = await transaction.get(ref);
+        if (snap.exists) {
+          throw new Error("DUPLICATE_EMAIL");
+        }
+        transaction.set(ref, userDoc);
+      });
+    }
   } catch (error) {
     if (error instanceof Error && error.message === "DUPLICATE_EMAIL") {
       return { ok: false, error: "A client with this email already exists." };

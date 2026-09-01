@@ -4,6 +4,34 @@ import { getSupabaseAdmin } from "./supabase-admin";
 
 type DocData = Record<string, unknown>;
 
+export class SupabaseDocumentAlreadyExistsError extends Error {
+  constructor(path: string) {
+    super(`Document ${path} already exists.`);
+    this.name = "SupabaseDocumentAlreadyExistsError";
+  }
+}
+
+function isFieldDeleteSentinel(value: unknown) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const method = String((value as { _methodName?: unknown })._methodName || "");
+  if (method === "FieldValue.delete" || method === "DeleteFieldValue") return true;
+  return Object.keys(value as object).length === 0;
+}
+
+/** Strip Firestore delete sentinels and apply deletions on merge payloads. */
+function sanitizeFirestorePayload(data: DocData): { payload: DocData; deleteKeys: string[] } {
+  const payload: DocData = {};
+  const deleteKeys: string[] = [];
+  for (const [key, value] of Object.entries(data)) {
+    if (isFieldDeleteSentinel(value)) {
+      deleteKeys.push(key);
+      continue;
+    }
+    payload[key] = value;
+  }
+  return { payload, deleteKeys };
+}
+
 function generateDocId() {
   return randomBytes(12).toString("hex");
 }
@@ -306,19 +334,34 @@ export class SupabaseFirestore {
     if (!client) throw new Error("Supabase not configured.");
     if (!id.trim()) throw new Error("Document id is required.");
 
-    let payload = data;
+    const { payload: sanitized, deleteKeys } = sanitizeFirestorePayload(data);
+    let payload = sanitized;
     if (merge) {
       const existing = await this.getDoc(path, collectionPath, id);
-      payload = deepMerge((existing.data() || {}) as DocData, data);
+      payload = deepMerge((existing.data() || {}) as DocData, sanitized);
+      for (const key of deleteKeys) {
+        delete payload[key];
+      }
     }
 
-    const { error } = await client.from("app_documents").upsert({
+    const row = {
       path,
       collection_path: collectionPath,
       doc_id: id,
       data: payload,
       updated_at: new Date().toISOString(),
-    });
+    };
+
+    if (!merge) {
+      const { error } = await client.from("app_documents").insert(row);
+      if (error?.code === "23505") {
+        throw new SupabaseDocumentAlreadyExistsError(path);
+      }
+      if (error) throw new Error(error.message);
+      return;
+    }
+
+    const { error } = await client.from("app_documents").upsert(row);
     if (error) throw new Error(error.message);
   }
 
