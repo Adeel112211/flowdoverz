@@ -5,7 +5,7 @@ import {
   corsHeaders,
   jsonSafe,
 } from "@/lib/reseller-http";
-import { countResellerSeatUsage, originsForReseller, remainingPaidSeats, remainingSeats, remainingTrialSeats } from "@/lib/reseller-store";
+import { countResellerSeatUsage, originsForReseller, remainingPaidSeats } from "@/lib/reseller-store";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -30,12 +30,9 @@ export async function GET(request: NextRequest) {
       config: {
         ...integration,
         userCount: usage.total,
-        trialUserCount: usage.trial,
         paidUserCount: usage.paid,
         seatsPurchased: auth.reseller.seatsPurchased,
-        trialSeatsGranted: auth.reseller.trialSeatsGranted || 0,
-        remainingSeats: remainingSeats(auth.reseller, usage),
-        remainingTrialSeats: remainingTrialSeats(auth.reseller, usage.trial),
+        remainingSeats: remainingPaidSeats(auth.reseller, usage.paid),
         remainingPaidSeats: remainingPaidSeats(auth.reseller, usage.paid),
         seatDays: auth.reseller.seatDays,
       },

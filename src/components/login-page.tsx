@@ -77,7 +77,7 @@ export function LoginPage() {
           </div>
         </div>
       )}
-      <AuthBridge session={session} daysRemaining={14} />
+      <AuthBridge session={session} />
 
       <div className="animate-fade-up relative w-full max-w-xl">
         <div className="mb-4 flex flex-col items-center overflow-visible pt-2 text-center max-md:mb-3 sm:pt-3">

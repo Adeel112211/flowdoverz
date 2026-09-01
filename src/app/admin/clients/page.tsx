@@ -29,7 +29,11 @@ import { AdminDateTimeInput } from "@/components/admin-datetime-input";
 import { AdminLoadingState } from "@/components/admin-loading-state";
 import { AdminGlassModal, AdminGlassPanel } from "@/components/admin-glass-modal";
 import { useAdminToast } from "@/components/admin-toast";
-import { getTrialDurationMs } from "@/lib/pricing-config";
+import {
+  DEFAULT_SUBSCRIPTION_DAYS,
+  getSubscriptionDurationMs,
+  getTrialDurationMs,
+} from "@/lib/pricing-config";
 import { AdminPageLayout } from "@/components/admin-page-layout";
 import { ClientMobileCard } from "@/components/admin-mobile-cards";
 import { useAdminLiveRefresh } from "@/hooks/use-admin-live-refresh";
@@ -82,7 +86,7 @@ type BillingDefaults = {
 const DEFAULT_BILLING: BillingDefaults = {
   trialDays: 14,
   trialMinutes: 0,
-  subscriptionDays: 30,
+  subscriptionDays: DEFAULT_SUBSCRIPTION_DAYS,
 };
 
 function resellerLabel(client: Pick<Client, "resellerId">, names: Record<string, string>) {
@@ -96,9 +100,7 @@ function defaultExpiryForPlan(plan: string, billing: BillingDefaults = DEFAULT_B
   if (PAID_PLANS.includes(plan)) {
     return {
       trialExpiresAt: new Date(now).toISOString(),
-      subscriptionExpiresAt: new Date(
-        now + Math.max(billing.subscriptionDays, 1) * 24 * 60 * 60 * 1000,
-      ).toISOString(),
+      subscriptionExpiresAt: new Date(now + getSubscriptionDurationMs(billing)).toISOString(),
     };
   }
   return {
@@ -311,7 +313,7 @@ export default function ClientsPage() {
         setBilling({
           trialDays: Number(data.config.trialDays) || 0,
           trialMinutes: Number(data.config.trialMinutes) || 0,
-          subscriptionDays: Number(data.config.subscriptionDays) || 30,
+          subscriptionDays: Number(data.config.subscriptionDays) || DEFAULT_SUBSCRIPTION_DAYS,
         });
       })
       .catch(() => {});

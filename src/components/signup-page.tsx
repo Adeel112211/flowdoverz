@@ -3,14 +3,13 @@
 import Link from "next/link";
 import { FormEvent, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { AlertCircle, ChevronDown, Eye, EyeOff } from "lucide-react";
+import { AlertCircle, Eye, EyeOff } from "lucide-react";
 import { BrandLogo } from "@/components/brand-logo";
 import { AuthPageBackground } from "@/components/auth-page-background";
 import { appPath, marketingPath } from "@/lib/site-urls";
 import { signUp } from "@/lib/auth";
 import { applyMaintenanceFromPayload } from "@/lib/maintenance-client";
 import { validateSignupEmailClient, SIGNUP_EMAIL_REJECTED } from "@/lib/signup-email-rules";
-import { formatTrialDurationLabel, type PricingConfig } from "@/lib/pricing-config";
 
 export function SignupPage() {
   const router = useRouter();
@@ -25,24 +24,7 @@ export function SignupPage() {
   const [resendSeconds, setResendSeconds] = useState(0);
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
-  const [selectedPlan, setSelectedPlan] = useState("trial");
-  const [planDropdownOpen, setPlanDropdownOpen] = useState(false);
-  const [trialLabel, setTrialLabel] = useState("14 days");
   const [partnerBrand, setPartnerBrand] = useState<{ name: string; logoUrl: string | null } | null>(null);
-
-  useEffect(() => {
-    let active = true;
-    fetch("/api/pricing", { cache: "no-store" })
-      .then((res) => res.json())
-      .then((data) => {
-        if (!active || !data?.success || !data.config) return;
-        setTrialLabel(formatTrialDurationLabel(data.config as PricingConfig));
-      })
-      .catch(() => {});
-    return () => {
-      active = false;
-    };
-  }, []);
 
   useEffect(() => {
     if (!partnerCode) {
@@ -145,7 +127,6 @@ export function SignupPage() {
     const name = String(form.get("name") ?? "");
     const formEmail = String(form.get("email") ?? "");
     const password = String(form.get("password") ?? "");
-    const plan = selectedPlan;
 
     if (!checkEmail(formEmail)) {
       showTempMailPopup();
@@ -176,12 +157,6 @@ export function SignupPage() {
 
     if (partnerCode) {
       router.push("/dashboard");
-    } else if (plan === "trial") {
-      if (result.trialGranted === false) {
-        router.push("/pricing?reason=no_trial");
-      } else {
-        router.push("/dashboard");
-      }
     } else {
       router.push("/pricing");
     }
@@ -232,8 +207,8 @@ export function SignupPage() {
           </h1>
           <p className="mt-1 text-sm text-slate-400 mx-auto sm:mt-2 sm:text-base">
             {partnerBrand
-              ? `Start your 5-hour ${partnerBrand.name} trial — no credit card required.`
-              : "Start your free trial today — no credit card required."}
+              ? `Create your ${partnerBrand.name} account, then choose a plan to activate.`
+              : "Create your account, then choose Solo or Team to activate."}
           </p>
         </div>
 
@@ -336,57 +311,9 @@ export function SignupPage() {
 
             {partnerCode ? (
               <div className="rounded-2xl border border-cyan-500/30 bg-cyan-500/10 px-5 py-3.5 text-sm text-cyan-100">
-                You are joining through {partnerBrand?.name || "a partner"}. You get a 5-hour trial starting today.
+                You are joining through {partnerBrand?.name || "a partner"}. Your account uses one paid seat from that partner.
               </div>
-            ) : (
-            <div>
-              <label className="mb-1.5 block text-sm font-medium text-slate-300">
-                Choose a plan
-              </label>
-              <div className="relative">
-                <button
-                  type="button"
-                  onClick={() => setPlanDropdownOpen(!planDropdownOpen)}
-                  className="flex w-full items-center justify-between rounded-2xl border border-white/10 bg-white/5 px-5 py-3.5 text-sm text-white outline-none transition-all duration-300 hover:bg-white/10 focus:border-cyan-400 focus:shadow-[0_0_20px_rgba(34,211,238,0.25)] focus:ring-2 focus:ring-cyan-500/20"
-                >
-                  <span>
-                    {selectedPlan === "trial" ? `Free Trial (${trialLabel})` : "Paid Plan (Solo / Team)"}
-                  </span>
-                  <ChevronDown
-                    className={`h-4 w-4 text-slate-400 transition-transform duration-300 ${planDropdownOpen ? "rotate-180" : ""}`}
-                  />
-                </button>
-
-                {planDropdownOpen && (
-                  <>
-                    <div className="fixed inset-0 z-40" onClick={() => setPlanDropdownOpen(false)} />
-                    <div className="absolute left-0 right-0 top-full z-50 mt-2 overflow-hidden rounded-xl border border-white/10 bg-[#0c0c16]/95 backdrop-blur-xl shadow-[0_10px_40px_rgba(0,0,0,0.5)]">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setSelectedPlan("trial");
-                          setPlanDropdownOpen(false);
-                        }}
-                        className="w-full px-5 py-3.5 text-left text-sm text-slate-200 transition-colors hover:bg-white/5 hover:text-white"
-                      >
-                        Free Trial ({trialLabel})
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setSelectedPlan("paid");
-                          setPlanDropdownOpen(false);
-                        }}
-                        className="w-full px-5 py-3.5 text-left text-sm text-slate-200 transition-colors hover:bg-white/5 hover:text-white border-t border-white/5"
-                      >
-                        Paid Plan (Solo / Team)
-                      </button>
-                    </div>
-                  </>
-                )}
-              </div>
-            </div>
-            )}
+            ) : null}
 
             <button
               type="submit"

@@ -1,6 +1,6 @@
 "use client";
 
-import { CirclePlus, Copy, CreditCard, Eye, Globe, ImageIcon, KeyRound, Link2, Pause, Pencil, Play, Puzzle, Timer, Trash2, Users } from "lucide-react";
+import { CirclePlus, Copy, CreditCard, Eye, Globe, ImageIcon, KeyRound, Link2, Pause, Pencil, Play, Puzzle, Trash2, Users } from "lucide-react";
 import type { ReactNode } from "react";
 import {
   AdminMobileActionButton,
@@ -399,11 +399,8 @@ type ResellerRow = {
   userCount: number;
   maxUsers: number;
   seatsPurchased?: number;
-  trialSeatsGranted?: number;
   remainingSeats?: number;
-  remainingTrialSeats?: number;
   remainingPaidSeats?: number;
-  trialUserCount?: number;
   paidUserCount?: number;
   pricePerSeatPkr?: number;
   kind?: "white_label" | "official";
@@ -431,7 +428,6 @@ export function ResellerMobileCard({
   onUsers,
   onUsage,
   onAddSeats,
-  onAddTrialSeats,
   onRotate,
   onTogglePause,
   onDelete,
@@ -444,7 +440,6 @@ export function ResellerMobileCard({
   onUsers: () => void;
   onUsage?: () => void;
   onAddSeats: () => void;
-  onAddTrialSeats?: () => void;
   onRotate: () => void;
   onTogglePause: () => void;
   onDelete: () => void;
@@ -468,18 +463,13 @@ export function ResellerMobileCard({
             valueClassName="font-mono text-[11px]"
           />
           <AdminMobileMetaTile
-            label="Paid seats"
-            value={`${reseller.paidUserCount ?? 0} / ${reseller.seatsPurchased || reseller.maxUsers || 0}`}
-          />
-          <AdminMobileMetaTile
-            label="Trial 5h"
-            value={`${reseller.trialUserCount ?? 0} / ${reseller.trialSeatsGranted || 0}`}
-            valueClassName="text-cyan-300"
+            label="Seats"
+            value={`${reseller.paidUserCount ?? reseller.userCount} / ${reseller.seatsPurchased || reseller.maxUsers || 0}`}
           />
           <AdminMobileMetaTile
             label="Left"
-            value={`${reseller.remainingPaidSeats ?? 0}p · ${reseller.remainingTrialSeats ?? 0}t`}
-            valueClassName={(reseller.remainingSeats ?? 0) > 0 ? "text-emerald-400" : "text-amber-400"}
+            value={String(reseller.remainingPaidSeats ?? reseller.remainingSeats ?? 0)}
+            valueClassName={(reseller.remainingPaidSeats ?? reseller.remainingSeats ?? 0) > 0 ? "text-emerald-400" : "text-amber-400"}
           />
           <AdminMobileMetaTile
             label="Price/seat"
@@ -500,9 +490,6 @@ export function ResellerMobileCard({
             <AdminMobileActionButton label="Where this API key was used" shortLabel="Used" icon={Globe} onClick={onUsage} bgClass="bg-sky-500/10" colorClass="text-sky-300" />
           ) : null}
           <AdminMobileActionButton label="Add paid seats" shortLabel="Seats" icon={CirclePlus} onClick={onAddSeats} bgClass="bg-emerald-500/10" colorClass="text-emerald-300" />
-          {onAddTrialSeats ? (
-            <AdminMobileActionButton label="Add free 5h trial seats" shortLabel="Trial" icon={Timer} onClick={onAddTrialSeats} bgClass="bg-cyan-500/10" colorClass="text-cyan-300" />
-          ) : null}
           {reseller.kind === "official" ? null : onBuildExtension ? (
             <AdminMobileActionButton
               label="Build branded extension"

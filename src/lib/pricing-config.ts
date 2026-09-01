@@ -197,6 +197,25 @@ export function planPriceFromConfig(planId: string, config: PricingConfig) {
   return plan?.priceMonthlyPkr ?? 0;
 }
 
+export const DEFAULT_SUBSCRIPTION_DAYS = DEFAULT_PRICING_CONFIG.subscriptionDays;
+
+export function getSubscriptionDays(settings?: { subscriptionDays?: number }) {
+  const days = Math.floor(Number(settings?.subscriptionDays));
+  if (!Number.isFinite(days) || days < 1) return DEFAULT_SUBSCRIPTION_DAYS;
+  return days;
+}
+
+export function getSubscriptionDurationMs(settings?: { subscriptionDays?: number }) {
+  return getSubscriptionDays(settings) * 24 * 60 * 60 * 1000;
+}
+
+export function subscriptionExpiresAtFromNow(
+  settings?: { subscriptionDays?: number },
+  now = Date.now(),
+) {
+  return new Date(now + getSubscriptionDurationMs(settings)).toISOString();
+}
+
 /** Days win when set so a 14-day trial is not overridden by leftover minutes. */
 export function getTrialDurationMs(settings: { trialDays?: number; trialMinutes?: number }) {
   const days = Math.max(0, Number(settings.trialDays) || 0);

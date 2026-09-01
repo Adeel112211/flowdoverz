@@ -8,8 +8,6 @@ import {
   countResellerSeatUsage,
   deleteResellerUser,
   listResellerUsers,
-  remainingSeats,
-  remainingTrialSeats,
   remainingPaidSeats,
   registerClientForReseller,
 } from "@/lib/reseller-store";
@@ -41,12 +39,9 @@ export async function GET(request: NextRequest) {
         createdAt: user.createdAt,
       })),
       userCount: usage.total,
-      trialUserCount: usage.trial,
       paidUserCount: usage.paid,
       seatsPurchased: auth.reseller.seatsPurchased,
-      trialSeatsGranted: auth.reseller.trialSeatsGranted || 0,
-      remainingSeats: remainingSeats(auth.reseller, usage),
-      remainingTrialSeats: remainingTrialSeats(auth.reseller, usage.trial),
+      remainingSeats: remainingPaidSeats(auth.reseller, usage.paid),
       remainingPaidSeats: remainingPaidSeats(auth.reseller, usage.paid),
       seatDays: auth.reseller.seatDays,
       maxUsers: auth.reseller.seatsPurchased,
@@ -72,7 +67,7 @@ export async function POST(request: NextRequest) {
   const email = String(body.email || "").trim().toLowerCase();
   const existing = email ? await getUserRecord(email) : null;
   const usage = await countResellerSeatUsage(auth.reseller.id);
-  const left = remainingSeats(auth.reseller, usage);
+  const left = remainingPaidSeats(auth.reseller, usage.paid);
 
   if (existing) {
     if (String(existing.resellerId || "") !== auth.reseller.id) {
@@ -91,13 +86,12 @@ export async function POST(request: NextRequest) {
         user: {
           email,
           assignedSlot: String(existing.assignedSlot || "") || null,
-          plan: String(existing.subscriptionPlan || "trial"),
+          plan: String(existing.subscriptionPlan || "solo"),
           trialExpiresAt: existing.trialExpiresAt || null,
           subscriptionExpiresAt: existing.subscriptionExpiresAt || null,
           seatDays: auth.reseller.seatDays,
           remainingSeats: left,
-          remainingTrialSeats: remainingTrialSeats(auth.reseller, usage.trial),
-          remainingPaidSeats: remainingPaidSeats(auth.reseller, usage.paid),
+          remainingPaidSeats: left,
           sid: session.ok ? session.sid : undefined,
         },
       },
@@ -109,7 +103,7 @@ export async function POST(request: NextRequest) {
     email,
     name: String(body.name || ""),
     password: String(body.password || ""),
-    subscriptionPlan: String(body.plan || body.subscriptionPlan || "trial"),
+    subscriptionPlan: String(body.plan || body.subscriptionPlan || auth.reseller.defaultSeatPlan),
   });
 
   if (!result.ok) {
@@ -132,7 +126,6 @@ export async function POST(request: NextRequest) {
         subscriptionExpiresAt: result.user.subscriptionExpiresAt,
         seatDays: auth.reseller.seatDays,
         remainingSeats: result.remainingSeats,
-        remainingTrialSeats: result.remainingTrialSeats,
         remainingPaidSeats: result.remainingPaidSeats,
         sid: session.ok ? session.sid : undefined,
       },

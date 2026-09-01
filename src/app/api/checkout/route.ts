@@ -29,9 +29,10 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: "Invalid plan selected." }, { status: 400 });
     }
 
-    // Mock checkout: immediately grant 30 days of access
+    const { getSystemSettings, getSubscriptionDurationMs } = await import("@/lib/admin-settings");
+    const settings = await getSystemSettings();
     const now = new Date();
-    const expiresAt = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000).toISOString();
+    const expiresAt = new Date(now.getTime() + getSubscriptionDurationMs(settings)).toISOString();
 
     const normalizedEmail = email.trim().toLowerCase();
 

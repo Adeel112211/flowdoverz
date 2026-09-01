@@ -148,7 +148,7 @@ export default function LandingPage() {
             href="/login?tab=register"
             className="w-full sm:w-auto px-8 py-4 text-base md:text-lg font-bold text-black bg-white rounded-full hover:scale-105 hover:shadow-[0_0_40px_rgba(34,211,238,0.4)] transition-all flex items-center justify-center gap-2"
           >
-            Start Free Trial <Play size={18} className="fill-black" />
+            Start Now <Play size={18} className="fill-black" />
           </Link>
           <a
             href="#features"
@@ -305,7 +305,7 @@ function FaqSection() {
     },
     {
       q: "Do I need a credit card to try it?",
-      a: "No credit card is required for the free trial. Simply register an account and start using the service instantly during your 14-day trial period."
+      a: "Create a free account first, then choose Solo or Team on the pricing page to activate access. Payment is required before the service unlocks."
     },
     {
       q: "Is the browser extension safe?",

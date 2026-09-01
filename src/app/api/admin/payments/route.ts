@@ -211,7 +211,9 @@ export async function POST(request: NextRequest) {
       }
 
       const now = new Date();
-      const expiresAt = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000).toISOString();
+      const { getSystemSettings, getSubscriptionDurationMs } = await import("@/lib/admin-settings");
+      const settings = await getSystemSettings();
+      const expiresAt = new Date(now.getTime() + getSubscriptionDurationMs(settings)).toISOString();
       const receiptNumber = generateReceiptNumber();
       const pricing = await getPricingConfig();
       const amountPkr = planAmountPkr(String(planId), pricing.plans);

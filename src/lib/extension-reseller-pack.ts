@@ -513,7 +513,7 @@ function rewritePortalBridgeOrigin(text: string, fileName: string, ownerOrigin: 
   out = out.replace(/origin:\s*baseUrl,/, `origin: ${ownerJson},`);
   out = out.replace(
     /safeSend\("PORTAL_AUTH_DETECTED", \{\s*isLoggedIn: true,\s*email: session\.email,\s*days: 14,\s*origin,/,
-    `safeSend("PORTAL_AUTH_DETECTED", {\n        isLoggedIn: true,\n        email: session.email,\n        days: 14,\n        origin: ${ownerJson},`,
+    `safeSend("PORTAL_AUTH_DETECTED", {\n        isLoggedIn: true,\n        email: session.email,\n        days: Number(bridge.getAttribute("data-days") || "30"),\n        origin: ${ownerJson},`,
   );
   out = out.replace(
     /setInterval\(detectPortalAuth, 2500\);/,

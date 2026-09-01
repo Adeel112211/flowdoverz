@@ -47,7 +47,7 @@ function clientTimer(user: ClientRow) {
 function planLabel(plan?: string) {
   if (plan === "team") return "Team";
   if (plan === "solo") return "Solo";
-  if (plan === "trial") return "5h Trial";
+  if (plan === "trial") return "Trial";
   return plan || "—";
 }
 
@@ -55,8 +55,7 @@ export default function ResellerClientsPage() {
   const [loading, setLoading] = useState(true);
   const [users, setUsers] = useState<ClientRow[]>([]);
   const [planOptions, setPlanOptions] = useState<PlanOption[]>([]);
-  const [accessType, setAccessType] = useState<"trial" | "solo" | "team">("trial");
-  const [remainingTrialSeats, setRemainingTrialSeats] = useState(0);
+  const [subscriptionPlan, setSubscriptionPlan] = useState<"solo" | "team">("solo");
   const [remainingPaidSeats, setRemainingPaidSeats] = useState(0);
   const [error, setError] = useState("");
   const [formError, setFormError] = useState("");
@@ -76,16 +75,12 @@ export default function ResellerClientsPage() {
     }
     setError("");
     setUsers(data.users || []);
-    setPlanOptions((data.planOptions || []) as PlanOption[]);
-    setRemainingTrialSeats(Number(data.remainingTrialSeats) || 0);
+    const options = (data.planOptions || []) as PlanOption[];
+    setPlanOptions(options);
     setRemainingPaidSeats(Number(data.remainingPaidSeats) || 0);
-    const trialLeft = Number(data.remainingTrialSeats) || 0;
-    if (trialLeft > 0) setAccessType("trial");
-    else {
-      const defaultPlan = data.defaultSeatPlan === "team" ? "team" : "solo";
-      const options = (data.planOptions || []) as PlanOption[];
-      setAccessType(options.some((item) => item.id === defaultPlan) ? defaultPlan : options[0]?.id || "solo");
-    }
+    const defaultPlan = data.defaultSeatPlan === "team" ? "team" : "solo";
+    const firstPlan = options[0]?.id || defaultPlan;
+    setSubscriptionPlan(options.some((item) => item.id === defaultPlan) ? defaultPlan : firstPlan);
   }, []);
 
   useEffect(() => {
@@ -99,9 +94,7 @@ export default function ResellerClientsPage() {
     };
   }, [load]);
 
-  const selectedPlan = planOptions.find((option) => option.id === accessType);
-  const canSubmit =
-    accessType === "trial" ? remainingTrialSeats > 0 : remainingPaidSeats > 0;
+  const selectedPlan = planOptions.find((option) => option.id === subscriptionPlan);
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
@@ -113,7 +106,7 @@ export default function ResellerClientsPage() {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, email, password, subscriptionPlan: accessType }),
+        body: JSON.stringify({ name, email, password, subscriptionPlan }),
       });
       const data = await res.json();
       if (!data.success) {
@@ -121,9 +114,7 @@ export default function ResellerClientsPage() {
         return;
       }
       setNotice(
-        accessType === "trial"
-          ? `${email.trim().toLowerCase()} registered with a 5-hour free trial under your brand.`
-          : `${email.trim().toLowerCase()} registered on ${planLabel(accessType)}.`,
+        `${email.trim().toLowerCase()} registered on ${planLabel(subscriptionPlan)}. They sign in with this email and password.`,
       );
       setName("");
       setEmail("");
@@ -143,7 +134,7 @@ export default function ResellerClientsPage() {
       header={
         <AdminPageHeader
           title="Clients"
-          description="Register clients on a free 5-hour trial seat or a paid Solo/Team seat."
+          description="Register clients on a paid Solo or Team seat. Each new client uses one paid seat."
         />
       }
     >
@@ -151,17 +142,9 @@ export default function ResellerClientsPage() {
         <p className="mb-4 rounded-xl border border-rose-500/20 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">{error}</p>
       ) : null}
 
-      <div className="mb-4 grid gap-3 sm:grid-cols-2">
-        <div className="rounded-2xl border border-white/10 bg-[#0F172A]/80 px-4 py-3">
-          <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Free trial seats</p>
-          <p className="mt-1 text-lg font-black text-cyan-300">{remainingTrialSeats} left</p>
-          <p className="text-xs text-slate-500">Each uses 5 hours</p>
-        </div>
-        <div className="rounded-2xl border border-white/10 bg-[#0F172A]/80 px-4 py-3">
-          <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Paid seats</p>
-          <p className="mt-1 text-lg font-black text-emerald-300">{remainingPaidSeats} left</p>
-          <p className="text-xs text-slate-500">Solo / Team after payment</p>
-        </div>
+      <div className="mb-4 rounded-2xl border border-white/10 bg-[#0F172A]/80 px-4 py-3">
+        <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Paid seats left</p>
+        <p className="mt-1 text-lg font-black text-emerald-300">{remainingPaidSeats}</p>
       </div>
 
       <div className="mb-6 rounded-2xl border border-white/10 bg-[#0F172A]/80 p-5">
@@ -185,30 +168,21 @@ export default function ResellerClientsPage() {
             <input required type="email" value={email} onChange={(e) => setEmail(e.target.value)} className={INPUT_CLASS} placeholder="client@email.com" />
           </div>
           <div>
-            <label className="mb-1.5 block text-sm font-medium text-slate-300">Access</label>
+            <label className="mb-1.5 block text-sm font-medium text-slate-300">Plan</label>
             <select
               required
-              value={accessType}
-              onChange={(e) => {
-                const value = e.target.value;
-                if (value === "trial" || value === "solo" || value === "team") setAccessType(value);
-              }}
+              value={subscriptionPlan}
+              onChange={(e) => setSubscriptionPlan(e.target.value === "team" ? "team" : "solo")}
               className={INPUT_CLASS}
             >
-              <option value="trial" disabled={remainingTrialSeats <= 0}>
-                Free 5h trial{remainingTrialSeats > 0 ? ` · ${remainingTrialSeats} left` : " · none left"}
-              </option>
               {planOptions.map((option) => (
-                <option key={option.id} value={option.id} disabled={remainingPaidSeats <= 0}>
+                <option key={option.id} value={option.id}>
                   {option.label}
                   {option.pricePerSeatPkr > 0 ? ` · ${formatPkr(option.pricePerSeatPkr)} / seat` : ""}
-                  {remainingPaidSeats > 0 ? "" : " · none left"}
                 </option>
               ))}
             </select>
-            {accessType === "trial" ? (
-              <p className="mt-1 text-xs font-semibold text-cyan-300">Uses one free trial seat · 5 hours</p>
-            ) : selectedPlan && selectedPlan.pricePerSeatPkr > 0 ? (
+            {selectedPlan && selectedPlan.pricePerSeatPkr > 0 ? (
               <p className="mt-1 text-xs font-semibold text-fuchsia-300">
                 Seat price: {formatPkr(selectedPlan.pricePerSeatPkr)}
               </p>
@@ -237,16 +211,10 @@ export default function ResellerClientsPage() {
           </div>
           <button
             type="submit"
-            disabled={saving || !canSubmit}
+            disabled={saving || remainingPaidSeats <= 0}
             className="rounded-xl bg-gradient-to-r from-cyan-400 to-emerald-400 px-4 py-3 text-sm font-bold text-slate-950 disabled:opacity-60 sm:col-span-2"
           >
-            {!canSubmit
-              ? accessType === "trial"
-                ? "No trial seats left"
-                : "No paid seats left"
-              : saving
-                ? "Registering..."
-                : "Register client"}
+            {remainingPaidSeats <= 0 ? "No paid seats left" : saving ? "Registering..." : "Register client"}
           </button>
         </form>
       </div>

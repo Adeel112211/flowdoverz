@@ -347,6 +347,14 @@ export function DashboardPage() {
   const isExpired = !status?.active || liveExpired;
   const needsEmailVerification = status?.emailVerified === false;
   const brandName = status?.brand?.name || extensionName || "FlowDoverz";
+  const bridgeDays = status
+    ? Math.max(
+        0,
+        Math.ceil(
+          ((getExpiryTimestamp(status) ?? now) - now) / (1000 * 60 * 60 * 24),
+        ),
+      )
+    : undefined;
   const brandLogoUrl = status?.brand?.logoUrl || null;
   const showUpdateExtensionBanner =
     liveTamper?.active === true && liveTamper.kind === "update"
@@ -412,7 +420,7 @@ export function DashboardPage() {
 
   return (
     <div className="flex h-dvh w-full max-w-full flex-col overflow-x-hidden overflow-y-auto bg-[#080810] text-slate-100 font-sans selection:bg-cyan-500/30">
-      <AuthBridge session={session} daysRemaining={14} />
+      <AuthBridge session={session} daysRemaining={bridgeDays} />
 
       {/* Dynamic Background */}
       <div className="fixed inset-0 pointer-events-none z-0 overflow-hidden">

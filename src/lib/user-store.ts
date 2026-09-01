@@ -3,7 +3,6 @@ import { getDb, FIREBASE_QUOTA_MESSAGE, isFirebaseQuotaError } from "./firebase-
 import { validateSignupEmail } from "./signup-email-policy";
 import { canonicalizeMailboxEmail } from "./signup-email-rules";
 import { getSignupSecuritySettings } from "./signup-security";
-import { getSystemSettings } from "./admin-settings";
 import { createClientSession, maxClientSessionsForPlan, verifyClientSession } from "./client-session";
 
 export type StoredUser = {
@@ -389,7 +388,7 @@ export async function registerClientUser(
     return { ok: false, error: emailCheck.error };
   }
 
-  const { hashSignupIp, isTrialEligibleForIp, recordTrialIpUsage, isSignupIpAvailable, recordSignupIpUsage, SIGNUP_IP_REJECTED } = await import(
+  const { hashSignupIp, isSignupIpAvailable, recordSignupIpUsage, SIGNUP_IP_REJECTED } = await import(
     "./signup-security"
   );
 
@@ -431,8 +430,6 @@ export async function registerClientUser(
 
   const salt = randomBytes(16).toString("hex");
   const now = new Date();
-  const settings = await getSystemSettings();
-  const { getTrialDurationMs } = await import("./admin-settings");
 
   const partner = String(partnerCode || "").trim();
   let trialGranted = false;
@@ -443,23 +440,19 @@ export async function registerClientUser(
   let assignedSlot: string | undefined;
 
   if (partner) {
-    const { resolveOfficialSignup, resellerClientTrialExpiryFromNow } = await import("./reseller-store");
+    const { resolveOfficialSignup, subscriptionExpiryFromNow } = await import("./reseller-store");
     const resolved = await resolveOfficialSignup(partner);
     if (!resolved.ok) {
       return { ok: false, error: resolved.error };
     }
-    trialGranted = true;
-    trialExpiresAt = resellerClientTrialExpiryFromNow(now.getTime());
-    subscriptionPlan = "trial";
-    subscriptionExpiresAt = null;
+    trialGranted = false;
+    trialExpiresAt = now.toISOString();
+    subscriptionPlan = "solo";
+    subscriptionExpiresAt = subscriptionExpiryFromNow(resolved.reseller.seatDays);
     resellerId = resolved.reseller.id;
     assignedSlot = resolved.slot;
-  } else {
-    trialGranted = await isTrialEligibleForIp(signupIp);
-    trialExpiresAt = trialGranted
-      ? new Date(now.getTime() + getTrialDurationMs(settings)).toISOString()
-      : null;
   }
+  // Public signup: no free trial — account starts with plan "none" until they pay.
 
   const newUser: StoredUser = {
     email: emailCheck.email,
@@ -485,10 +478,6 @@ export async function registerClientUser(
 
   if (signupIp) {
     await recordSignupIpUsage(signupIp, emailCheck.email);
-  }
-
-  if (trialGranted && signupIp) {
-    await recordTrialIpUsage(signupIp, emailCheck.email);
   }
 
   const created = createClientSession(emailCheck.email);
@@ -593,12 +582,12 @@ export async function createUserByAdmin(input: {
 
   const salt = randomBytes(16).toString("hex");
   const now = new Date();
-  const { getSystemSettings, getTrialDurationMs } = await import("./admin-settings");
+  const { getSystemSettings, getSubscriptionDurationMs, getTrialDurationMs } = await import(
+    "./admin-settings"
+  );
   const settings = await getSystemSettings();
   const defaultTrialExpiry = new Date(now.getTime() + getTrialDurationMs(settings)).toISOString();
-  const defaultSubExpiry = new Date(
-    now.getTime() + Math.max(settings.subscriptionDays, 1) * 24 * 60 * 60 * 1000,
-  ).toISOString();
+  const defaultSubExpiry = new Date(now.getTime() + getSubscriptionDurationMs(settings)).toISOString();
 
   const trialExpiresAt =
     input.trialExpiresAt ||

@@ -1,5 +1,8 @@
 import { getDb } from "./firebase-admin";
-import { getTrialDurationMs as trialDurationFromConfig } from "./pricing-config";
+import {
+  getSubscriptionDurationMs as subscriptionDurationFromConfig,
+  getTrialDurationMs as trialDurationFromConfig,
+} from "./pricing-config";
 
 export type SystemSettings = {
   soloPricePkr: number;
@@ -89,6 +92,10 @@ export async function saveSystemSettings(partial: Partial<SystemSettings>) {
 
 export function getTrialDurationMs(settings: SystemSettings): number {
   return trialDurationFromConfig(settings);
+}
+
+export function getSubscriptionDurationMs(settings: SystemSettings): number {
+  return subscriptionDurationFromConfig(settings);
 }
 
 export function planPricePkr(planId: string | undefined, settings: SystemSettings) {

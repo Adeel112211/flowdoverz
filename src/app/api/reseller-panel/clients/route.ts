@@ -1,12 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { publicMaintenanceResponse } from "@/lib/maintenance";
 import {
-  countResellerSeatUsage,
   listResellerUsers,
   publicResellerPlanOptions,
   registerClientForReseller,
   remainingPaidSeats,
-  remainingTrialSeats,
+  countResellerSeatUsage,
 } from "@/lib/reseller-store";
 import { getResellerSession } from "@/lib/reseller-session";
 
@@ -30,8 +29,6 @@ export async function GET() {
     success: true,
     defaultSeatPlan: reseller.defaultSeatPlan,
     planOptions: publicResellerPlanOptions(reseller),
-    trialSeatsGranted: reseller.trialSeatsGranted || 0,
-    remainingTrialSeats: remainingTrialSeats(reseller, usage.trial),
     remainingPaidSeats: remainingPaidSeats(reseller, usage.paid),
     seatsPurchased: reseller.seatsPurchased,
     users: users.map((user) => ({

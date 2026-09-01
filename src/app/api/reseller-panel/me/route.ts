@@ -6,8 +6,6 @@ import {
   listSeatGrants,
   publicResellerPlanOptions,
   remainingPaidSeats,
-  remainingSeats,
-  remainingTrialSeats,
   summarizeSeatGrants,
 } from "@/lib/reseller-store";
 import { getResellerSession, publicResellerSession } from "@/lib/reseller-session";
@@ -47,12 +45,9 @@ export async function GET() {
     reseller: publicResellerSession(reseller),
     stats: {
       seatsPurchased: reseller.seatsPurchased,
-      trialSeatsGranted: reseller.trialSeatsGranted || 0,
       userCount: usage.total,
-      trialUserCount: usage.trial,
       paidUserCount: usage.paid,
-      remainingSeats: remainingSeats(reseller, usage),
-      remainingTrialSeats: remainingTrialSeats(reseller, usage.trial),
+      remainingSeats: remainingPaidSeats(reseller, usage.paid),
       remainingPaidSeats: remainingPaidSeats(reseller, usage.paid),
       activeClients: active,
       expiredClients: expired,

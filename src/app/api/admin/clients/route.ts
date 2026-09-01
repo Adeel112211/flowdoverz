@@ -229,9 +229,11 @@ export async function POST(request: NextRequest) {
     if (PAID_PLANS.includes(plan)) {
       const planName = planDisplayName(plan);
       const now = new Date().toISOString();
+      const { getSystemSettings, getSubscriptionDurationMs } = await import("@/lib/admin-settings");
+      const settings = await getSystemSettings();
       const expiry =
         subscriptionExpiresAt ||
-        new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+        new Date(Date.now() + getSubscriptionDurationMs(settings)).toISOString();
       await sendAccountActivatedEmail(String(email), planName, now, expiry).catch(console.error);
     }
 

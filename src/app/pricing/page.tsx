@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { Check, Zap, Shield, Users, Sparkles, ArrowRight, Menu, X, Star } from "lucide-react";
-import { formatPkr, formatTrialDurationLabel, mergePricingConfig, type PricingConfig, type PricingPlan } from "@/lib/pricing-config";
+import { formatPkr, mergePricingConfig, type PricingConfig, type PricingPlan } from "@/lib/pricing-config";
 import { useClientSession } from "@/hooks/use-client-session";
 import { UserMenuButton } from "@/components/user-menu-button";
 import { BrandLogo } from "@/components/brand-logo";
@@ -43,12 +43,8 @@ function planVisuals(planId: PricingPlan["id"]) {
   };
 }
 
-function pricingFaqs(trialLabel: string) {
+function pricingFaqs() {
   return [
-    {
-      q: "What happens after the free trial?",
-      a: `After your ${trialLabel} trial, cookies are removed and the extension pauses. Upgrade to Solo or Team to instantly re-activate — no setup required.`,
-    },
     { q: "Is there an annual discount?", a: "Yes! Switch to annual billing and save over 20% compared to monthly pricing. The discount is applied automatically at checkout." },
     { q: "Can I switch plans later?", a: "Absolutely. Upgrade or downgrade at any time. Upgrades apply immediately; downgrades take effect at the next billing cycle." },
     { q: "Is the extension safe to install?", a: "Yes. Our extension is strictly scoped to labs.google.com only. It never accesses, modifies, or tracks any other site or personal data." },
@@ -61,13 +57,7 @@ export default function PricingPage() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [pricing, setPricing] = useState<PricingConfig>(() => mergePricingConfig(null));
   const [activationBlock, setActivationBlock] = useState<{ code: string; error: string } | null>(null);
-  const [noTrialNotice, setNoTrialNotice] = useState(false);
   const session = useClientSession();
-
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    setNoTrialNotice(params.get("reason") === "no_trial");
-  }, []);
 
   useEffect(() => {
     let active = true;
@@ -104,7 +94,7 @@ export default function PricingPage() {
     };
   }, [session]);
 
-  const plans = pricing.plans.filter((p) => p.enabled);
+  const plans = pricing.plans.filter((p) => p.enabled && p.id !== "trial");
 
   return (
     <div className="min-h-screen bg-[#030308] text-slate-100 font-sans selection:bg-cyan-500/30 overflow-x-hidden">
@@ -198,12 +188,6 @@ export default function PricingPage() {
 
       <main className="relative z-10 pt-20 sm:pt-24 pb-12 px-4 sm:px-6 w-full max-w-full min-w-0">
 
-        {noTrialNotice && (
-          <div className="max-w-3xl mx-auto mb-6 rounded-2xl border border-amber-500/30 bg-amber-500/10 px-5 py-4 text-sm text-amber-100">
-            A free trial was already used on this network. Choose Solo or Team below to activate your account.
-          </div>
-        )}
-
         {/* ─── HERO ─── */}
         <div className="text-center max-w-4xl mx-auto mb-8">
           <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-white/[0.04] border border-white/10 text-slate-300 text-xs font-semibold mb-5 backdrop-blur-md">
@@ -241,7 +225,7 @@ export default function PricingPage() {
 
         {/* ─── PRICING CARDS ─── */}
         <div className="max-w-6xl mx-auto mb-6">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-stretch">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-stretch max-w-4xl mx-auto">
             {plans.map((plan) => {
               const visuals = planVisuals(plan.id);
               const monthlyPrice = formatPkr(plan.priceMonthlyPkr);
@@ -312,16 +296,7 @@ export default function PricingPage() {
                 </ul>
 
                 {/* CTA */}
-                {plan.id === "trial" ? (
-                  <div className="relative group/btn">
-                    <div className={`absolute -inset-[1px] rounded-xl bg-gradient-to-r ${visuals.glowGradient} opacity-60 blur-sm group-hover/btn:opacity-90 group-hover/btn:blur-md transition-all duration-300`} />
-                    <div className="relative">
-                      <Link href="/signup" className={`block w-full text-center rounded-xl px-6 py-3 text-sm font-bold transition-all ${visuals.btnClass}`}>
-                        {plan.btnLabel}
-                      </Link>
-                    </div>
-                  </div>
-                ) : activationBlock ? (
+                {activationBlock ? (
                   <div className="relative">
                     <span className="block w-full cursor-not-allowed rounded-xl px-6 py-3 text-center text-sm font-bold opacity-50 bg-white/10 text-slate-400">
                       {activationBlock.code === "PENDING_PAYMENT" ? "Payment pending" : "Plan active"}
@@ -417,7 +392,7 @@ export default function PricingPage() {
             <p className="text-slate-400">Everything you need to know before subscribing.</p>
           </div>
           <div className="space-y-3">
-            {pricingFaqs(formatTrialDurationLabel(pricing)).map((faq, i) => (
+            {pricingFaqs().map((faq, i) => (
               <div
                 key={i}
                 onClick={() => setOpenFaq(openFaq === i ? null : i)}
@@ -455,17 +430,17 @@ export default function PricingPage() {
 
             <div className="relative z-10 py-20 px-8 md:px-16 text-center">
               <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white/5 border border-white/10 text-slate-300 text-sm font-semibold mb-8">
-                <Sparkles size={14} className="text-cyan-400" /> Start for free, no card required
+                <Sparkles size={14} className="text-cyan-400" /> Solo and Team plans
               </div>
               <h2 className="text-4xl md:text-6xl font-black text-white mb-5 tracking-tight leading-tight">
                 Ready to create?
               </h2>
               <p className="text-slate-400 text-lg mb-10 max-w-lg mx-auto leading-relaxed">
-                Try FlowDoverz free for 24 hours. No credit card, no commitment — just pure AI video generation.
+                Create an account, pick Solo or Team, and start generating with Google Flow.
               </p>
               <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
                 <Link href="/signup" className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-8 py-4 bg-gradient-to-r from-cyan-400 to-emerald-400 text-slate-950 font-black rounded-2xl hover:scale-105 transition-all duration-300 shadow-[0_0_30px_rgba(34,211,238,0.4)] hover:shadow-[0_0_40px_rgba(34,211,238,0.6)] text-base">
-                  Start Free Trial <ArrowRight size={18} />
+                  Get Started <ArrowRight size={18} />
                 </Link>
                 <Link href="/login" className="w-full sm:w-auto inline-flex items-center justify-center px-8 py-4 bg-white/[0.04] border border-white/10 text-slate-300 font-bold rounded-2xl hover:bg-white/8 hover:text-white transition-all text-base">
                   I already have an account
