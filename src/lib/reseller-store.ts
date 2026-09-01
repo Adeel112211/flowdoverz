@@ -443,9 +443,20 @@ export function resellerClientPlanLooksLikeTrial(input: Record<string, unknown>)
   return false;
 }
 
+/** Legacy + explicit trial detection — matches pre–public-trial-removal behavior. */
+export function wantsResellerTrialSeat(input: Record<string, unknown>) {
+  const raw = String(input.subscriptionPlan || input.plan || "")
+    .trim()
+    .toLowerCase();
+  if (raw === "solo" || raw === "studio" || raw === "team") return false;
+  if (resellerClientPlanLooksLikeTrial(input)) return true;
+  if (!raw || raw === "trial" || raw === "none") return true;
+  return planTokenMeansTrial(raw);
+}
+
 /** Normalize plan sent from reseller panel/API (`plan` or `subscriptionPlan`). */
 export function parseResellerClientPlanRequest(input: Record<string, unknown>) {
-  if (resellerClientPlanLooksLikeTrial(input)) return "trial";
+  if (wantsResellerTrialSeat(input)) return "trial";
 
   const candidates = [
     input.subscriptionPlan,
@@ -929,8 +940,7 @@ export async function registerClientForReseller(
       const usage = await countResellerSeatUsage(reseller.id);
       const paidLeft = remainingPaidSeats(reseller, usage.paid);
       const trialLeft = remainingTrialSeats(reseller, usage.trial);
-      const requested = parseResellerClientPlanRequest(input);
-      const wantsTrial = requested === "trial" || resellerClientPlanLooksLikeTrial(input);
+      const wantsTrial = wantsResellerTrialSeat(input);
 
       if (wantsTrial) {
         if (!resellerTrialRegistrationEnabled(reseller)) {
@@ -949,7 +959,7 @@ export async function registerClientForReseller(
         }
 
         const trialExpiry = resellerClientTrialExpiryFromNow(reseller.trialSeatHours);
-        const { createUserByAdmin } = await import("./user-store");
+        const { createUserByAdmin, persistResellerTrialUserDoc } = await import("./user-store");
         const created = await createUserByAdmin({
           email: input.email,
           name: input.name,
@@ -962,6 +972,12 @@ export async function registerClientForReseller(
         if (!created.ok) {
           return { ok: false, error: created.error, status: 400 };
         }
+
+        await persistResellerTrialUserDoc(normalizedEmail, {
+          trialExpiresAt: trialExpiry,
+          resellerId: reseller.id,
+          assignedSlot: slot,
+        });
 
         const { invalidateUserDocCache } = await import("./user-store");
         invalidateUserDocCache(normalizedEmail);
@@ -1000,14 +1016,7 @@ export async function registerClientForReseller(
         };
       }
 
-      if (resellerClientPlanLooksLikeTrial(input)) {
-        return {
-          ok: false,
-          error: "Trial plan was not recognized. Refresh the page and select Trial again.",
-          status: 400,
-        };
-      }
-
+      const requested = parseResellerClientPlanRequest(input);
       if (paidLeft <= 0) {
         return {
           ok: false,
@@ -1017,7 +1026,7 @@ export async function registerClientForReseller(
       }
 
       const subscriptionPlan = normalizeSeatPlan(
-        requested === "none" ? reseller.defaultSeatPlan : requested || reseller.defaultSeatPlan,
+        requested === "none" || requested === "trial" ? reseller.defaultSeatPlan : requested || reseller.defaultSeatPlan,
         reseller.allowedSeatPlans,
       );
       const expiry = subscriptionExpiryFromNow(reseller.seatDays);

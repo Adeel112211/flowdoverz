@@ -1,4 +1,5 @@
 import { randomBytes, scryptSync, timingSafeEqual } from "crypto";
+import { FieldValue } from "firebase-admin/firestore";
 import { getDb, FIREBASE_QUOTA_MESSAGE, isFirebaseQuotaError, isSupabaseBackend } from "./firebase-admin";
 import { validateSignupEmail } from "./signup-email-policy";
 import { canonicalizeMailboxEmail } from "./signup-email-rules";
@@ -674,6 +675,31 @@ export async function createUserByAdmin(input: {
   const { touchLive } = await import("./live-tick");
   void touchLive({ topic: "user", action: "created", id: normalized, userId: normalized });
   return { ok: true };
+}
+
+/** Force trial fields after create — restores pre-removal reseller trial behavior on Supabase/Firestore. */
+export async function persistResellerTrialUserDoc(
+  email: string,
+  input: {
+    trialExpiresAt: string;
+    resellerId: string;
+    assignedSlot: string;
+  },
+) {
+  const db = getDb();
+  if (!db) throw new Error("Database not configured.");
+  const normalized = normalizeEmail(email);
+  await db.collection("users").doc(normalized).set(
+    {
+      subscriptionPlan: "trial",
+      trialExpiresAt: input.trialExpiresAt,
+      resellerId: input.resellerId,
+      assignedSlot: input.assignedSlot,
+      subscriptionExpiresAt: FieldValue.delete(),
+    },
+    { merge: true },
+  );
+  invalidateUserDocCache(normalized);
 }
 
 export async function updateUserPasswordByAdmin(

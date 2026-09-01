@@ -88,7 +88,7 @@ export default function ResellerClientsPage() {
   const [loading, setLoading] = useState(true);
   const [users, setUsers] = useState<ClientRow[]>([]);
   const [planOptions, setPlanOptions] = useState<PlanOption[]>([]);
-  const [subscriptionPlan, setSubscriptionPlan] = useState<"solo" | "team" | "trial">("solo");
+  const [subscriptionPlan, setSubscriptionPlan] = useState<"solo" | "team" | "trial">("trial");
   const [remainingPaidSeats, setRemainingPaidSeats] = useState(0);
   const [remainingTrialSeats, setRemainingTrialSeats] = useState(0);
   const [trialSeatsEnabled, setTrialSeatsEnabled] = useState(false);
@@ -119,14 +119,20 @@ export default function ResellerClientsPage() {
     setTrialSeatsEnabled(Boolean(data.trialSeatsEnabled));
     setTrialSeatHours(Number(data.trialSeatHours) || 5);
     if (resetPlan && !planTouchedRef.current) {
-      setSubscriptionPlan(
-        pickDefaultSubscriptionPlan(options, {
-          defaultSeatPlan: data.defaultSeatPlan,
-          trialSeatsEnabled: Boolean(data.trialSeatsEnabled),
-          remainingTrialSeats: Number(data.remainingTrialSeats) || 0,
-          remainingPaidSeats: Number(data.remainingPaidSeats) || 0,
-        }),
-      );
+      const trialLeft = Number(data.remainingTrialSeats) || 0;
+      const trialEnabled = Boolean(data.trialSeatsEnabled);
+      if (trialEnabled && trialLeft > 0) {
+        setSubscriptionPlan("trial");
+      } else {
+        setSubscriptionPlan(
+          pickDefaultSubscriptionPlan(options, {
+            defaultSeatPlan: data.defaultSeatPlan,
+            trialSeatsEnabled: trialEnabled,
+            remainingTrialSeats: trialLeft,
+            remainingPaidSeats: Number(data.remainingPaidSeats) || 0,
+          }),
+        );
+      }
     }
   }, []);
 
@@ -168,7 +174,7 @@ export default function ResellerClientsPage() {
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (saving) return;
+    if (saving || loading) return;
     setFormError("");
     setNotice("");
     setSaving(true);
@@ -329,7 +335,7 @@ export default function ResellerClientsPage() {
           <div className="sm:col-span-2">
             <button
               type="submit"
-              disabled={saving || (subscriptionPlan === "trial" ? trialOptionDisabled : paidOptionDisabled)}
+              disabled={saving || loading || (subscriptionPlan === "trial" ? trialOptionDisabled : paidOptionDisabled)}
               className="rounded-xl bg-gradient-to-r from-cyan-400 to-emerald-400 px-6 py-3 text-sm font-black text-slate-950 disabled:opacity-60"
             >
               {saving ? "Registering..." : "Register client"}
