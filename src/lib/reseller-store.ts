@@ -417,17 +417,84 @@ function isResellerTrialSeatPlan(plan?: string | null) {
   return String(plan || "").trim().toLowerCase() === "trial";
 }
 
-/** Normalize plan sent from reseller panel/API (`plan` or `subscriptionPlan`). */
-export function parseResellerClientPlanRequest(input: {
-  subscriptionPlan?: string | null;
-  plan?: string | null;
-}) {
-  const raw = String(input.subscriptionPlan ?? input.plan ?? "")
+const TRIAL_PLAN_ALIASES = new Set(["trial", "trail", "free_trial", "free-trial", "freetrial"]);
+
+function normalizeResellerPlanToken(raw: unknown) {
+  return String(raw ?? "")
     .trim()
-    .toLowerCase();
-  if (!raw) return "";
-  if (raw === "trial" || raw === "trail" || raw === "free_trial" || raw === "free-trial") return "trial";
-  return raw;
+    .toLowerCase()
+    .replace(/[\s_-]+/g, "");
+}
+
+function planTokenMeansTrial(raw: unknown) {
+  const token = normalizeResellerPlanToken(raw);
+  if (!token) return false;
+  if (TRIAL_PLAN_ALIASES.has(token)) return true;
+  return token.includes("trial") || token.includes("trail");
+}
+
+/** True when any known request field indicates a trial seat. */
+export function resellerClientPlanLooksLikeTrial(input: Record<string, unknown>) {
+  const keys = ["subscriptionPlan", "plan", "seatPlan", "seat", "type", "mode", "seatType"];
+  for (const key of keys) {
+    if (planTokenMeansTrial(input[key])) return true;
+  }
+  if (input.isTrial === true || input.trial === true || input.trialSeat === true) return true;
+  return false;
+}
+
+/** Normalize plan sent from reseller panel/API (`plan` or `subscriptionPlan`). */
+export function parseResellerClientPlanRequest(input: Record<string, unknown>) {
+  const candidates = [
+    input.subscriptionPlan,
+    input.plan,
+    input.seatPlan,
+    input.seat,
+    input.type,
+    input.mode,
+    input.seatType,
+  ];
+  for (const candidate of candidates) {
+    const raw = String(candidate ?? "")
+      .trim()
+      .toLowerCase();
+    if (!raw) continue;
+    if (planTokenMeansTrial(raw)) return "trial";
+    if (raw === "team") return "team";
+    if (raw === "solo" || raw === "studio") return "solo";
+    return raw;
+  }
+  if (resellerClientPlanLooksLikeTrial(input)) return "trial";
+  return "";
+}
+
+async function withResellerRegistrationLock<T>(email: string, fn: () => Promise<T>): Promise<T> {
+  const db = getDb();
+  if (!db) throw new Error("Database not configured.");
+  const key = email.trim().toLowerCase();
+  const ref = db.collection("_locks").doc(`reseller_reg_${key}`);
+  const owner = randomBytes(8).toString("hex");
+
+  for (let attempt = 0; attempt < 12; attempt += 1) {
+    const acquired = await db.runTransaction(async (tx) => {
+      const snap = await tx.get(ref);
+      const until = Date.parse(String(snap.data()?.until || "")) || 0;
+      if (snap.exists && until > Date.now() && snap.data()?.owner !== owner) {
+        return false;
+      }
+      tx.set(ref, { owner, until: new Date(Date.now() + 90_000).toISOString() });
+      return true;
+    });
+    if (acquired) {
+      try {
+        return await fn();
+      } finally {
+        await ref.delete().catch(() => undefined);
+      }
+    }
+    await new Promise((resolve) => setTimeout(resolve, 100 + attempt * 50));
+  }
+  throw new Error("REGISTRATION_BUSY");
 }
 
 export function remainingPaidSeats(record: Pick<ResellerRecord, "seatsPurchased">, paidCount = 0) {
@@ -796,7 +863,14 @@ export async function resolveOfficialPanel(slug: string): Promise<
 
 export async function registerClientForReseller(
   reseller: ResellerRecord,
-  input: { email: string; name: string; password: string; subscriptionPlan?: string; plan?: string },
+  input: {
+    email: string;
+    name: string;
+    password: string;
+    subscriptionPlan?: string;
+    plan?: string;
+    [key: string]: unknown;
+  },
 ): Promise<
   | {
       ok: true;
@@ -832,117 +906,149 @@ export async function registerClientForReseller(
 
   const { getUserRecord, normalizeEmail } = await import("./user-store");
   const normalizedEmail = normalizeEmail(String(input.email || ""));
-  if (normalizedEmail && (await getUserRecord(normalizedEmail))) {
-    return { ok: false, error: "A client with this email already exists.", status: 400 };
+  if (!normalizedEmail || !normalizedEmail.includes("@")) {
+    return { ok: false, error: "Enter a valid email address.", status: 400 };
   }
 
-  const usage = await countResellerSeatUsage(reseller.id);
-  const paidLeft = remainingPaidSeats(reseller, usage.paid);
-  const trialLeft = remainingTrialSeats(reseller, usage.trial);
-  const requested = parseResellerClientPlanRequest(input);
-  const wantsTrial = requested === "trial";
+  try {
+    return await withResellerRegistrationLock(normalizedEmail, async () => {
+      if (await getUserRecord(normalizedEmail)) {
+        return { ok: false, error: "A client with this email already exists.", status: 400 };
+      }
 
-  if (wantsTrial) {
-    if (!resellerTrialRegistrationEnabled(reseller)) {
-      return {
-        ok: false,
-        error: "Trial registration is not enabled for this partner. Ask the owner to turn it on.",
-        status: 403,
-      };
-    }
-    if (trialLeft <= 0) {
-      return {
-        ok: false,
-        error: "No trial seats left. Ask the owner to add more trial seats.",
-        status: 403,
-      };
-    }
+      const usage = await countResellerSeatUsage(reseller.id);
+      const paidLeft = remainingPaidSeats(reseller, usage.paid);
+      const trialLeft = remainingTrialSeats(reseller, usage.trial);
+      const requested = parseResellerClientPlanRequest(input);
+      const wantsTrial = requested === "trial";
 
-    const trialExpiry = resellerClientTrialExpiryFromNow(reseller.trialSeatHours);
-    const { createUserByAdmin } = await import("./user-store");
-    const created = await createUserByAdmin({
-      email: input.email,
-      name: input.name,
-      password: input.password,
-      subscriptionPlan: "trial",
-      trialExpiresAt: trialExpiry,
-      resellerId: reseller.id,
-      assignedSlot: slot,
+      if (wantsTrial) {
+        if (!resellerTrialRegistrationEnabled(reseller)) {
+          return {
+            ok: false,
+            error: "Trial registration is not enabled for this partner. Ask the owner to turn it on.",
+            status: 403,
+          };
+        }
+        if (trialLeft <= 0) {
+          return {
+            ok: false,
+            error: "No trial seats left. Ask the owner to add more trial seats.",
+            status: 403,
+          };
+        }
+
+        const trialExpiry = resellerClientTrialExpiryFromNow(reseller.trialSeatHours);
+        const { createUserByAdmin } = await import("./user-store");
+        const created = await createUserByAdmin({
+          email: input.email,
+          name: input.name,
+          password: input.password,
+          subscriptionPlan: "trial",
+          trialExpiresAt: trialExpiry,
+          resellerId: reseller.id,
+          assignedSlot: slot,
+        });
+        if (!created.ok) {
+          return { ok: false, error: created.error, status: 400 };
+        }
+
+        const saved = await getUserRecord(normalizedEmail);
+        const savedPlan = String(saved?.subscriptionPlan || "").trim().toLowerCase();
+        if (savedPlan !== "trial") {
+          return {
+            ok: false,
+            error: "Trial registration did not save correctly. Refresh and try again.",
+            status: 500,
+          };
+        }
+
+        void touchResellerUsage(reseller.id);
+        const savedTrialExpiry =
+          saved?.trialExpiresAt != null ? String(saved.trialExpiresAt) : trialExpiry;
+        return {
+          ok: true,
+          user: {
+            email: normalizedEmail,
+            name: String(saved?.name || input.name || "").trim(),
+            subscriptionPlan: "trial",
+            trialExpiresAt: savedTrialExpiry,
+            subscriptionExpiresAt: null,
+          },
+          remainingSeats: trialLeft - 1 + paidLeft,
+          remainingTrialSeats: trialLeft - 1,
+          remainingPaidSeats: paidLeft,
+          seatsPurchased: reseller.seatsPurchased,
+          trialSeatsGranted: reseller.trialSeatsGranted || 0,
+        };
+      }
+
+      if (resellerClientPlanLooksLikeTrial(input)) {
+        return {
+          ok: false,
+          error: "Trial plan was not recognized. Refresh the page and select Trial again.",
+          status: 400,
+        };
+      }
+
+      if (paidLeft <= 0) {
+        return {
+          ok: false,
+          error: "No paid seats left. Send another payment so more seats can be added.",
+          status: 403,
+        };
+      }
+
+      const subscriptionPlan = normalizeSeatPlan(
+        requested === "none" ? reseller.defaultSeatPlan : requested || reseller.defaultSeatPlan,
+        reseller.allowedSeatPlans,
+      );
+      const expiry = subscriptionExpiryFromNow(reseller.seatDays);
+      const { createUserByAdmin } = await import("./user-store");
+      const created = await createUserByAdmin({
+        email: input.email,
+        name: input.name,
+        password: input.password,
+        subscriptionPlan,
+        trialExpiresAt: new Date().toISOString(),
+        subscriptionExpiresAt: expiry,
+        resellerId: reseller.id,
+        assignedSlot: slot,
+      });
+      if (!created.ok) {
+        return { ok: false, error: created.error, status: 400 };
+      }
+
+      const saved = await getUserRecord(normalizedEmail);
+      const savedPlan = String(saved?.subscriptionPlan || subscriptionPlan).trim().toLowerCase();
+      void touchResellerUsage(reseller.id);
+      return {
+        ok: true,
+        user: {
+          email: normalizedEmail,
+          name: String(saved?.name || input.name || "").trim(),
+          subscriptionPlan: savedPlan,
+          trialExpiresAt: saved?.trialExpiresAt != null ? String(saved.trialExpiresAt) : null,
+          subscriptionExpiresAt:
+            saved?.subscriptionExpiresAt != null ? String(saved.subscriptionExpiresAt) : expiry,
+        },
+        remainingSeats: paidLeft - 1 + trialLeft,
+        remainingTrialSeats: trialLeft,
+        remainingPaidSeats: paidLeft - 1,
+        seatsPurchased: reseller.seatsPurchased,
+        trialSeatsGranted: reseller.trialSeatsGranted || 0,
+      };
     });
-    if (!created.ok) {
-      return { ok: false, error: created.error, status: 400 };
+  } catch (error) {
+    if (error instanceof Error && error.message === "REGISTRATION_BUSY") {
+      return {
+        ok: false,
+        error: "Registration is already in progress for this email. Wait a moment and try again.",
+        status: 409,
+      };
     }
-
-    void touchResellerUsage(reseller.id);
-    return {
-      ok: true,
-      user: {
-        email: String(input.email || "").trim().toLowerCase(),
-        name: String(input.name || "").trim(),
-        subscriptionPlan: "trial",
-        trialExpiresAt: trialExpiry,
-        subscriptionExpiresAt: null,
-      },
-      remainingSeats: trialLeft - 1 + paidLeft,
-      remainingTrialSeats: trialLeft - 1,
-      remainingPaidSeats: paidLeft,
-      seatsPurchased: reseller.seatsPurchased,
-      trialSeatsGranted: reseller.trialSeatsGranted || 0,
-    };
+    throw error;
   }
-
-  if (paidLeft <= 0) {
-    return {
-      ok: false,
-      error: "No paid seats left. Send another payment so more seats can be added.",
-      status: 403,
-    };
-  }
-
-  if (requested === "trial") {
-    return {
-      ok: false,
-      error: "Could not register a trial seat. Refresh the page and try again.",
-      status: 400,
-    };
-  }
-
-  const subscriptionPlan = normalizeSeatPlan(
-    requested === "none" || requested === "trial" ? reseller.defaultSeatPlan : requested || reseller.defaultSeatPlan,
-    reseller.allowedSeatPlans,
-  );
-  const expiry = subscriptionExpiryFromNow(reseller.seatDays);
-  const { createUserByAdmin } = await import("./user-store");
-  const created = await createUserByAdmin({
-    email: input.email,
-    name: input.name,
-    password: input.password,
-    subscriptionPlan,
-    trialExpiresAt: new Date().toISOString(),
-    subscriptionExpiresAt: expiry,
-    resellerId: reseller.id,
-    assignedSlot: slot,
-  });
-  if (!created.ok) {
-    return { ok: false, error: created.error, status: 400 };
-  }
-
-  void touchResellerUsage(reseller.id);
-  return {
-    ok: true,
-    user: {
-      email: String(input.email || "").trim().toLowerCase(),
-      name: String(input.name || "").trim(),
-      subscriptionPlan,
-      trialExpiresAt: null,
-      subscriptionExpiresAt: expiry,
-    },
-    remainingSeats: paidLeft - 1 + trialLeft,
-    remainingTrialSeats: trialLeft,
-    remainingPaidSeats: paidLeft - 1,
-    seatsPurchased: reseller.seatsPurchased,
-    trialSeatsGranted: reseller.trialSeatsGranted || 0,
-  };
 }
 
 export async function registerPartnerClient(

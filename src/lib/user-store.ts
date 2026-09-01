@@ -598,10 +598,6 @@ export async function createUserByAdmin(input: {
   }
 
   const usersRef = db.collection("users");
-  const existingUserDoc = await usersRef.doc(normalized).get();
-  if (existingUserDoc.exists) {
-    return { ok: false, error: "A client with this email already exists." };
-  }
 
   if (await isClientNameTaken(displayName)) {
     return { ok: false, error: "This name is already used. Choose a different name." };
@@ -802,8 +798,11 @@ export async function getUserStatus(email: string): Promise<{
   const now = new Date();
   const emailVerified = user.emailVerified !== false;
 
+  const plan = String(user.subscriptionPlan || "none").trim().toLowerCase();
   const trialActive =
-    emailVerified && user.trialExpiresAt ? new Date(user.trialExpiresAt) > now : false;
+    emailVerified && user.trialExpiresAt
+      ? new Date(user.trialExpiresAt) > now && (plan === "trial" || !isPaidPlan(plan))
+      : false;
   const subscriptionActive =
     isPaidPlan(user.subscriptionPlan) && user.subscriptionExpiresAt
       ? new Date(user.subscriptionExpiresAt) > now

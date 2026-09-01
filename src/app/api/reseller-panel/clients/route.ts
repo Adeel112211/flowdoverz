@@ -3,7 +3,6 @@ import { publicMaintenanceResponse } from "@/lib/maintenance";
 import {
   listResellerUsers,
   publicResellerPlanOptions,
-  parseResellerClientPlanRequest,
   registerClientForReseller,
   remainingPaidSeats,
   remainingTrialSeats,
@@ -59,27 +58,18 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
   }
 
-  let body: { email?: string; name?: string; password?: string; subscriptionPlan?: string; plan?: string } = {};
+  let body: Record<string, unknown> = {};
   try {
-    body = (await request.json()) as {
-      email?: string;
-      name?: string;
-      password?: string;
-      subscriptionPlan?: string;
-      plan?: string;
-    };
+    body = (await request.json()) as Record<string, unknown>;
   } catch {
     return NextResponse.json({ success: false, error: "Invalid request." }, { status: 400 });
   }
-
-  const requestedPlan = parseResellerClientPlanRequest(body);
 
   const result = await registerClientForReseller(reseller, {
     email: String(body.email || ""),
     name: String(body.name || ""),
     password: String(body.password || ""),
-    subscriptionPlan: requestedPlan || undefined,
-    plan: requestedPlan || undefined,
+    ...body,
   });
 
   if (!result.ok) {

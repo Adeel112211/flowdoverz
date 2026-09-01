@@ -115,8 +115,9 @@ export async function POST(request: NextRequest) {
     email,
     name: String(body.name || ""),
     password: String(body.password || ""),
-    subscriptionPlan: requestedPlan || auth.reseller.defaultSeatPlan,
-    plan: requestedPlan || auth.reseller.defaultSeatPlan,
+    ...body,
+    subscriptionPlan: requestedPlan || undefined,
+    plan: requestedPlan || undefined,
   });
 
   if (!result.ok) {

@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useState } from "react";
+import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { Eye, EyeOff } from "lucide-react";
 import { AdminPageHeader } from "@/components/admin-page-header";
 import { AdminPageLayout } from "@/components/admin-page-layout";
@@ -101,8 +101,9 @@ export default function ResellerClientsPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
+  const planTouchedRef = useRef(false);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (resetPlan = true) => {
     const res = await fetch("/api/reseller-panel/clients", { credentials: "include", cache: "no-store" });
     const data = await res.json();
     if (!data.success) {
@@ -117,14 +118,16 @@ export default function ResellerClientsPage() {
     setRemainingTrialSeats(Number(data.remainingTrialSeats) || 0);
     setTrialSeatsEnabled(Boolean(data.trialSeatsEnabled));
     setTrialSeatHours(Number(data.trialSeatHours) || 5);
-    setSubscriptionPlan(
-      pickDefaultSubscriptionPlan(options, {
-        defaultSeatPlan: data.defaultSeatPlan,
-        trialSeatsEnabled: Boolean(data.trialSeatsEnabled),
-        remainingTrialSeats: Number(data.remainingTrialSeats) || 0,
-        remainingPaidSeats: Number(data.remainingPaidSeats) || 0,
-      }),
-    );
+    if (resetPlan && !planTouchedRef.current) {
+      setSubscriptionPlan(
+        pickDefaultSubscriptionPlan(options, {
+          defaultSeatPlan: data.defaultSeatPlan,
+          trialSeatsEnabled: Boolean(data.trialSeatsEnabled),
+          remainingTrialSeats: Number(data.remainingTrialSeats) || 0,
+          remainingPaidSeats: Number(data.remainingPaidSeats) || 0,
+        }),
+      );
+    }
   }, []);
 
   useEffect(() => {
@@ -143,7 +146,7 @@ export default function ResellerClientsPage() {
   const paidOptionDisabled = remainingPaidSeats <= 0;
 
   useEffect(() => {
-    if (loading || planOptions.length === 0) return;
+    if (loading || planOptions.length === 0 || planTouchedRef.current) return;
     if (!isPlanOptionDisabled(subscriptionPlan, trialOptionDisabled, paidOptionDisabled)) return;
     setSubscriptionPlan(
       pickDefaultSubscriptionPlan(planOptions, {
@@ -163,14 +166,17 @@ export default function ResellerClientsPage() {
     remainingPaidSeats,
   ]);
 
-  async function handleSubmit(event: FormEvent) {
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (saving) return;
     setFormError("");
     setNotice("");
     setSaving(true);
     try {
-      const planToRegister = subscriptionPlan;
+      const formData = new FormData(event.currentTarget);
+      const rawPlan = String(formData.get("subscriptionPlan") || subscriptionPlan);
+      const planToRegister =
+        rawPlan === "team" ? "team" : rawPlan === "trial" ? "trial" : "solo";
       const res = await fetch("/api/reseller-panel/clients", {
         method: "POST",
         credentials: "include",
@@ -189,13 +195,21 @@ export default function ResellerClientsPage() {
         return;
       }
       const registeredPlan = String(data.user?.subscriptionPlan || planToRegister);
+      if (registeredPlan !== planToRegister) {
+        setFormError(
+          `Registered as ${planLabel(registeredPlan, trialSeatHours)} instead of ${planLabel(planToRegister, trialSeatHours)}. Contact support if this keeps happening.`,
+        );
+        await load(false);
+        return;
+      }
       setNotice(
         `${email.trim().toLowerCase()} registered on ${planLabel(registeredPlan, trialSeatHours)}. They sign in with this email and password.`,
       );
       setName("");
       setEmail("");
       setPassword("");
-      await load();
+      planTouchedRef.current = false;
+      await load(true);
     } catch {
       setFormError("Could not register this client.");
     } finally {
@@ -257,8 +271,10 @@ export default function ResellerClientsPage() {
             <label className="mb-1.5 block text-sm font-medium text-slate-300">Plan</label>
             <select
               required
+              name="subscriptionPlan"
               value={subscriptionPlan}
               onChange={(e) => {
+                planTouchedRef.current = true;
                 const value = e.target.value;
                 setSubscriptionPlan(value === "team" ? "team" : value === "trial" ? "trial" : "solo");
               }}

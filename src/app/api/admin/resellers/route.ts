@@ -239,6 +239,7 @@ export async function PUT(request: NextRequest) {
         email: String(body.email || ""),
         name: String(body.name || ""),
         password: String(body.password || ""),
+        ...body,
         subscriptionPlan: requestedPlan || undefined,
         plan: requestedPlan || undefined,
       });
