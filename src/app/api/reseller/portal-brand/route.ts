@@ -1,18 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { resolveResellerPortalBrand } from "@/lib/extension-reseller-lookup";
-import { originFromUrl } from "@/lib/reseller-store";
+import { requestOriginFromNextRequest } from "@/lib/request-origin";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-
-function requestOrigin(request: NextRequest) {
-  const forwardedHost = String(request.headers.get("x-forwarded-host") || "").split(",")[0]?.trim();
-  const host = forwardedHost || String(request.headers.get("host") || "").split(",")[0]?.trim();
-  if (!host) return "";
-  const forwardedProto = String(request.headers.get("x-forwarded-proto") || "").split(",")[0]?.trim();
-  const proto = forwardedProto || (host.includes("localhost") ? "http" : "https");
-  return originFromUrl(`${proto}://${host}`) || "";
-}
 
 export async function GET(request: NextRequest) {
   const ref =
@@ -21,7 +12,7 @@ export async function GET(request: NextRequest) {
     request.nextUrl.searchParams.get("reseller") ||
     "";
   const brand = await resolveResellerPortalBrand({
-    origin: requestOrigin(request),
+    origin: requestOriginFromNextRequest(request),
     ref: String(ref || ""),
   });
 

@@ -39,7 +39,7 @@ function persistSession(session: Session) {
 }
 
 type AuthResult =
-  | { ok: true; session: Session; trialGranted?: boolean; notice?: string }
+  | { ok: true; session: Session; trialGranted?: boolean; brandedPortalSignup?: boolean; notice?: string }
   | { ok: false; error: string; code?: string };
 
 async function postAuth(
@@ -61,6 +61,7 @@ async function postAuth(
       until?: string;
       notice?: string;
       trialGranted?: boolean;
+      brandedPortalSignup?: boolean;
       user?: { email?: string; name?: string; sid?: string };
     } | null;
 
@@ -99,6 +100,7 @@ async function postAuth(
       ok: true,
       session,
       trialGranted: data.trialGranted,
+      brandedPortalSignup: data.brandedPortalSignup,
       notice: data.notice,
     };
   } catch {

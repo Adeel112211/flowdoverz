@@ -481,6 +481,20 @@ export function wantsResellerTrialSeat(input: Record<string, unknown>) {
   return parseResellerClientPlanRequest(input) === "trial";
 }
 
+/** Branded-site self-signup: trial when enabled, otherwise a paid Solo seat. */
+export function pickWhiteLabelSignupPlan(
+  reseller: ResellerRecord,
+  usage: ResellerSeatUsage,
+): "trial" | "solo" | null {
+  if (resellerTrialRegistrationEnabled(reseller) && remainingTrialSeats(reseller, usage.trial) > 0) {
+    return "trial";
+  }
+  if (remainingPaidSeats(reseller, usage.paid) > 0) {
+    return "solo";
+  }
+  return null;
+}
+
 async function withResellerRegistrationLock<T>(email: string, fn: () => Promise<T>): Promise<T> {
   const db = getDb();
   if (!db) throw new Error("Database not configured.");

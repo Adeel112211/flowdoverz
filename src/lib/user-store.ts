@@ -374,8 +374,14 @@ export async function registerClientUser(
   signupIp?: string,
   partnerCode?: string,
   phoneInput?: { countryIso?: string; nationalNumber?: string },
+  portalOrigin?: string,
 ): Promise<
-  | { ok: true; user: { email: string; name: string; sid: string }; trialGranted: boolean }
+  | {
+      ok: true;
+      user: { email: string; name: string; sid: string };
+      trialGranted: boolean;
+      brandedPortalSignup?: boolean;
+    }
   | { ok: false; error: string }
 > {
   const db = getDb();
@@ -467,6 +473,60 @@ export async function registerClientUser(
     subscriptionExpiresAt = subscriptionExpiryFromNow(resolved.reseller.seatDays);
     resellerId = resolved.reseller.id;
     assignedSlot = resolved.slot;
+  } else if (portalOrigin) {
+    const { getWhiteLabelResellerForOrigin } = await import("./extension-reseller-lookup");
+    const {
+      registerClientForReseller,
+      countResellerSeatUsage,
+      pickWhiteLabelSignupPlan,
+    } = await import("./reseller-store");
+    const whiteLabelReseller = await getWhiteLabelResellerForOrigin(portalOrigin);
+    if (whiteLabelReseller) {
+      const usage = await countResellerSeatUsage(whiteLabelReseller.id);
+      const plan = pickWhiteLabelSignupPlan(whiteLabelReseller, usage);
+      if (!plan) {
+        return {
+          ok: false,
+          error: "This partner has no seats left for new clients. Contact support.",
+        };
+      }
+
+      const reg = await registerClientForReseller(whiteLabelReseller, {
+        email: emailCheck.email,
+        name: displayName,
+        password,
+        subscriptionPlan: plan,
+        plan,
+        ...(plan === "trial" ? { isTrial: true, trialSeat: true } : {}),
+      });
+      if (!reg.ok) {
+        return { ok: false, error: reg.error };
+      }
+
+      if (signupIp) {
+        await recordSignupIpUsage(signupIp, emailCheck.email);
+      }
+
+      const created = createClientSession(emailCheck.email);
+      const claimed = await claimClientSession(emailCheck.email, created.sessionId);
+      if (!claimed.ok) {
+        return { ok: false, error: claimed.error };
+      }
+
+      const { recordUserCreated } = await import("./admin-metrics");
+      void recordUserCreated(now, plan !== "trial");
+
+      return {
+        ok: true,
+        trialGranted: plan === "trial",
+        brandedPortalSignup: true,
+        user: {
+          email: emailCheck.email,
+          name: displayName,
+          sid: created.sid,
+        },
+      };
+    }
   }
   // Public signup: no free trial — account starts with plan "none" until they pay.
 

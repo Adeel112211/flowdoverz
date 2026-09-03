@@ -29,21 +29,35 @@ export function SignupPage() {
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [partnerBrand, setPartnerBrand] = useState<{ name: string; logoUrl: string | null } | null>(null);
+  const [brandedPortal, setBrandedPortal] = useState(false);
 
   useEffect(() => {
-    if (!partnerCode) {
-      setPartnerBrand(null);
-      return;
-    }
     let active = true;
-    fetch(`/api/partner/brand?ref=${encodeURIComponent(partnerCode)}`, { cache: "no-store" })
+    const brandUrl = partnerCode
+      ? `/api/partner/brand?ref=${encodeURIComponent(partnerCode)}`
+      : "/api/reseller/portal-brand";
+    fetch(brandUrl, { cache: "no-store" })
       .then((res) => res.json())
       .then((data) => {
-        if (!active || !data?.success || !data.brand?.name) return;
-        setPartnerBrand({ name: String(data.brand.name), logoUrl: data.brand.logoUrl || null });
+        if (!active || !data?.success) return;
+        if (partnerCode && data.brand?.name) {
+          setPartnerBrand({ name: String(data.brand.name), logoUrl: data.brand.logoUrl || null });
+          setBrandedPortal(false);
+          return;
+        }
+        if (!partnerCode && data.brand?.displayName) {
+          setPartnerBrand({
+            name: String(data.brand.displayName),
+            logoUrl: data.brand.logoUrl || null,
+          });
+          setBrandedPortal(true);
+        }
       })
       .catch(() => {
-        if (active) setPartnerBrand(null);
+        if (active) {
+          setPartnerBrand(null);
+          setBrandedPortal(false);
+        }
       });
     return () => {
       active = false;
@@ -167,7 +181,7 @@ export function SignupPage() {
       return;
     }
 
-    if (partnerCode) {
+    if (partnerCode || result.brandedPortalSignup || result.trialGranted) {
       router.push("/dashboard");
     } else {
       router.push("/pricing");
@@ -330,9 +344,11 @@ export function SignupPage() {
               </div>
             </div>
 
-            {partnerCode ? (
+            {partnerCode || brandedPortal ? (
               <div className="rounded-2xl border border-cyan-500/30 bg-cyan-500/10 px-5 py-3.5 text-sm text-cyan-100">
-                You are joining through {partnerBrand?.name || "a partner"}. Your account uses one paid seat from that partner.
+                {partnerCode
+                  ? `You are joining through ${partnerBrand?.name || "a partner"}. Your account uses one paid seat from that partner.`
+                  : `You are joining ${partnerBrand?.name || "this partner"}. Your account uses one seat from their plan.`}
               </div>
             ) : null}
 

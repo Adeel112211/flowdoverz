@@ -8,6 +8,7 @@ import {
   getSignupSecuritySettings,
 } from "@/lib/signup-security";
 import { publicMaintenanceResponse } from "@/lib/maintenance";
+import { requestOriginFromNextRequest } from "@/lib/request-origin";
 
 export async function POST(request: NextRequest) {
   const maintenance = await publicMaintenanceResponse();
@@ -58,6 +59,7 @@ export async function POST(request: NextRequest) {
       countryIso: String(body.phoneCountryIso || ""),
       nationalNumber: String(body.phoneNational || ""),
     },
+    requestOriginFromNextRequest(request),
   );
 
   if (!result.ok) {
@@ -70,8 +72,11 @@ export async function POST(request: NextRequest) {
   const response = NextResponse.json({
     success: true,
     trialGranted: result.trialGranted,
+    brandedPortalSignup: result.brandedPortalSignup === true,
     notice:
-      result.trialGranted || Boolean(String(body.partnerCode || body.ref || "").trim())
+      result.trialGranted ||
+      result.brandedPortalSignup ||
+      Boolean(String(body.partnerCode || body.ref || "").trim())
         ? undefined
         : "A free trial was already used on this network. Upgrade to Solo or Team to activate FlowDoverz.",
     user: {

@@ -270,6 +270,33 @@ function portalOriginsForReseller(
   return origins;
 }
 
+async function getWhiteLabelResellerIdForOrigin(origin: string): Promise<string | null> {
+  const normalized = String(origin || "")
+    .trim()
+    .toLowerCase()
+    .replace(/\/$/, "");
+  if (!normalized) return null;
+
+  const rows = await listResellers();
+  const matches: string[] = [];
+  for (const row of rows) {
+    if (row.kind !== "white_label") continue;
+    const reseller = await getReseller(row.id);
+    if (!reseller) continue;
+    const origins = portalOriginsForReseller(reseller);
+    if (origins.has(normalized)) matches.push(reseller.id);
+  }
+  if (matches.length !== 1) return null;
+  return matches[0]!;
+}
+
+/** White-label reseller whose branded login/dashboard origin matches this host. */
+export async function getWhiteLabelResellerForOrigin(origin: string) {
+  const id = await getWhiteLabelResellerIdForOrigin(origin);
+  if (!id) return null;
+  return getReseller(id);
+}
+
 /** Match reseller branding from the page origin (custom domain) or signup ref code. */
 export async function resolveResellerPortalBrand(input: {
   origin?: string;
@@ -281,21 +308,7 @@ export async function resolveResellerPortalBrand(input: {
     return portalBrandFromRecord(reseller);
   }
 
-  const origin = String(input.origin || "")
-    .trim()
-    .toLowerCase()
-    .replace(/\/$/, "");
-  if (!origin) return null;
-
-  const rows = await listResellers();
-  const matches: string[] = [];
-  for (const row of rows) {
-    if (row.kind !== "white_label") continue;
-    const reseller = await getReseller(row.id);
-    if (!reseller) continue;
-    const origins = portalOriginsForReseller(reseller);
-    if (origins.has(origin)) matches.push(reseller.id);
-  }
-  if (matches.length !== 1) return null;
-  return portalBrandFromRecord(await getReseller(matches[0]!));
+  const id = await getWhiteLabelResellerIdForOrigin(String(input.origin || ""));
+  if (!id) return null;
+  return portalBrandFromRecord(await getReseller(id));
 }
