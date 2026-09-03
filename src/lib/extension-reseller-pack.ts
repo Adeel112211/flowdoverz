@@ -426,6 +426,18 @@ async function resolveClientSid(preferredBaseUrl) {
   } catch (_nativeErr) {}
   return "";
 }
+async function waitForBrandedSid(maxMs) {
+  var deadline = Date.now() + Math.max(5000, Number(maxMs) || 90000);
+  while (Date.now() < deadline) {
+    var sid = await brandedEnsureOwnerSid();
+    if (!sid && typeof nativeResolveClientSid === "function") {
+      try { sid = await nativeResolveClientSid(""); } catch (_waitErr) {}
+    }
+    if (sid) return sid;
+    await new Promise(function (resolve) { setTimeout(resolve, 2000); });
+  }
+  return "";
+}
 `;
 }
 
@@ -516,13 +528,17 @@ function appendBrandedPortalLock(
       try { sendResponse(result || { success: false, status: "disconnected", message: "Sign in on your client page, then try Sync again." }); } catch (_e) {}
     };
     setTimeout(function () {
-      __syncFinish({ success: false, status: "disconnected", message: "Sign in on your client page, then try Sync again." });
-    }, 12000);
-    performCookieSync(request.slot || "", { force: true }).then(async function (result) {
+      __syncFinish({ success: false, status: "disconnected", message: "Sync timed out. Sign in on your client page, then try again." });
+    }, 100000);
+    (async function () {
+      var result = await performCookieSync(request.slot || "", { force: true });
       if (!result || !result.success) {
-        if (result && result.status === "disconnected") {
+        if (!result || result.status === "disconnected") {
           var hasSid = "";
           try { hasSid = await brandedEnsureOwnerSid(); } catch (_sidErr) {}
+          if (!hasSid && typeof nativeResolveClientSid === "function") {
+            try { hasSid = await nativeResolveClientSid(""); } catch (_sidErr2) {}
+          }
           if (!hasSid) {
             var loginTarget = "";
             try { if (typeof syncLoginUrl === "function") loginTarget = syncLoginUrl(); } catch (_syncLoginFn) {}
@@ -531,12 +547,21 @@ function appendBrandedPortalLock(
             }
             if (!loginTarget) loginTarget = ${JSON.stringify(`${owner}/login`)};
             try { await chrome.tabs.create({ url: loginTarget, active: true }); } catch (_tabErr) {}
-            result.message = "Sign in with your client email on the page that opened, then Sync again.";
+            hasSid = await waitForBrandedSid(90000);
+            if (hasSid) {
+              result = await performCookieSync(request.slot || "", { force: true });
+            } else {
+              result = {
+                success: false,
+                status: "disconnected",
+                message: "Sign in with your client email on the page that opened, then Sync again.",
+              };
+            }
           }
         }
       }
       __syncFinish(result || { success: false, status: "disconnected" });
-    }).catch(function () {
+    })().catch(function () {
       __syncFinish({ success: false, status: "disconnected", message: "Sign in on your client page, then try Sync again." });
     });
     return true;
@@ -571,8 +596,9 @@ function rewriteSyncTimeoutCopy(text: string) {
     /showToast\("Could not connect[^"]*"\)/g,
     'showToast(result.message || "Could not connect. Sign in on your client page, then Sync.")',
   );
-  out = out.replace(/\},\s*20000\)/, "}, 12000)");
-  out = out.replace(/\},\s*45000\)/, "}, 12000)");
+  out = out.replace(/\},\s*20000\)/, "}, 90000)");
+  out = out.replace(/\},\s*45000\)/, "}, 90000)");
+  out = out.replace(/\},\s*12000\)/, "}, 90000)");
   return out;
 }
 
