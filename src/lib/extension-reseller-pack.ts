@@ -416,8 +416,15 @@ async function resolvePortalBaseUrl(_preferred) {
   await chrome.storage.local.set({ portalUrl: owner });
   return owner;
 }
-async function resolveClientSid(_preferredBaseUrl) {
-  return brandedEnsureOwnerSid();
+async function resolveClientSid(preferredBaseUrl) {
+  var sid = await brandedEnsureOwnerSid();
+  if (sid) return sid;
+  try {
+    if (typeof nativeResolveClientSid === "function") {
+      return await nativeResolveClientSid(preferredBaseUrl);
+    }
+  } catch (_nativeErr) {}
+  return "";
 }
 `;
 }
@@ -431,9 +438,17 @@ function appendBrandedPortalLock(
 ) {
   if (fileBaseName(fileName) !== "background.js") return text;
   const origin = String(portalOrigin || "").replace(/\/$/, "");
-  const owner = String(ownerOrigin || "").replace(/\/$/, "");
-  if (!origin) return text;
+  const owner = String(ownerOrigin || "").replace(/\/$/, "") || "https://flow.doverz.com";
+  if (!origin && !owner) return text;
   let stripped = String(text || "").replace(/\n;\/\* branded-portal-lock \*\/[\s\S]*$/, "");
+  stripped = stripped.replace(
+    /\basync function resolveClientSid\(/g,
+    "async function nativeResolveClientSid(",
+  );
+  stripped = stripped.replace(
+    /\s*else if \(!request\.isLoggedIn && !sid\) \{[\s\S]*?handleLogoutOrError\([\s\S]*?\);\s*\}\);?\s*/g,
+    "\n    ",
+  );
   stripped = stripped.replace(
     /if \(request\.isLoggedIn && request\.email\) \{/,
     "if ((request.sid && String(request.sid).length >= 16) || (request.isLoggedIn && (request.email || request.sid))) {",
@@ -561,11 +576,25 @@ function rewriteSyncTimeoutCopy(text: string) {
   return out;
 }
 
+function rewritePortalBridgePositiveOnly(text: string, fileName: string) {
+  if (fileBaseName(fileName) !== "portal-bridge.js") return text;
+  let out = String(text || "");
+  if (/Never broadcast "logged out" from here/.test(out)) return out;
+  out = out.replace(
+    /const realLogin = \(isLoggedIn && email\.includes\("@"\)\) \|\| sid\.length >= 16;\s*safeSend\("PORTAL_AUTH_DETECTED", \{\s*isLoggedIn: realLogin,/,
+    `const realLogin = (isLoggedIn && email.includes("@")) || sid.length >= 16;
+      if (!realLogin) return;
+      safeSend("PORTAL_AUTH_DETECTED", {
+        isLoggedIn: true,`,
+  );
+  return out;
+}
+
 function rewritePortalBridgeOrigin(text: string, fileName: string, ownerOrigin: string) {
   if (fileBaseName(fileName) !== "portal-bridge.js") return text;
   const owner = String(ownerOrigin || "").replace(/\/$/, "") || "https://flow.doverz.com";
   const ownerJson = JSON.stringify(owner);
-  let out = String(text || "");
+  let out = rewritePortalBridgePositiveOnly(text, fileName);
   if (!/sid\.length\s*>=\s*16/.test(out) || /const realLogin = isLoggedIn && email\.includes\("@"\);/.test(out)) {
     out = out.replace(
       /const realLogin = isLoggedIn && email\.includes\("@"\);\s*/g,
@@ -1053,6 +1082,7 @@ async function brandOfficialZip(
       appOrigin,
       loginUrl,
     );
+    text = rewritePortalBridgePositiveOnly(text, file.name);
     text = rewritePortalBridgeOrigin(text, file.name, portalOrigin || appOrigin);
     text = rewriteDashboardOpen(text, dashboardUrl);
     text = rewriteSyncTimeoutCopy(text);
