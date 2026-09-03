@@ -361,6 +361,44 @@ async function brandedReadSid(url) {
     return "";
   }
 }
+async function brandedReadSidFromOpenTabs() {
+  var targets = [${loginJson}, ${originJson}];
+  var roots = [];
+  for (var ti = 0; ti < targets.length; ti++) {
+    try {
+      var root = new URL(String(targets[ti] || "").indexOf("http") === 0 ? targets[ti] : "https://" + targets[ti]).origin;
+      if (root && roots.indexOf(root) < 0) roots.push(root);
+    } catch (_rootErr) {}
+  }
+  if (!roots.length) return "";
+  try {
+    var tabs = await chrome.tabs.query({});
+    for (var i = 0; i < (tabs || []).length; i++) {
+      var tab = tabs[i];
+      if (!tab || !tab.id || !tab.url) continue;
+      var matched = false;
+      for (var ri = 0; ri < roots.length; ri++) {
+        if (String(tab.url).indexOf(roots[ri]) === 0) { matched = true; break; }
+      }
+      if (!matched) continue;
+      try {
+        var probe = await chrome.tabs.sendMessage(tab.id, { action: "READ_PORTAL_SID" });
+        var sid = brandedDecodeSid(probe && (probe.sid || probe.token));
+        if (sid) {
+          try {
+            await chrome.storage.local.set({
+              brandedSid: sid,
+              clientPortalUrl: roots[0],
+              portalUrl: ${ownerJson},
+            });
+          } catch (_storeTab) {}
+          return sid;
+        }
+      } catch (_msgErr) {}
+    }
+  } catch (_tabsErr) {}
+  return "";
+}
 async function brandedFetchPortalSid() {
   var targets = [${loginJson}, ${originJson}];
   for (var ti = 0; ti < targets.length; ti++) {
@@ -441,6 +479,8 @@ async function brandedEnsureOwnerSid() {
     }
   } catch (_e) {}
   found = await brandedFetchPortalSid();
+  if (found) return found;
+  found = await brandedReadSidFromOpenTabs();
   if (found) return found;
   try {
     var storedSid = await chrome.storage.local.get(["brandedSid"]);
@@ -745,6 +785,18 @@ function rewritePortalBridgeOrigin(text: string, fileName: string, ownerOrigin: 
     detectPortalAuth();
   }, 2500);`,
   );
+  if (!/READ_PORTAL_SID/.test(out)) {
+    out = out.replace(
+      /chrome\.runtime\.onMessage\.addListener\(\(request, _sender, sendResponse\) => \{/,
+      `chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
+      if (request && request.action === "READ_PORTAL_SID") {
+        var bridgeEl = document.getElementById("flowdoverz-auth-bridge");
+        var portalSid = bridgeEl ? String(bridgeEl.getAttribute("data-sid") || "") : "";
+        try { sendResponse({ sid: portalSid }); } catch (_readSidErr) {}
+        return true;
+      }`,
+    );
+  }
   return out;
 }
 
