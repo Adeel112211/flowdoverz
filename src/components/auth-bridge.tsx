@@ -53,6 +53,7 @@ export function AuthBridge({ session, daysRemaining }: AuthBridgeProps) {
   const [resolvedHours, setResolvedHours] = useState(0);
   const [resolvedPlan, setResolvedPlan] = useState("none");
   const [accessActive, setAccessActive] = useState(false);
+  const [bridgeSid, setBridgeSid] = useState("");
 
   useEffect(() => {
     setBaseUrl(window.location.origin);
@@ -92,13 +93,26 @@ export function AuthBridge({ session, daysRemaining }: AuthBridgeProps) {
   }, [session, daysRemaining]);
 
   useEffect(() => {
-    if (!session) return;
+    if (!session) {
+      setBridgeSid("");
+      return;
+    }
 
-    const pingSeat = () => {
-      void fetch("/api/auth/me", { credentials: "include", cache: "no-store" }).catch(() => {});
+    setBridgeSid(session.sid || "");
+
+    const refreshSid = () => {
+      void fetch("/api/auth/me", { credentials: "include", cache: "no-store" })
+        .then((res) => res.json())
+        .then((data) => {
+          if (data?.success && data.user?.sid) {
+            setBridgeSid(String(data.user.sid));
+          }
+        })
+        .catch(() => {});
     };
-    pingSeat();
-    const heartbeat = window.setInterval(pingSeat, 10 * 60 * 1000);
+
+    refreshSid();
+    const heartbeat = window.setInterval(refreshSid, 10 * 60 * 1000);
     return () => window.clearInterval(heartbeat);
   }, [session]);
 
@@ -108,7 +122,7 @@ export function AuthBridge({ session, daysRemaining }: AuthBridgeProps) {
       data-logged-in={session ? "1" : "0"}
       data-active={session && accessActive ? "1" : "0"}
       data-email={session?.email ?? ""}
-      data-sid={session?.sid ?? ""}
+      data-sid={bridgeSid || session?.sid || ""}
       data-days={String(resolvedDays)}
       data-hours={String(resolvedHours)}
       data-plan={resolvedPlan}

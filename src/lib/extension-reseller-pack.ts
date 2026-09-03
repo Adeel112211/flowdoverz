@@ -402,6 +402,9 @@ async function resolvePortalBaseUrl(_preferred) {
   await chrome.storage.local.set({ portalUrl: owner });
   return owner;
 }
+async function resolveClientSid(_preferredBaseUrl) {
+  return brandedEnsureOwnerSid();
+}
 `;
 }
 
