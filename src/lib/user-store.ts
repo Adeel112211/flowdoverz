@@ -677,6 +677,114 @@ export async function createUserByAdmin(input: {
   return { ok: true };
 }
 
+/** Reseller panel — single write with exact trial or paid plan (no admin defaults). */
+export async function createResellerClientUser(input: {
+  email: string;
+  name: string;
+  password: string;
+  plan: "trial" | "solo" | "team";
+  trialExpiresAt?: string;
+  subscriptionExpiresAt?: string;
+  resellerId: string;
+  assignedSlot: string;
+}): Promise<{ ok: true; subscriptionPlan: string } | { ok: false; error: string }> {
+  const db = getDb();
+  if (!db) {
+    return { ok: false, error: "Database not configured." };
+  }
+
+  const normalized = normalizeEmail(input.email);
+  const displayName = input.name.trim().replace(/\s+/g, " ");
+  const plan = input.plan === "trial" ? "trial" : input.plan === "team" ? "team" : "solo";
+
+  if (!normalized || !normalized.includes("@")) {
+    return { ok: false, error: "Enter a valid email address." };
+  }
+  if (displayName.length < 2) {
+    return { ok: false, error: "Enter the client's name." };
+  }
+  if (input.password.length < 8) {
+    return { ok: false, error: "Password must be at least 8 characters." };
+  }
+  if (!String(input.resellerId || "").trim()) {
+    return { ok: false, error: "Reseller assignment is missing." };
+  }
+  if (!String(input.assignedSlot || "").trim()) {
+    return { ok: false, error: "Cookie slot assignment is missing." };
+  }
+
+  if (await isClientNameTaken(displayName)) {
+    return { ok: false, error: "This name is already used. Choose a different name." };
+  }
+
+  const salt = randomBytes(16).toString("hex");
+  const now = new Date().toISOString();
+  const userDoc: Record<string, unknown> = {
+    email: normalized,
+    name: displayName,
+    nameLower: normalizeClientNameKey(displayName),
+    salt,
+    passwordHash: hashPassword(input.password, salt),
+    createdAt: now,
+    subscriptionPlan: plan,
+    emailVerified: true,
+    resellerId: String(input.resellerId).trim(),
+    assignedSlot: String(input.assignedSlot).trim(),
+  };
+
+  if (plan === "trial") {
+    if (!input.trialExpiresAt) {
+      return { ok: false, error: "Trial expiry is missing." };
+    }
+    userDoc.trialExpiresAt = input.trialExpiresAt;
+  } else {
+    if (!input.subscriptionExpiresAt) {
+      return { ok: false, error: "Subscription expiry is missing." };
+    }
+    userDoc.subscriptionExpiresAt = input.subscriptionExpiresAt;
+    userDoc.trialExpiresAt = null;
+  }
+
+  const ref = db.collection("users").doc(normalized);
+  try {
+    if (isSupabaseBackend()) {
+      const { SupabaseDocumentAlreadyExistsError, supabaseCreateDocOnly } = await import(
+        "./supabase-firestore"
+      );
+      const existing = await ref.get();
+      if (existing.exists) {
+        return { ok: false, error: "A client with this email already exists." };
+      }
+      try {
+        await supabaseCreateDocOnly("users", normalized, userDoc);
+      } catch (error) {
+        if (error instanceof SupabaseDocumentAlreadyExistsError) {
+          return { ok: false, error: "A client with this email already exists." };
+        }
+        throw error;
+      }
+    } else {
+      await db.runTransaction(async (transaction) => {
+        const snap = await transaction.get(ref);
+        if (snap.exists) {
+          throw new Error("DUPLICATE_EMAIL");
+        }
+        transaction.set(ref, userDoc);
+      });
+    }
+  } catch (error) {
+    if (error instanceof Error && error.message === "DUPLICATE_EMAIL") {
+      return { ok: false, error: "A client with this email already exists." };
+    }
+    throw error;
+  }
+
+  invalidateUserDocCache(normalized);
+  const { touchLive } = await import("./live-tick");
+  void touchLive({ topic: "user", action: "created", id: normalized, userId: normalized });
+  return { ok: true, subscriptionPlan: plan };
+}
+
 /** Force trial fields after create — restores pre-removal reseller trial behavior on Supabase/Firestore. */
 export async function persistResellerTrialUserDoc(
   email: string,
@@ -722,7 +830,7 @@ export async function persistResellerPaidUserDoc(
       subscriptionExpiresAt: input.subscriptionExpiresAt,
       resellerId: input.resellerId,
       assignedSlot: input.assignedSlot,
-      trialExpiresAt: new Date().toISOString(),
+      trialExpiresAt: null,
     },
     { merge: true },
   );

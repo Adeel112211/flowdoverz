@@ -77,6 +77,7 @@ type NewClientForm = {
   name: string;
   password: string;
   subscriptionPlan: string;
+  resellerId?: string;
   trialExpiresAt: string;
   subscriptionExpiresAt: string;
 };
@@ -120,6 +121,7 @@ function emptyNewClient(billing: BillingDefaults = DEFAULT_BILLING): NewClientFo
     name: "",
     password: "",
     subscriptionPlan: "trial",
+    resellerId: "",
     trialExpiresAt: defaults.trialExpiresAt,
     subscriptionExpiresAt: defaults.subscriptionExpiresAt,
   };
@@ -898,6 +900,27 @@ export default function ClientsPage() {
                   value={newClient.subscriptionPlan}
                   onChange={(plan) => handlePlanChange(plan, "create")}
                 />
+              </div>
+              <div>
+                <label className="mb-2 block text-sm font-bold text-slate-400">Reseller (optional)</label>
+                <select
+                  value={newClient.resellerId || ""}
+                  onChange={(e) => setNewClient({ ...newClient, resellerId: e.target.value })}
+                  className="w-full rounded-xl border border-white/10 bg-[#080810] px-4 py-3 text-white outline-none focus:border-cyan-400 focus:ring-1 focus:ring-cyan-400 transition-all"
+                >
+                  <option value="">Direct (no reseller)</option>
+                  {Object.keys(resellerNames).length ? (
+                    Object.entries(resellerNames).map(([id, name]) => (
+                      <option key={id} value={id}>
+                        {name}
+                      </option>
+                    ))
+                  ) : (
+                    <option value="" disabled>
+                      Loading resellers...
+                    </option>
+                  )}
+                </select>
               </div>
               <div>
                 <label className="mb-2 block text-sm font-bold text-slate-400">Trial Expiry</label>

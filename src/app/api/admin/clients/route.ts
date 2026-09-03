@@ -5,6 +5,7 @@ import { getDb, getFirebaseInitError, getDatabaseConfigHint, isFirebaseConfigure
 import { sendAccountActivatedEmail } from "@/lib/email";
 import { deleteClientCompletely } from "@/lib/client-data-cleanup";
 import { createUserByAdmin, isClientNameTaken, normalizeClientNameKey, updateUserPasswordByAdmin } from "@/lib/user-store";
+import { getReseller, registerClientForReseller } from "@/lib/reseller-store";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -206,13 +207,63 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await request.json();
-    const { email, name, password, subscriptionPlan, trialExpiresAt, subscriptionExpiresAt } = body;
+    const {
+      email,
+      name,
+      password,
+      subscriptionPlan,
+      trialExpiresAt,
+      subscriptionExpiresAt,
+      resellerId,
+    } = body;
+
+    const requestedPlan = String(subscriptionPlan || "trial").trim().toLowerCase();
+    const reseller = String(resellerId || "").trim();
+
+    // When admin selects a reseller, consume seats from that reseller (not direct admin seats).
+    if (reseller) {
+      const current = await getReseller(reseller);
+      if (!current) {
+        return NextResponse.json({ success: false, error: "Reseller not found" }, { status: 404 });
+      }
+
+      const reg = await registerClientForReseller(current, {
+        email: String(email || ""),
+        name: String(name || ""),
+        password: String(password || ""),
+        subscriptionPlan: requestedPlan,
+        plan: requestedPlan,
+      });
+
+      if (!reg.ok) {
+        return NextResponse.json({ success: false, error: reg.error }, { status: reg.status });
+      }
+
+      const { recordUserCreated } = await import("@/lib/admin-metrics");
+      const { isPaidPlanId } = await import("@/lib/admin-client-view");
+      void recordUserCreated(new Date(), isPaidPlanId(requestedPlan));
+
+      if (PAID_PLANS.includes(requestedPlan) && reg.user.subscriptionExpiresAt) {
+        const now = new Date().toISOString();
+        const planName = planDisplayName(requestedPlan);
+        const expiry = reg.user.subscriptionExpiresAt;
+        await sendAccountActivatedEmail(String(email), planName, now, expiry).catch(console.error);
+      }
+
+      await logAdminActivity({
+        action: "client_created",
+        targetEmail: String(email),
+        detail: `Created client for reseller ${reseller} with plan ${requestedPlan}`,
+      });
+
+      return NextResponse.json({ success: true, message: "Client created successfully" });
+    }
 
     const result = await createUserByAdmin({
       email: String(email || ""),
       name: String(name || ""),
       password: String(password || ""),
-      subscriptionPlan: String(subscriptionPlan || "trial"),
+      subscriptionPlan: requestedPlan,
       trialExpiresAt: trialExpiresAt || undefined,
       subscriptionExpiresAt: subscriptionExpiresAt || undefined,
     });
@@ -223,9 +274,9 @@ export async function POST(request: NextRequest) {
 
     const { recordUserCreated } = await import("@/lib/admin-metrics");
     const { isPaidPlanId } = await import("@/lib/admin-client-view");
-    void recordUserCreated(new Date(), isPaidPlanId(String(subscriptionPlan || "trial")));
+    void recordUserCreated(new Date(), isPaidPlanId(requestedPlan));
 
-    const plan = String(subscriptionPlan || "trial");
+    const plan = requestedPlan;
     if (PAID_PLANS.includes(plan)) {
       const planName = planDisplayName(plan);
       const now = new Date().toISOString();

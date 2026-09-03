@@ -426,12 +426,17 @@ function appendBrandedPortalLock(
     "if ((request.sid && String(request.sid).length >= 16) || (request.isLoggedIn && (request.email || request.sid))) {",
   );
   stripped = stripped.replace(
-    /\.then\(\(\) => performCookieSync\("", \{ force: true \}\)\);/,
-    ";",
+    /const sid = decodeClientSid\(request\.sid\);\s*const loggedIn =[\s\S]*?if \(loggedIn\) \{\s*const payload = \{\s*portalUrl: DEFAULT_PORTAL_URL,/,
+    `const sid = decodeClientSid(request.sid);
+    const loggedIn =
+      sid.length >= 16 || (request.isLoggedIn && (request.email || request.sid));
+    if (loggedIn) {
+      const payload = {
+        portalUrl: ${JSON.stringify(owner || "https://flow.doverz.com")},`,
   );
   stripped = stripped.replace(
-    /(brandedSid: request\.sid \|\| "",\s*userEmail: request\.email,\s*daysRemaining: request\.days,\s*\}\);)/,
-    "$1.then(function () { return performCookieSync('', { force: true }); });",
+    /portalUrl:\s*DEFAULT_PORTAL_URL,/,
+    `portalUrl: ${JSON.stringify(owner || "https://flow.doverz.com")},`,
   );
   stripped = stripped.replace(
     /portalUrl:\s*request\.origin(?:\s*\|\|\s*DEFAULT_PORTAL_URL)?,/,
@@ -451,22 +456,17 @@ function appendBrandedPortalLock(
     );
   }
   stripped = stripped.replace(
-    /if \(sessionCookie\) headers\.Cookie = sessionCookie;/,
-    `var __sid = "";
-    if (sessionCookie) __sid = String(sessionCookie).replace(/^flowdoverz_sid=/, "");
-    if (!__sid) {
-      try { __sid = await brandedEnsureOwnerSid(); } catch (_sidErr) {}
+    /if \(clientSid\) headers\["X-FlowDoverz-Sid"\] = clientSid;/,
+    `if (!clientSid) {
+      try { clientSid = await brandedEnsureOwnerSid(); } catch (_sidErr) {}
     }
-    if (__sid) headers["X-FlowDoverz-Sid"] = __sid;`,
+    if (clientSid) headers["X-FlowDoverz-Sid"] = clientSid;`,
   );
-  stripped = stripped.replace(/headers\.Cookie = sessionCookie;/, "");
-  if (!/headers\["X-FlowDoverz-Sid"\]/.test(stripped)) {
+  if (!/brandedEnsureOwnerSid/.test(stripped)) {
     stripped = stripped.replace(
-      /"X-Extension-Proof": proved\.proof,\s*\};/,
-      `"X-Extension-Proof": proved.proof,
-    };
-    try {
-      var __sid = await brandedEnsureOwnerSid();
+      /if \(clientSid\) headers\["X-FlowDoverz-Sid"\] = clientSid;/,
+      `try {
+      var __sid = clientSid || (await brandedEnsureOwnerSid());
       if (__sid) headers["X-FlowDoverz-Sid"] = __sid;
     } catch (_sidErr) {}`,
     );

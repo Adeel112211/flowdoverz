@@ -960,12 +960,12 @@ export async function registerClientForReseller(
 
         const trialHours = normalizeTrialSeatHours(reseller.trialSeatHours);
         const trialExpiry = resellerClientTrialExpiryFromNow(trialHours);
-        const { createUserByAdmin, persistResellerTrialUserDoc } = await import("./user-store");
-        const created = await createUserByAdmin({
+        const { createResellerClientUser, invalidateUserDocCache } = await import("./user-store");
+        const created = await createResellerClientUser({
           email: input.email,
           name: input.name,
           password: input.password,
-          subscriptionPlan: "trial",
+          plan: "trial",
           trialExpiresAt: trialExpiry,
           resellerId: reseller.id,
           assignedSlot: slot,
@@ -974,13 +974,6 @@ export async function registerClientForReseller(
           return { ok: false, error: created.error, status: 400 };
         }
 
-        await persistResellerTrialUserDoc(normalizedEmail, {
-          trialExpiresAt: trialExpiry,
-          resellerId: reseller.id,
-          assignedSlot: slot,
-        });
-
-        const { invalidateUserDocCache } = await import("./user-store");
         invalidateUserDocCache(normalizedEmail);
         const saved = await getUserRecord(normalizedEmail);
         const savedPlan = String(saved?.subscriptionPlan || "").trim().toLowerCase();
@@ -1028,17 +1021,12 @@ export async function registerClientForReseller(
       const subscriptionPlan = normalizeSeatPlan(requested, reseller.allowedSeatPlans);
       const seatDays = Math.max(1, Math.floor(Number(reseller.seatDays) || DEFAULT_SEAT_DAYS));
       const expiry = subscriptionExpiryFromNow(seatDays);
-      const {
-        createUserByAdmin,
-        persistResellerPaidUserDoc,
-        invalidateUserDocCache,
-      } = await import("./user-store");
-      const created = await createUserByAdmin({
+      const { createResellerClientUser, invalidateUserDocCache } = await import("./user-store");
+      const created = await createResellerClientUser({
         email: input.email,
         name: input.name,
         password: input.password,
-        subscriptionPlan,
-        trialExpiresAt: new Date().toISOString(),
+        plan: subscriptionPlan,
         subscriptionExpiresAt: expiry,
         resellerId: reseller.id,
         assignedSlot: slot,
@@ -1046,13 +1034,6 @@ export async function registerClientForReseller(
       if (!created.ok) {
         return { ok: false, error: created.error, status: 400 };
       }
-
-      await persistResellerPaidUserDoc(normalizedEmail, {
-        subscriptionPlan,
-        subscriptionExpiresAt: expiry,
-        resellerId: reseller.id,
-        assignedSlot: slot,
-      });
 
       invalidateUserDocCache(normalizedEmail);
       const saved = await getUserRecord(normalizedEmail);
