@@ -375,7 +375,10 @@ async function brandedEnsureOwnerSid() {
       }
     }
   } catch (_e) {}
-  var found = (await brandedReadSid(${loginJson})) || (await brandedReadSid(${originJson})) || (await brandedReadSid(${ownerJson}));
+  var found =
+    (await brandedReadSid(${ownerJson})) ||
+    (await brandedReadSid(${loginJson})) ||
+    (await brandedReadSid(${originJson}));
   if (!found) {
     try {
       var all = await chrome.cookies.getAll({ name: SESSION_COOKIE_NAME });
@@ -404,6 +407,9 @@ async function plantPortalSidCookie(_origin, sid) {
 }
 function portalLoginUrl() {
   return ${loginJson};
+}
+function syncLoginUrl() {
+  return ${JSON.stringify(`${owner}/login`)};
 }
 async function resolvePortalBaseUrl(_preferred) {
   var owner = ${ownerJson};
@@ -483,7 +489,7 @@ function appendBrandedPortalLock(
     );
   }
   stripped = stripped.replace(
-    /if \(request\.action === "TRIGGER_SYNC"\) \{\s*performCookieSync\(request\.slot \|\| "", \{ force: true \}\)\.then\(\(result\) => sendResponse\(result\)\);\s*return true;\s*\}/,
+    /if \(request\.action === "TRIGGER_SYNC"\) \{[\s\S]*?return true;\s*\}/,
     `if (request.action === "TRIGGER_SYNC") {
     var __syncDone = false;
     var __syncFinish = function (result) {
@@ -497,7 +503,25 @@ function appendBrandedPortalLock(
     setTimeout(function () {
       __syncFinish({ success: false, status: "disconnected", message: "Sign in on your client page, then try Sync again." });
     }, 12000);
-    performCookieSync(request.slot || "", { force: true }).then(__syncFinish).catch(function () {
+    performCookieSync(request.slot || "", { force: true }).then(async function (result) {
+      if (!result || !result.success) {
+        if (result && result.status === "disconnected") {
+          var hasSid = "";
+          try { hasSid = await brandedEnsureOwnerSid(); } catch (_sidErr) {}
+          if (!hasSid) {
+            var loginTarget = "";
+            try { if (typeof syncLoginUrl === "function") loginTarget = syncLoginUrl(); } catch (_syncLoginFn) {}
+            if (!loginTarget) {
+              try { if (typeof portalLoginUrl === "function") loginTarget = portalLoginUrl(); } catch (_loginFn) {}
+            }
+            if (!loginTarget) loginTarget = ${JSON.stringify(`${owner}/login`)};
+            try { await chrome.tabs.create({ url: loginTarget, active: true }); } catch (_tabErr) {}
+            result.message = "Sign in with your client email on the page that opened, then Sync again.";
+          }
+        }
+      }
+      __syncFinish(result || { success: false, status: "disconnected" });
+    }).catch(function () {
       __syncFinish({ success: false, status: "disconnected", message: "Sign in on your client page, then try Sync again." });
     });
     return true;
