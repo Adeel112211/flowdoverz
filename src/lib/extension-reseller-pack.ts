@@ -361,35 +361,113 @@ async function brandedReadSid(url) {
     return "";
   }
 }
+async function brandedFetchPortalSid() {
+  var targets = [${loginJson}, ${originJson}];
+  for (var ti = 0; ti < targets.length; ti++) {
+    var target = String(targets[ti] || "").trim();
+    if (!target) continue;
+    var root = target;
+    try {
+      root = new URL(target.indexOf("http") === 0 ? target : "https://" + target).origin;
+    } catch (_urlErr) {
+      continue;
+    }
+    root = root.replace(/\\/+$/, "");
+    var paths = [
+      { path: "/api/flowdoverz/bridge", method: "POST" },
+      { path: "/api/auth/me", method: "GET" },
+    ];
+    for (var pi = 0; pi < paths.length; pi++) {
+      try {
+        var res = await fetch(root + paths[pi].path, {
+          method: paths[pi].method,
+          credentials: "include",
+          cache: "no-store",
+          headers: { Accept: "application/json" },
+        });
+        if (!res.ok) continue;
+        var data = await res.json();
+        var sid = brandedDecodeSid((data && (data.sid || (data.user && data.user.sid))) || "");
+        if (sid) {
+          try {
+            await chrome.storage.local.set({
+              brandedSid: sid,
+              clientPortalUrl: root,
+              portalUrl: ${ownerJson},
+            });
+          } catch (_storeErr) {}
+          return sid;
+        }
+      } catch (_fetchErr) {}
+    }
+    if (typeof fetchSidFromPortal === "function") {
+      try {
+        var legacy = await fetchSidFromPortal(root);
+        if (legacy) return legacy;
+      } catch (_legacyErr) {}
+    }
+  }
+  return "";
+}
 async function brandedEnsureOwnerSid() {
+  var found =
+    (await brandedReadSid(${loginJson})) ||
+    (await brandedReadSid(${originJson}));
+  if (found) {
+    try {
+      await chrome.storage.local.set({
+        brandedSid: found,
+        clientPortalUrl: ${originJson},
+        portalUrl: ${ownerJson},
+      });
+    } catch (_eLogin) {}
+    return found;
+  }
   try {
     var stored = await chrome.storage.local.get(["brandedSid", "clientPortalUrl"]);
-    var sid = brandedDecodeSid(stored && stored.brandedSid);
-    if (sid) return sid;
     var clientPortal = stored && stored.clientPortalUrl;
     if (clientPortal) {
       var fromClientPortal = await brandedReadSid(clientPortal);
       if (fromClientPortal) {
-        try { await chrome.storage.local.set({ brandedSid: fromClientPortal, portalUrl: ${ownerJson} }); } catch (_e0) {}
+        try {
+          await chrome.storage.local.set({
+            brandedSid: fromClientPortal,
+            clientPortalUrl: clientPortal,
+            portalUrl: ${ownerJson},
+          });
+        } catch (_e0) {}
         return fromClientPortal;
       }
     }
   } catch (_e) {}
-  var found =
-    (await brandedReadSid(${ownerJson})) ||
-    (await brandedReadSid(${loginJson})) ||
-    (await brandedReadSid(${originJson}));
-  if (!found) {
-    try {
-      var all = await chrome.cookies.getAll({ name: SESSION_COOKIE_NAME });
-      for (var i = 0; i < (all || []).length; i++) {
-        var token = brandedDecodeSid(all[i] && all[i].value);
-        if (token) { found = token; break; }
+  found = await brandedFetchPortalSid();
+  if (found) return found;
+  try {
+    var storedSid = await chrome.storage.local.get(["brandedSid"]);
+    var cached = brandedDecodeSid(storedSid && storedSid.brandedSid);
+    if (cached) return cached;
+  } catch (_cacheErr) {}
+  try {
+    var all = await chrome.cookies.getAll({ name: SESSION_COOKIE_NAME });
+    for (var i = 0; i < (all || []).length; i++) {
+      var cookie = all[i];
+      if (!cookie || !cookie.domain) continue;
+      if (String(cookie.domain).indexOf("flow.doverz.com") >= 0) continue;
+      var token = brandedDecodeSid(cookie.value);
+      if (token) {
+        found = token;
+        break;
       }
-    } catch (_allErr) {}
-  }
+    }
+  } catch (_allErr) {}
   if (!found) return "";
-  try { await chrome.storage.local.set({ brandedSid: found, portalUrl: ${ownerJson} }); } catch (_e2) {}
+  try {
+    await chrome.storage.local.set({
+      brandedSid: found,
+      clientPortalUrl: ${originJson},
+      portalUrl: ${ownerJson},
+    });
+  } catch (_e2) {}
   return found;
 }
 async function hasPortalLoginCookie(_baseUrl) {
@@ -400,16 +478,23 @@ async function portalSessionCookieHeader(_baseUrl) {
   if (!sid) return "";
   return SESSION_COOKIE_NAME + "=" + sid;
 }
-async function plantPortalSidCookie(_origin, sid) {
+async function plantPortalSidCookie(origin, sid) {
   var token = brandedDecodeSid(sid);
   if (!token || token.length < 16) return;
-  try { await chrome.storage.local.set({ brandedSid: token, portalUrl: ${ownerJson} }); } catch (_e) {}
+  var portal = String(origin || ${originJson}).replace(/\\/+$/, "");
+  try {
+    await chrome.storage.local.set({
+      brandedSid: token,
+      clientPortalUrl: portal || ${originJson},
+      portalUrl: ${ownerJson},
+    });
+  } catch (_e) {}
 }
 function portalLoginUrl() {
   return ${loginJson};
 }
 function syncLoginUrl() {
-  return ${JSON.stringify(`${owner}/login`)};
+  return ${loginJson};
 }
 async function resolvePortalBaseUrl(_preferred) {
   var owner = ${ownerJson};
@@ -451,6 +536,7 @@ function appendBrandedPortalLock(
   if (fileBaseName(fileName) !== "background.js") return text;
   const origin = String(portalOrigin || "").replace(/\/$/, "");
   const owner = String(ownerOrigin || "").replace(/\/$/, "") || "https://flow.doverz.com";
+  const login = String(loginUrl || `${origin}/login`).trim() || `${origin}/login`;
   if (!origin && !owner) return text;
   let stripped = String(text || "").replace(/\n;\/\* branded-portal-lock \*\/[\s\S]*$/, "");
   stripped = stripped.replace(
@@ -493,9 +579,9 @@ function appendBrandedPortalLock(
   if (!/plantPortalSidCookie\(request\.origin, request\.sid\)/.test(stripped)) {
     stripped = stripped.replace(
       /if \(request\.action === "PORTAL_AUTH_DETECTED"\) \{/,
-      `if (request.action === "PORTAL_AUTH_DETECTED") {
+      `    if (request.action === "PORTAL_AUTH_DETECTED") {
     if (request.sid && String(request.sid).length >= 16) {
-      plantPortalSidCookie(request.origin, request.sid);
+      plantPortalSidCookie(request.origin || ${JSON.stringify(origin)}, request.sid);
     }`,
     );
   }
@@ -545,7 +631,7 @@ function appendBrandedPortalLock(
             if (!loginTarget) {
               try { if (typeof portalLoginUrl === "function") loginTarget = portalLoginUrl(); } catch (_loginFn) {}
             }
-            if (!loginTarget) loginTarget = ${JSON.stringify(`${owner}/login`)};
+            if (!loginTarget) loginTarget = ${JSON.stringify(login)};
             try { await chrome.tabs.create({ url: loginTarget, active: true }); } catch (_tabErr) {}
             hasSid = await waitForBrandedSid(90000);
             if (hasSid) {
