@@ -116,6 +116,17 @@ export function AuthBridge({ session, daysRemaining }: AuthBridgeProps) {
     return () => window.clearInterval(heartbeat);
   }, [session]);
 
+  useEffect(() => {
+    if (!bridgeSid) return;
+    try {
+      window.dispatchEvent(
+        new CustomEvent("flowdoverz-auth-bridge-update", { detail: { sid: bridgeSid } }),
+      );
+    } catch {
+      // ignore
+    }
+  }, [bridgeSid]);
+
   return (
     <div
       id="flowdoverz-auth-bridge"

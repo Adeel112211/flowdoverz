@@ -974,7 +974,7 @@ export async function registerClientForReseller(
 
         const trialHours = normalizeTrialSeatHours(reseller.trialSeatHours);
         const trialExpiry = resellerClientTrialExpiryFromNow(trialHours);
-        const { createResellerClientUser, invalidateUserDocCache } = await import("./user-store");
+        const { createResellerClientUser } = await import("./user-store");
         const created = await createResellerClientUser({
           email: input.email,
           name: input.name,
@@ -988,32 +988,14 @@ export async function registerClientForReseller(
           return { ok: false, error: created.error, status: 400 };
         }
 
-        invalidateUserDocCache(normalizedEmail);
-        const saved = await getUserRecord(normalizedEmail);
-        const savedPlan = String(saved?.subscriptionPlan || "").trim().toLowerCase();
-        if (savedPlan !== "trial") {
-          const db = getDb();
-          if (db) {
-            await db.collection("users").doc(normalizedEmail).delete().catch(() => undefined);
-          }
-          invalidateUserDocCache(normalizedEmail);
-          return {
-            ok: false,
-            error: "Trial registration did not save correctly. Refresh and try again.",
-            status: 500,
-          };
-        }
-
         void touchResellerUsage(reseller.id);
-        const savedTrialExpiry =
-          saved?.trialExpiresAt != null ? String(saved.trialExpiresAt) : trialExpiry;
         return {
           ok: true,
           user: {
             email: normalizedEmail,
-            name: String(saved?.name || input.name || "").trim(),
+            name: String(input.name || "").trim(),
             subscriptionPlan: "trial",
-            trialExpiresAt: savedTrialExpiry,
+            trialExpiresAt: trialExpiry,
             subscriptionExpiresAt: null,
           },
           remainingSeats: trialLeft - 1 + paidLeft,
@@ -1035,7 +1017,7 @@ export async function registerClientForReseller(
       const subscriptionPlan = normalizeSeatPlan(requested, reseller.allowedSeatPlans);
       const seatDays = Math.max(1, Math.floor(Number(reseller.seatDays) || DEFAULT_SEAT_DAYS));
       const expiry = subscriptionExpiryFromNow(seatDays);
-      const { createResellerClientUser, invalidateUserDocCache } = await import("./user-store");
+      const { createResellerClientUser } = await import("./user-store");
       const created = await createResellerClientUser({
         email: input.email,
         name: input.name,
@@ -1049,31 +1031,15 @@ export async function registerClientForReseller(
         return { ok: false, error: created.error, status: 400 };
       }
 
-      invalidateUserDocCache(normalizedEmail);
-      const saved = await getUserRecord(normalizedEmail);
-      const savedPlan = String(saved?.subscriptionPlan || "").trim().toLowerCase();
-      if (!saved || savedPlan !== subscriptionPlan) {
-        const db = getDb();
-        if (db) {
-          await db.collection("users").doc(normalizedEmail).delete().catch(() => undefined);
-        }
-        invalidateUserDocCache(normalizedEmail);
-        return {
-          ok: false,
-          error: "Paid registration did not save correctly. Refresh and try again.",
-          status: 500,
-        };
-      }
       void touchResellerUsage(reseller.id);
       return {
         ok: true,
         user: {
           email: normalizedEmail,
-          name: String(saved?.name || input.name || "").trim(),
-          subscriptionPlan: savedPlan,
+          name: String(input.name || "").trim(),
+          subscriptionPlan: created.subscriptionPlan,
           trialExpiresAt: null,
-          subscriptionExpiresAt:
-            saved?.subscriptionExpiresAt != null ? String(saved.subscriptionExpiresAt) : expiry,
+          subscriptionExpiresAt: expiry,
         },
         remainingSeats: paidLeft - 1 + trialLeft,
         remainingTrialSeats: trialLeft,

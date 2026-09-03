@@ -363,9 +363,17 @@ async function brandedReadSid(url) {
 }
 async function brandedEnsureOwnerSid() {
   try {
-    var stored = await chrome.storage.local.get(["brandedSid"]);
+    var stored = await chrome.storage.local.get(["brandedSid", "clientPortalUrl"]);
     var sid = brandedDecodeSid(stored && stored.brandedSid);
     if (sid) return sid;
+    var clientPortal = stored && stored.clientPortalUrl;
+    if (clientPortal) {
+      var fromClientPortal = await brandedReadSid(clientPortal);
+      if (fromClientPortal) {
+        try { await chrome.storage.local.set({ brandedSid: fromClientPortal, portalUrl: ${ownerJson} }); } catch (_e0) {}
+        return fromClientPortal;
+      }
+    }
   } catch (_e) {}
   var found = (await brandedReadSid(${loginJson})) || (await brandedReadSid(${originJson})) || (await brandedReadSid(${ownerJson}));
   if (!found) {

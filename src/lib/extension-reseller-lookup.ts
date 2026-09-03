@@ -270,11 +270,35 @@ function portalOriginsForReseller(
   return origins;
 }
 
+/** Compare portal origins loosely (www/non-www, trailing slash). */
+export function normalizePortalMatchOrigin(origin: string): string {
+  const raw = String(origin || "").trim();
+  if (!raw) return "";
+  try {
+    const url = new URL(raw.includes("://") ? raw : `https://${raw}`);
+    let host = url.hostname.toLowerCase();
+    if (host.startsWith("www.")) host = host.slice(4);
+    const port =
+      url.port && !((url.protocol === "https:" && url.port === "443") || (url.protocol === "http:" && url.port === "80"))
+        ? `:${url.port}`
+        : "";
+    return `${url.protocol}//${host}${port}`;
+  } catch {
+    return raw
+      .toLowerCase()
+      .replace(/\/$/, "")
+      .replace(/^https?:\/\/www\./i, (match) => match.replace("www.", ""));
+  }
+}
+
+export function portalOriginMatches(left: string, right: string): boolean {
+  const a = normalizePortalMatchOrigin(left);
+  const b = normalizePortalMatchOrigin(right);
+  return Boolean(a && b && a === b);
+}
+
 async function getWhiteLabelResellerIdForOrigin(origin: string): Promise<string | null> {
-  const normalized = String(origin || "")
-    .trim()
-    .toLowerCase()
-    .replace(/\/$/, "");
+  const normalized = normalizePortalMatchOrigin(origin);
   if (!normalized) return null;
 
   const rows = await listResellers();
@@ -284,7 +308,10 @@ async function getWhiteLabelResellerIdForOrigin(origin: string): Promise<string 
     const reseller = await getReseller(row.id);
     if (!reseller) continue;
     const origins = portalOriginsForReseller(reseller);
-    if (origins.has(normalized)) matches.push(reseller.id);
+    const originList = [...origins];
+    if (originList.some((candidate) => portalOriginMatches(normalized, candidate))) {
+      matches.push(reseller.id);
+    }
   }
   if (matches.length !== 1) return null;
   return matches[0]!;
