@@ -88,11 +88,12 @@ export default function ResellerClientsPage() {
   const [loading, setLoading] = useState(true);
   const [users, setUsers] = useState<ClientRow[]>([]);
   const [planOptions, setPlanOptions] = useState<PlanOption[]>([]);
-  const [subscriptionPlan, setSubscriptionPlan] = useState<"solo" | "team" | "trial">("trial");
+  const [subscriptionPlan, setSubscriptionPlan] = useState<"solo" | "team" | "trial">("solo");
   const [remainingPaidSeats, setRemainingPaidSeats] = useState(0);
   const [remainingTrialSeats, setRemainingTrialSeats] = useState(0);
   const [trialSeatsEnabled, setTrialSeatsEnabled] = useState(false);
   const [trialSeatHours, setTrialSeatHours] = useState(5);
+  const [seatDays, setSeatDays] = useState(30);
   const [error, setError] = useState("");
   const [formError, setFormError] = useState("");
   const [notice, setNotice] = useState("");
@@ -118,21 +119,16 @@ export default function ResellerClientsPage() {
     setRemainingTrialSeats(Number(data.remainingTrialSeats) || 0);
     setTrialSeatsEnabled(Boolean(data.trialSeatsEnabled));
     setTrialSeatHours(Number(data.trialSeatHours) || 5);
+    setSeatDays(Math.max(1, Math.floor(Number(data.seatDays) || 30)));
     if (resetPlan && !planTouchedRef.current) {
-      const trialLeft = Number(data.remainingTrialSeats) || 0;
-      const trialEnabled = Boolean(data.trialSeatsEnabled);
-      if (trialEnabled && trialLeft > 0) {
-        setSubscriptionPlan("trial");
-      } else {
-        setSubscriptionPlan(
-          pickDefaultSubscriptionPlan(options, {
-            defaultSeatPlan: data.defaultSeatPlan,
-            trialSeatsEnabled: trialEnabled,
-            remainingTrialSeats: trialLeft,
-            remainingPaidSeats: Number(data.remainingPaidSeats) || 0,
-          }),
-        );
-      }
+      setSubscriptionPlan(
+        pickDefaultSubscriptionPlan(options, {
+          defaultSeatPlan: data.defaultSeatPlan,
+          trialSeatsEnabled: Boolean(data.trialSeatsEnabled),
+          remainingTrialSeats: Number(data.remainingTrialSeats) || 0,
+          remainingPaidSeats: Number(data.remainingPaidSeats) || 0,
+        }),
+      );
     }
   }, []);
 
@@ -179,10 +175,8 @@ export default function ResellerClientsPage() {
     setNotice("");
     setSaving(true);
     try {
-      const formData = new FormData(event.currentTarget);
-      const rawPlan = String(formData.get("subscriptionPlan") || subscriptionPlan);
       const planToRegister =
-        rawPlan === "team" ? "team" : rawPlan === "trial" ? "trial" : "solo";
+        subscriptionPlan === "team" ? "team" : subscriptionPlan === "trial" ? "trial" : "solo";
       const res = await fetch("/api/reseller-panel/clients", {
         method: "POST",
         credentials: "include",
@@ -306,9 +300,14 @@ export default function ResellerClientsPage() {
             ) : null}
             {subscriptionPlan === "trial" ? (
               <p className="mt-1 text-xs text-cyan-300">
-                Uses one trial seat. Timer starts now for {trialSeatHoursLabel(trialSeatHours)}.
+                Trial plan: access for {trialSeatHoursLabel(trialSeatHours)} (uses 1 trial seat).
               </p>
-            ) : null}
+            ) : (
+              <p className="mt-1 text-xs text-emerald-300">
+                {subscriptionPlan === "team" ? "Team" : "Solo"} plan: {seatDays} day
+                {seatDays === 1 ? "" : "s"} paid access (uses 1 paid seat).
+              </p>
+            )}
           </div>
           <div>
             <label className="mb-1.5 block text-sm font-medium text-slate-300">Password</label>

@@ -34,6 +34,7 @@ export async function GET() {
     trialSeatsEnabled: resellerTrialRegistrationEnabled(reseller),
     trialSeatHours: reseller.trialSeatHours,
     trialSeatsGranted: reseller.trialSeatsGranted,
+    seatDays: reseller.seatDays || 30,
     remainingTrialSeats: remainingTrialSeats(reseller, usage.trial),
     remainingPaidSeats: remainingPaidSeats(reseller, usage.paid),
     trialUserCount: usage.trial,

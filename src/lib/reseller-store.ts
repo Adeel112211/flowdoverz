@@ -443,39 +443,26 @@ export function resellerClientPlanLooksLikeTrial(input: Record<string, unknown>)
   return false;
 }
 
-/** Legacy + explicit trial detection — matches pre–public-trial-removal behavior. */
-export function wantsResellerTrialSeat(input: Record<string, unknown>) {
-  const raw = String(input.subscriptionPlan || input.plan || "")
+/**
+ * Explicit plan only — never guess.
+ * Trial → only when reseller selected trial.
+ * Solo/Team → only when reseller selected that paid plan.
+ */
+export function parseResellerClientPlanRequest(input: Record<string, unknown>): "trial" | "solo" | "team" | "" {
+  const primary = String(input.subscriptionPlan ?? input.plan ?? "")
     .trim()
     .toLowerCase();
-  if (raw === "solo" || raw === "studio" || raw === "team") return false;
-  if (resellerClientPlanLooksLikeTrial(input)) return true;
-  if (!raw || raw === "trial" || raw === "none") return true;
-  return planTokenMeansTrial(raw);
-}
 
-/** Normalize plan sent from reseller panel/API (`plan` or `subscriptionPlan`). */
-export function parseResellerClientPlanRequest(input: Record<string, unknown>) {
-  if (wantsResellerTrialSeat(input)) return "trial";
+  if (primary === "team") return "team";
+  if (primary === "solo" || primary === "studio") return "solo";
+  if (primary === "trial" || primary === "trail" || planTokenMeansTrial(primary)) return "trial";
 
-  const candidates = [
-    input.subscriptionPlan,
-    input.plan,
-    input.seatPlan,
-    input.seat,
-    input.type,
-    input.mode,
-    input.seatType,
-  ];
-
-  for (const candidate of candidates) {
-    const raw = String(candidate ?? "")
-      .trim()
-      .toLowerCase();
-    if (!raw) continue;
-    if (planTokenMeansTrial(raw)) return "trial";
+  // Boolean flags only count when primary plan is empty/ambiguous.
+  if (!primary && (input.isTrial === true || input.trial === true || input.trialSeat === true)) {
+    return "trial";
   }
 
+  const candidates = [input.seatPlan, input.seat, input.type, input.mode, input.seatType];
   for (const candidate of candidates) {
     const raw = String(candidate ?? "")
       .trim()
@@ -483,10 +470,15 @@ export function parseResellerClientPlanRequest(input: Record<string, unknown>) {
     if (!raw) continue;
     if (raw === "team") return "team";
     if (raw === "solo" || raw === "studio") return "solo";
-    return raw;
+    if (planTokenMeansTrial(raw)) return "trial";
   }
 
   return "";
+}
+
+/** True only when reseller explicitly chose trial (not Solo/Team). */
+export function wantsResellerTrialSeat(input: Record<string, unknown>) {
+  return parseResellerClientPlanRequest(input) === "trial";
 }
 
 async function withResellerRegistrationLock<T>(email: string, fn: () => Promise<T>): Promise<T> {
@@ -940,9 +932,17 @@ export async function registerClientForReseller(
       const usage = await countResellerSeatUsage(reseller.id);
       const paidLeft = remainingPaidSeats(reseller, usage.paid);
       const trialLeft = remainingTrialSeats(reseller, usage.trial);
-      const wantsTrial = wantsResellerTrialSeat(input);
+      const requested = parseResellerClientPlanRequest(input);
 
-      if (wantsTrial) {
+      if (!requested) {
+        return {
+          ok: false,
+          error: "Select a plan: Trial, Solo, or Team.",
+          status: 400,
+        };
+      }
+
+      if (requested === "trial") {
         if (!resellerTrialRegistrationEnabled(reseller)) {
           return {
             ok: false,
@@ -958,7 +958,8 @@ export async function registerClientForReseller(
           };
         }
 
-        const trialExpiry = resellerClientTrialExpiryFromNow(reseller.trialSeatHours);
+        const trialHours = normalizeTrialSeatHours(reseller.trialSeatHours);
+        const trialExpiry = resellerClientTrialExpiryFromNow(trialHours);
         const { createUserByAdmin, persistResellerTrialUserDoc } = await import("./user-store");
         const created = await createUserByAdmin({
           email: input.email,
@@ -1016,7 +1017,6 @@ export async function registerClientForReseller(
         };
       }
 
-      const requested = parseResellerClientPlanRequest(input);
       if (paidLeft <= 0) {
         return {
           ok: false,
@@ -1025,12 +1025,14 @@ export async function registerClientForReseller(
         };
       }
 
-      const subscriptionPlan = normalizeSeatPlan(
-        requested === "none" || requested === "trial" ? reseller.defaultSeatPlan : requested || reseller.defaultSeatPlan,
-        reseller.allowedSeatPlans,
-      );
-      const expiry = subscriptionExpiryFromNow(reseller.seatDays);
-      const { createUserByAdmin } = await import("./user-store");
+      const subscriptionPlan = normalizeSeatPlan(requested, reseller.allowedSeatPlans);
+      const seatDays = Math.max(1, Math.floor(Number(reseller.seatDays) || DEFAULT_SEAT_DAYS));
+      const expiry = subscriptionExpiryFromNow(seatDays);
+      const {
+        createUserByAdmin,
+        persistResellerPaidUserDoc,
+        invalidateUserDocCache,
+      } = await import("./user-store");
       const created = await createUserByAdmin({
         email: input.email,
         name: input.name,
@@ -1045,14 +1047,25 @@ export async function registerClientForReseller(
         return { ok: false, error: created.error, status: 400 };
       }
 
-      const { invalidateUserDocCache } = await import("./user-store");
+      await persistResellerPaidUserDoc(normalizedEmail, {
+        subscriptionPlan,
+        subscriptionExpiresAt: expiry,
+        resellerId: reseller.id,
+        assignedSlot: slot,
+      });
+
       invalidateUserDocCache(normalizedEmail);
       const saved = await getUserRecord(normalizedEmail);
       const savedPlan = String(saved?.subscriptionPlan || "").trim().toLowerCase();
-      if (!saved || !savedPlan) {
+      if (!saved || savedPlan !== subscriptionPlan) {
+        const db = getDb();
+        if (db) {
+          await db.collection("users").doc(normalizedEmail).delete().catch(() => undefined);
+        }
+        invalidateUserDocCache(normalizedEmail);
         return {
           ok: false,
-          error: "Registration saved but could not be verified. Refresh and check the client list.",
+          error: "Paid registration did not save correctly. Refresh and try again.",
           status: 500,
         };
       }
@@ -1063,7 +1076,7 @@ export async function registerClientForReseller(
           email: normalizedEmail,
           name: String(saved?.name || input.name || "").trim(),
           subscriptionPlan: savedPlan,
-          trialExpiresAt: saved?.trialExpiresAt != null ? String(saved.trialExpiresAt) : null,
+          trialExpiresAt: null,
           subscriptionExpiresAt:
             saved?.subscriptionExpiresAt != null ? String(saved.subscriptionExpiresAt) : expiry,
         },

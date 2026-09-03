@@ -702,6 +702,33 @@ export async function persistResellerTrialUserDoc(
   invalidateUserDocCache(normalized);
 }
 
+/** Force paid Solo/Team fields after create — never leave as trial. */
+export async function persistResellerPaidUserDoc(
+  email: string,
+  input: {
+    subscriptionPlan: string;
+    subscriptionExpiresAt: string;
+    resellerId: string;
+    assignedSlot: string;
+  },
+) {
+  const db = getDb();
+  if (!db) throw new Error("Database not configured.");
+  const normalized = normalizeEmail(email);
+  const plan = String(input.subscriptionPlan || "solo").trim().toLowerCase();
+  await db.collection("users").doc(normalized).set(
+    {
+      subscriptionPlan: plan,
+      subscriptionExpiresAt: input.subscriptionExpiresAt,
+      resellerId: input.resellerId,
+      assignedSlot: input.assignedSlot,
+      trialExpiresAt: new Date().toISOString(),
+    },
+    { merge: true },
+  );
+  invalidateUserDocCache(normalized);
+}
+
 export async function updateUserPasswordByAdmin(
   email: string,
   password: string,
