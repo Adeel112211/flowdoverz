@@ -1489,20 +1489,40 @@ export async function generateResellerExtensionPack(
 
 export async function rebuildResellerExtensionPacks() {
   const db = getDb();
-  if (!db) return { rebuilt: 0, failed: 0 };
-  const snap = await db.collection(PACKS_COLLECTION).get();
+  if (!db) return { rebuilt: 0, failed: 0, errors: [] as string[] };
+
+  const targetIds = new Set<string>();
+  const [packSnap, brandingSnap] = await Promise.all([
+    db.collection(PACKS_COLLECTION).get(),
+    db.collection(BRANDING_COLLECTION).get(),
+  ]);
+  for (const doc of packSnap.docs) targetIds.add(doc.id);
+  for (const doc of brandingSnap.docs) targetIds.add(doc.id);
+
+  const { listResellers } = await import("./reseller-store");
+  const rows = await listResellers();
+  for (const row of rows) {
+    if (row.kind !== "white_label" && row.kind !== "official") continue;
+    const branded = row.brandedExtension;
+    if (!branded?.displayName && !branded?.loginUrl && !branded?.hasLogo) continue;
+    targetIds.add(row.id);
+  }
+
   let rebuilt = 0;
   let failed = 0;
-  for (const doc of snap.docs) {
+  const errors: string[] = [];
+  for (const id of targetIds) {
     try {
-      await generateResellerExtensionPack(doc.id);
+      await generateResellerExtensionPack(id);
       rebuilt += 1;
     } catch (error) {
       failed += 1;
-      console.warn(`Failed to rebuild branded extension for ${doc.id}:`, error);
+      const message = error instanceof Error ? error.message : String(error);
+      errors.push(`${id}: ${message}`);
+      console.warn(`Failed to rebuild branded extension for ${id}:`, error);
     }
   }
-  return { rebuilt, failed };
+  return { rebuilt, failed, errors };
 }
 
 export async function deleteResellerExtensionPack(resellerId: string) {
