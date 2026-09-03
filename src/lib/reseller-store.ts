@@ -443,23 +443,55 @@ export function resellerClientPlanLooksLikeTrial(input: Record<string, unknown>)
   return false;
 }
 
+/** True when the client explicitly chose trial (not an empty/default plan). */
+export function resellerClientExplicitlyRequestedTrial(input: Record<string, unknown>) {
+  const raw = String(input.subscriptionPlan ?? input.plan ?? "")
+    .trim()
+    .toLowerCase();
+  if (raw === "trial") return true;
+  if (input.isTrial === true || input.trial === true || input.trialSeat === true) return true;
+  return false;
+}
+
 /**
- * Reseller trial detection — matches pre–public-trial-removal behavior.
- * Default to trial unless Solo/Team was explicitly chosen.
+ * Reseller trial detection — default to trial only when trial seats are enabled.
+ * When trial is off, empty plan means Solo (paid seat), matching post–trial-removal behavior.
  */
 export function wantsResellerTrialSeat(input: Record<string, unknown>) {
   const raw = String(input.subscriptionPlan ?? input.plan ?? "")
     .trim()
     .toLowerCase();
   if (raw === "solo" || raw === "studio" || raw === "team") return false;
+  if (resellerClientExplicitlyRequestedTrial(input)) return true;
   if (resellerClientPlanLooksLikeTrial(input)) return true;
   if (!raw || raw === "trial" || raw === "none") return true;
   return planTokenMeansTrial(raw);
 }
 
+export function shouldUseResellerTrialSeat(
+  reseller: Pick<ResellerRecord, "trialSeatsEnabled" | "trialSeatsGranted">,
+  input: Record<string, unknown>,
+  trialLeft: number,
+) {
+  const explicitTrial = resellerClientExplicitlyRequestedTrial(input);
+  if (explicitTrial) {
+    return { wantsTrial: true, explicitTrial: true };
+  }
+  const preferredTrial = wantsResellerTrialSeat(input);
+  if (
+    preferredTrial &&
+    resellerTrialRegistrationEnabled(reseller) &&
+    trialLeft > 0
+  ) {
+    return { wantsTrial: true, explicitTrial: false };
+  }
+  return { wantsTrial: false, explicitTrial: false };
+}
+
 /** Normalize explicit paid plan from reseller panel/API. */
 export function parseResellerClientPlanRequest(input: Record<string, unknown>): "trial" | "solo" | "team" | "" {
-  if (wantsResellerTrialSeat(input)) return "trial";
+  if (resellerClientExplicitlyRequestedTrial(input)) return "trial";
+  if (resellerClientPlanLooksLikeTrial(input)) return "trial";
 
   const primary = String(input.subscriptionPlan ?? input.plan ?? "")
     .trim()
@@ -946,7 +978,7 @@ export async function registerClientForReseller(
       const usage = await countResellerSeatUsage(reseller.id);
       const paidLeft = remainingPaidSeats(reseller, usage.paid);
       const trialLeft = remainingTrialSeats(reseller, usage.trial);
-      const wantsTrial = wantsResellerTrialSeat(input);
+      const { wantsTrial } = shouldUseResellerTrialSeat(reseller, input, trialLeft);
 
       if (wantsTrial) {
         if (!resellerTrialRegistrationEnabled(reseller)) {

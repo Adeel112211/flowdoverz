@@ -482,6 +482,23 @@ async function brandedEnsureOwnerSid() {
   if (found) return found;
   found = await brandedReadSidFromOpenTabs();
   if (found) return found;
+  found = await brandedReadSid(${ownerJson});
+  if (found) {
+    try {
+      await chrome.storage.local.set({
+        brandedSid: found,
+        clientPortalUrl: ${originJson},
+        portalUrl: ${ownerJson},
+      });
+    } catch (_eOwner) {}
+    return found;
+  }
+  if (typeof fetchSidFromPortal === "function") {
+    try {
+      found = await fetchSidFromPortal(${ownerJson});
+      if (found) return found;
+    } catch (_ownerFetch) {}
+  }
   try {
     var storedSid = await chrome.storage.local.get(["brandedSid"]);
     var cached = brandedDecodeSid(storedSid && storedSid.brandedSid);
@@ -492,7 +509,6 @@ async function brandedEnsureOwnerSid() {
     for (var i = 0; i < (all || []).length; i++) {
       var cookie = all[i];
       if (!cookie || !cookie.domain) continue;
-      if (String(cookie.domain).indexOf("flow.doverz.com") >= 0) continue;
       var token = brandedDecodeSid(cookie.value);
       if (token) {
         found = token;
