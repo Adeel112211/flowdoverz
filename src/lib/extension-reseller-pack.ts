@@ -362,7 +362,7 @@ async function brandedReadSid(url) {
   }
 }
 async function brandedReadSidFromOpenTabs() {
-  var targets = [${loginJson}, ${originJson}];
+  var targets = [${ownerJson}, ${loginJson}, ${originJson}];
   var roots = [];
   for (var ti = 0; ti < targets.length; ti++) {
     try {
@@ -400,7 +400,7 @@ async function brandedReadSidFromOpenTabs() {
   return "";
 }
 async function brandedFetchPortalSid() {
-  var targets = [${loginJson}, ${originJson}];
+  var targets = [${ownerJson}, ${loginJson}, ${originJson}];
   for (var ti = 0; ti < targets.length; ti++) {
     var target = String(targets[ti] || "").trim();
     if (!target) continue;
@@ -448,7 +448,18 @@ async function brandedFetchPortalSid() {
   return "";
 }
 async function brandedEnsureOwnerSid() {
-  var found =
+  var found = await brandedReadSid(${ownerJson});
+  if (found) {
+    try {
+      await chrome.storage.local.set({
+        brandedSid: found,
+        clientPortalUrl: ${originJson},
+        portalUrl: ${ownerJson},
+      });
+    } catch (_eOwnerFirst) {}
+    return found;
+  }
+  found =
     (await brandedReadSid(${loginJson})) ||
     (await brandedReadSid(${originJson}));
   if (found) {

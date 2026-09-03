@@ -9,8 +9,16 @@ export async function GET(request: NextRequest) {
   const resellerId = request.nextUrl.searchParams.get("reseller")?.trim() || "";
 
   if (resellerId) {
-    const { getResellerExtensionPack } = await import("@/lib/extension-reseller-pack");
-    const pack = await getResellerExtensionPack(resellerId);
+    const { getResellerExtensionPack, generateResellerExtensionPack } = await import("@/lib/extension-reseller-pack");
+    let pack = await getResellerExtensionPack(resellerId);
+    if (!pack) {
+      try {
+        await generateResellerExtensionPack(resellerId);
+        pack = await getResellerExtensionPack(resellerId);
+      } catch (error) {
+        console.error("Branded extension auto-build failed:", error);
+      }
+    }
     if (!pack) {
       return NextResponse.json({ success: false, error: "No branded extension available." }, { status: 404 });
     }
