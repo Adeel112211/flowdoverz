@@ -444,23 +444,29 @@ export function resellerClientPlanLooksLikeTrial(input: Record<string, unknown>)
 }
 
 /**
- * Explicit plan only — never guess.
- * Trial → only when reseller selected trial.
- * Solo/Team → only when reseller selected that paid plan.
+ * Reseller trial detection — matches pre–public-trial-removal behavior.
+ * Default to trial unless Solo/Team was explicitly chosen.
  */
+export function wantsResellerTrialSeat(input: Record<string, unknown>) {
+  const raw = String(input.subscriptionPlan ?? input.plan ?? "")
+    .trim()
+    .toLowerCase();
+  if (raw === "solo" || raw === "studio" || raw === "team") return false;
+  if (resellerClientPlanLooksLikeTrial(input)) return true;
+  if (!raw || raw === "trial" || raw === "none") return true;
+  return planTokenMeansTrial(raw);
+}
+
+/** Normalize explicit paid plan from reseller panel/API. */
 export function parseResellerClientPlanRequest(input: Record<string, unknown>): "trial" | "solo" | "team" | "" {
+  if (wantsResellerTrialSeat(input)) return "trial";
+
   const primary = String(input.subscriptionPlan ?? input.plan ?? "")
     .trim()
     .toLowerCase();
 
   if (primary === "team") return "team";
   if (primary === "solo" || primary === "studio") return "solo";
-  if (primary === "trial" || primary === "trail" || planTokenMeansTrial(primary)) return "trial";
-
-  // Boolean flags only count when primary plan is empty/ambiguous.
-  if (!primary && (input.isTrial === true || input.trial === true || input.trialSeat === true)) {
-    return "trial";
-  }
 
   const candidates = [input.seatPlan, input.seat, input.type, input.mode, input.seatType];
   for (const candidate of candidates) {
@@ -470,15 +476,9 @@ export function parseResellerClientPlanRequest(input: Record<string, unknown>): 
     if (!raw) continue;
     if (raw === "team") return "team";
     if (raw === "solo" || raw === "studio") return "solo";
-    if (planTokenMeansTrial(raw)) return "trial";
   }
 
   return "";
-}
-
-/** True only when reseller explicitly chose trial (not Solo/Team). */
-export function wantsResellerTrialSeat(input: Record<string, unknown>) {
-  return parseResellerClientPlanRequest(input) === "trial";
 }
 
 /** Branded-site self-signup: trial when enabled, otherwise a paid Solo seat. */
@@ -664,7 +664,7 @@ export async function countResellerSeatUsage(resellerId: string): Promise<Resell
   let paid = 0;
   for (const user of users) {
     if (isResellerPaidPlan(user.subscriptionPlan)) paid += 1;
-    else if (isResellerTrialSeatPlan(user.subscriptionPlan)) trial += 1;
+    else trial += 1;
   }
   return { total: users.length, trial, paid };
 }
@@ -946,21 +946,13 @@ export async function registerClientForReseller(
       const usage = await countResellerSeatUsage(reseller.id);
       const paidLeft = remainingPaidSeats(reseller, usage.paid);
       const trialLeft = remainingTrialSeats(reseller, usage.trial);
-      const requested = parseResellerClientPlanRequest(input);
+      const wantsTrial = wantsResellerTrialSeat(input);
 
-      if (!requested) {
-        return {
-          ok: false,
-          error: "Select a plan: Trial, Solo, or Team.",
-          status: 400,
-        };
-      }
-
-      if (requested === "trial") {
+      if (wantsTrial) {
         if (!resellerTrialRegistrationEnabled(reseller)) {
           return {
             ok: false,
-            error: "Trial registration is not enabled for this partner. Ask the owner to turn it on.",
+            error: "Trial registration is not enabled for this partner. Ask the owner to add trial seats.",
             status: 403,
           };
         }
@@ -974,7 +966,10 @@ export async function registerClientForReseller(
 
         const trialHours = normalizeTrialSeatHours(reseller.trialSeatHours);
         const trialExpiry = resellerClientTrialExpiryFromNow(trialHours);
-        const { createResellerClientUser } = await import("./user-store");
+        const {
+          createResellerClientUser,
+          persistResellerTrialUserDoc,
+        } = await import("./user-store");
         const created = await createResellerClientUser({
           email: input.email,
           name: input.name,
@@ -987,6 +982,12 @@ export async function registerClientForReseller(
         if (!created.ok) {
           return { ok: false, error: created.error, status: 400 };
         }
+
+        await persistResellerTrialUserDoc(normalizedEmail, {
+          trialExpiresAt: trialExpiry,
+          resellerId: reseller.id,
+          assignedSlot: slot,
+        });
 
         void touchResellerUsage(reseller.id);
         return {
@@ -1006,6 +1007,7 @@ export async function registerClientForReseller(
         };
       }
 
+      const requested = parseResellerClientPlanRequest(input);
       if (paidLeft <= 0) {
         return {
           ok: false,
@@ -1014,10 +1016,22 @@ export async function registerClientForReseller(
         };
       }
 
-      const subscriptionPlan = normalizeSeatPlan(requested, reseller.allowedSeatPlans);
+      const subscriptionPlan = normalizeSeatPlan(
+        requested === "team"
+          ? "team"
+          : requested === "solo"
+            ? "solo"
+            : reseller.defaultSeatPlan === "team"
+              ? "team"
+              : "solo",
+        reseller.allowedSeatPlans,
+      );
       const seatDays = Math.max(1, Math.floor(Number(reseller.seatDays) || DEFAULT_SEAT_DAYS));
       const expiry = subscriptionExpiryFromNow(seatDays);
-      const { createResellerClientUser } = await import("./user-store");
+      const {
+        createResellerClientUser,
+        persistResellerPaidUserDoc,
+      } = await import("./user-store");
       const created = await createResellerClientUser({
         email: input.email,
         name: input.name,
@@ -1030,6 +1044,13 @@ export async function registerClientForReseller(
       if (!created.ok) {
         return { ok: false, error: created.error, status: 400 };
       }
+
+      await persistResellerPaidUserDoc(normalizedEmail, {
+        subscriptionPlan,
+        subscriptionExpiresAt: expiry,
+        resellerId: reseller.id,
+        assignedSlot: slot,
+      });
 
       void touchResellerUsage(reseller.id);
       return {

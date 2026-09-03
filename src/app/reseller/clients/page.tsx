@@ -61,6 +61,10 @@ function pickDefaultSubscriptionPlan(
     remainingPaidSeats: number;
   },
 ): "solo" | "team" | "trial" {
+  if (args.trialSeatsEnabled && args.remainingTrialSeats > 0) {
+    return "trial";
+  }
+
   const trialDisabled = !args.trialSeatsEnabled || args.remainingTrialSeats <= 0;
   const paidDisabled = args.remainingPaidSeats <= 0;
 
