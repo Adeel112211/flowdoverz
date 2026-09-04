@@ -448,6 +448,21 @@ async function brandedFetchPortalSid() {
   return "";
 }
 async function brandedEnsureOwnerSid() {
+  if (typeof fetchSidFromPortal === "function") {
+    try {
+      var fromOwnerApi = await fetchSidFromPortal(${ownerJson});
+      if (fromOwnerApi) {
+        try {
+          await chrome.storage.local.set({
+            brandedSid: fromOwnerApi,
+            clientPortalUrl: ${originJson},
+            portalUrl: ${ownerJson},
+          });
+        } catch (_eOwnerApi) {}
+        return fromOwnerApi;
+      }
+    } catch (_ownerApiErr) {}
+  }
   var found = await brandedReadSid(${ownerJson});
   if (found) {
     try {
@@ -676,9 +691,15 @@ function appendBrandedPortalLock(
       if (__syncDone) return;
       __syncDone = true;
       if (result && !result.success && !result.message) {
-        result.message = "Sign in on your client page, then try Sync again.";
+        if (result.status === "expired") {
+          result.message = "Your plan has expired. Renew on your dashboard.";
+        } else if (result.status === "pending") {
+          result.message = "Account pending approval.";
+        } else {
+          result.message = "Sign in at ${login} with your client email, then Sync again.";
+        }
       }
-      try { sendResponse(result || { success: false, status: "disconnected", message: "Sign in on your client page, then try Sync again." }); } catch (_e) {}
+      try { sendResponse(result || { success: false, status: "disconnected", message: "Sign in at ${login} with your client email, then Sync again." }); } catch (_e) {}
     };
     setTimeout(function () {
       __syncFinish({ success: false, status: "disconnected", message: "Sync timed out. Sign in on your client page, then try again." });
