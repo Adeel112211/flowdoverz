@@ -362,7 +362,7 @@ async function brandedReadSid(url) {
   }
 }
 async function brandedReadSidFromOpenTabs() {
-  var targets = [${ownerJson}, ${loginJson}, ${originJson}];
+  var targets = [${loginJson}, ${originJson}, ${ownerJson}];
   var roots = [];
   for (var ti = 0; ti < targets.length; ti++) {
     try {
@@ -388,7 +388,7 @@ async function brandedReadSidFromOpenTabs() {
           try {
             await chrome.storage.local.set({
               brandedSid: sid,
-              clientPortalUrl: roots[0],
+              clientPortalUrl: ${originJson},
               portalUrl: ${ownerJson},
             });
           } catch (_storeTab) {}
@@ -400,7 +400,7 @@ async function brandedReadSidFromOpenTabs() {
   return "";
 }
 async function brandedFetchPortalSid() {
-  var targets = [${ownerJson}, ${loginJson}, ${originJson}];
+  var targets = [${loginJson}, ${originJson}, ${ownerJson}];
   for (var ti = 0; ti < targets.length; ti++) {
     var target = String(targets[ti] || "").trim();
     if (!target) continue;
@@ -413,7 +413,9 @@ async function brandedFetchPortalSid() {
     root = root.replace(/\\/+$/, "");
     var paths = [
       { path: "/api/flowdoverz/bridge", method: "POST" },
+      { path: "/api/flowdoverz/bridge", method: "GET" },
       { path: "/api/auth/me", method: "GET" },
+      { path: "/api/auth/me", method: "POST" },
     ];
     for (var pi = 0; pi < paths.length; pi++) {
       try {
@@ -448,33 +450,7 @@ async function brandedFetchPortalSid() {
   return "";
 }
 async function brandedEnsureOwnerSid() {
-  if (typeof fetchSidFromPortal === "function") {
-    try {
-      var fromOwnerApi = await fetchSidFromPortal(${ownerJson});
-      if (fromOwnerApi) {
-        try {
-          await chrome.storage.local.set({
-            brandedSid: fromOwnerApi,
-            clientPortalUrl: ${originJson},
-            portalUrl: ${ownerJson},
-          });
-        } catch (_eOwnerApi) {}
-        return fromOwnerApi;
-      }
-    } catch (_ownerApiErr) {}
-  }
-  var found = await brandedReadSid(${ownerJson});
-  if (found) {
-    try {
-      await chrome.storage.local.set({
-        brandedSid: found,
-        clientPortalUrl: ${originJson},
-        portalUrl: ${ownerJson},
-      });
-    } catch (_eOwnerFirst) {}
-    return found;
-  }
-  found =
+  var found =
     (await brandedReadSid(${loginJson})) ||
     (await brandedReadSid(${originJson}));
   if (found) {
@@ -484,8 +460,25 @@ async function brandedEnsureOwnerSid() {
         clientPortalUrl: ${originJson},
         portalUrl: ${ownerJson},
       });
-    } catch (_eLogin) {}
+    } catch (_eLoginFirst) {}
     return found;
+  }
+  if (typeof fetchSidFromPortal === "function") {
+    try {
+      var fromClientApi =
+        (await fetchSidFromPortal(${loginJson})) ||
+        (await fetchSidFromPortal(${originJson}));
+      if (fromClientApi) {
+        try {
+          await chrome.storage.local.set({
+            brandedSid: fromClientApi,
+            clientPortalUrl: ${originJson},
+            portalUrl: ${ownerJson},
+          });
+        } catch (_eClientApi) {}
+        return fromClientApi;
+      }
+    } catch (_clientApiErr) {}
   }
   try {
     var stored = await chrome.storage.local.get(["brandedSid", "clientPortalUrl"]);
@@ -522,7 +515,16 @@ async function brandedEnsureOwnerSid() {
   if (typeof fetchSidFromPortal === "function") {
     try {
       found = await fetchSidFromPortal(${ownerJson});
-      if (found) return found;
+      if (found) {
+        try {
+          await chrome.storage.local.set({
+            brandedSid: found,
+            clientPortalUrl: ${originJson},
+            portalUrl: ${ownerJson},
+          });
+        } catch (_eOwnerApi) {}
+        return found;
+      }
     } catch (_ownerFetch) {}
   }
   try {

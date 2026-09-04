@@ -1775,7 +1775,7 @@ export default function AdminResellersPage() {
                   value={brandLoginUrl}
                   onChange={(e) => setBrandLoginUrl(e.target.value)}
                   className={INPUT_CLASS}
-                  placeholder="https://infinity-flow-tau.vercel.app/painel"
+                  placeholder="https://infinity-flow-tau.vercel.app/login"
                 />
                 <p className="mt-1 text-xs text-slate-500">
                   {brandTarget?.kind === "official"
