@@ -12,6 +12,7 @@ import {
   remainingPaidSeats,
   remainingTrialSeats,
   registerClientForReseller,
+  upgradeResellerClientToPaid,
 } from "@/lib/reseller-store";
 import { getUserRecord, issueResellerClientSession, getUserStatus } from "@/lib/user-store";
 
@@ -116,6 +117,51 @@ export async function POST(request: NextRequest) {
         { status: 400, headers: auth.headers },
       );
     }
+
+    const requestedPlan = parseResellerClientPlanRequest(body);
+    const wantsPaidUpgrade =
+      body.upgrade === true ||
+      body.upgradePlan === true ||
+      requestedPlan === "solo" ||
+      requestedPlan === "team";
+
+    if (wantsPaidUpgrade) {
+      const upgraded = await upgradeResellerClientToPaid(auth.reseller, email, {
+        plan: requestedPlan === "team" ? "team" : "solo",
+        password: String(body.password || ""),
+        name: String(body.name || ""),
+      });
+      if (!upgraded.ok) {
+        return jsonSafe(
+          { success: false, error: upgraded.error },
+          { status: upgraded.status, headers: auth.headers },
+        );
+      }
+      const session = await issueResellerClientSession(auth.reseller.id, email, {
+        force: body.forceSession === true,
+      });
+      return jsonSafe(
+        {
+          success: true,
+          existing: !upgraded.upgraded,
+          upgraded: upgraded.upgraded,
+          user: {
+            email,
+            assignedSlot: String(existing.assignedSlot || "") || null,
+            plan: upgraded.user.subscriptionPlan,
+            trialExpiresAt: upgraded.user.trialExpiresAt,
+            subscriptionExpiresAt: upgraded.user.subscriptionExpiresAt,
+            seatDays: auth.reseller.seatDays,
+            remainingSeats: upgraded.remainingSeats,
+            remainingPaidSeats: upgraded.remainingPaidSeats,
+            remainingTrialSeats: upgraded.remainingTrialSeats,
+            sid: session.ok ? session.sid : undefined,
+          },
+        },
+        { headers: auth.headers },
+      );
+    }
+
     const session = await issueResellerClientSession(auth.reseller.id, email, {
       force: body.forceSession === true,
     });

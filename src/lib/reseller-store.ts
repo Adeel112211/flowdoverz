@@ -920,6 +920,145 @@ export async function resolveOfficialPanel(slug: string): Promise<
   return { ok: true, reseller };
 }
 
+/** Convert an existing trial seat into a paid Solo/Team seat for the same reseller. */
+export async function upgradeResellerClientToPaid(
+  reseller: ResellerRecord,
+  email: string,
+  input: {
+    plan?: string;
+    password?: string;
+    name?: string;
+  },
+): Promise<
+  | {
+      ok: true;
+      upgraded: boolean;
+      user: {
+        email: string;
+        name: string;
+        subscriptionPlan: string;
+        trialExpiresAt: string | null;
+        subscriptionExpiresAt: string | null;
+      };
+      remainingSeats: number;
+      remainingPaidSeats: number;
+      remainingTrialSeats: number;
+    }
+  | { ok: false; error: string; status: number }
+> {
+  if (reseller.status === "disabled") {
+    return { ok: false, error: "This reseller panel is disabled.", status: 403 };
+  }
+  if (reseller.status === "paused") {
+    return { ok: false, error: "This panel is paused. Ask the owner to activate it.", status: 403 };
+  }
+  if (resellerIsExpired(reseller)) {
+    return { ok: false, error: "This reseller panel has expired.", status: 403 };
+  }
+
+  const { getUserRecord, getUserStatus, normalizeEmail, persistResellerPaidUserDoc, updateUserPasswordByAdmin } =
+    await import("./user-store");
+  const normalizedEmail = normalizeEmail(String(email || ""));
+  if (!normalizedEmail || !normalizedEmail.includes("@")) {
+    return { ok: false, error: "Enter a valid email address.", status: 400 };
+  }
+
+  const record = await getUserRecord(normalizedEmail);
+  if (!record) {
+    return { ok: false, error: "Client not found.", status: 404 };
+  }
+  if (String(record.resellerId || "") !== reseller.id) {
+    return { ok: false, error: "This client does not belong to this reseller.", status: 403 };
+  }
+
+  const usage = await countResellerSeatUsage(reseller.id);
+  let paidLeft = remainingPaidSeats(reseller, usage.paid);
+  const trialLeft = remainingTrialSeats(reseller, usage.trial);
+  const subscriptionPlan = normalizeSeatPlan(
+    String(input.plan || "solo").trim().toLowerCase() === "team" ? "team" : "solo",
+    reseller.allowedSeatPlans,
+  );
+  const currentPlan = String(record.subscriptionPlan || "none").toLowerCase();
+  const slot = String(record.assignedSlot || pickAssignedSlot(reseller) || "");
+  if (!slot) {
+    return { ok: false, error: "No cookie slots assigned yet. Ask the owner to assign a slot.", status: 400 };
+  }
+
+  const status = await getUserStatus(normalizedEmail);
+  if (!isResellerTrialSeatPlan(currentPlan) && status?.subscriptionActive) {
+    return {
+      ok: true,
+      upgraded: false,
+      user: {
+        email: normalizedEmail,
+        name: String(record.name || input.name || "").trim(),
+        subscriptionPlan: currentPlan,
+        trialExpiresAt: record.trialExpiresAt ? String(record.trialExpiresAt) : null,
+        subscriptionExpiresAt: record.subscriptionExpiresAt ? String(record.subscriptionExpiresAt) : null,
+      },
+      remainingSeats: paidLeft + trialLeft,
+      remainingPaidSeats: paidLeft,
+      remainingTrialSeats: trialLeft,
+    };
+  }
+
+  if (paidLeft <= 0) {
+    return {
+      ok: false,
+      error: "No paid seats left. Send another payment so more seats can be added.",
+      status: 403,
+    };
+  }
+
+  const seatDays = Math.max(1, Math.floor(Number(reseller.seatDays) || DEFAULT_SEAT_DAYS));
+  const expiry = subscriptionExpiryFromNow(seatDays);
+  await persistResellerPaidUserDoc(normalizedEmail, {
+    subscriptionPlan,
+    subscriptionExpiresAt: expiry,
+    resellerId: reseller.id,
+    assignedSlot: slot,
+  });
+
+  const displayName = String(input.name || record.name || "").trim().replace(/\s+/g, " ");
+  if (displayName.length >= 2) {
+    const db = getDb();
+    if (db) {
+      await db.collection("users").doc(normalizedEmail).set(
+        { name: displayName, nameLower: displayName.toLowerCase() },
+        { merge: true },
+      );
+    }
+  }
+
+  const password = String(input.password || "");
+  if (password.length >= 8) {
+    const passwordResult = await updateUserPasswordByAdmin(normalizedEmail, password);
+    if (!passwordResult.ok) {
+      return { ok: false, error: passwordResult.error, status: 400 };
+    }
+  }
+
+  void touchResellerUsage(reseller.id);
+  const nextUsage = await countResellerSeatUsage(reseller.id);
+  paidLeft = remainingPaidSeats(reseller, nextUsage.paid);
+  const nextTrialLeft = remainingTrialSeats(reseller, nextUsage.trial);
+
+  return {
+    ok: true,
+    upgraded: true,
+    user: {
+      email: normalizedEmail,
+      name: displayName || String(record.name || ""),
+      subscriptionPlan,
+      trialExpiresAt: null,
+      subscriptionExpiresAt: expiry,
+    },
+    remainingSeats: paidLeft + nextTrialLeft,
+    remainingPaidSeats: paidLeft,
+    remainingTrialSeats: nextTrialLeft,
+  };
+}
+
 export async function registerClientForReseller(
   reseller: ResellerRecord,
   input: {
