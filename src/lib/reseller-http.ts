@@ -202,6 +202,7 @@ export async function buildResellerIntegration(reseller: {
     generatedAt?: string;
     displayName?: string;
     officialVersion?: string;
+    loginUrl?: string;
   } | null;
 }) {
   const appUrl = getPublicAppUrl();
@@ -213,26 +214,24 @@ export async function buildResellerIntegration(reseller: {
   let branded = false;
   if (reseller.id && reseller.kind !== "official") {
     const resellerPath = `/api/extension/download?reseller=${encodeURIComponent(reseller.id)}`;
+    const { getResellerExtensionPackMeta, brandedExtensionDownloadUrl } = await import(
+      "@/lib/extension-reseller-lookup"
+    );
+    extensionDownloadUrl = toPublicAbsoluteUrl(
+      reseller.brandedExtension?.downloadUrl || brandedExtensionDownloadUrl(reseller.id),
+      resellerPath,
+    );
     try {
-      const { getResellerExtensionPackMeta, brandedExtensionDownloadUrl } = await import(
-        "@/lib/extension-reseller-lookup"
-      );
       const pack = await getResellerExtensionPackMeta(reseller.id);
-      if (pack || reseller.brandedExtension?.downloadUrl) {
-        extensionDownloadUrl = toPublicAbsoluteUrl(
-          reseller.brandedExtension?.downloadUrl || brandedExtensionDownloadUrl(reseller.id),
-          resellerPath,
-        );
-        branded = true;
-      }
+      branded = Boolean(pack || reseller.brandedExtension?.displayName);
     } catch {
-      if (reseller.brandedExtension?.downloadUrl) {
-        extensionDownloadUrl = toPublicAbsoluteUrl(reseller.brandedExtension.downloadUrl, resellerPath);
-        branded = true;
-      }
+      branded = Boolean(reseller.brandedExtension?.displayName);
     }
   }
   const seatsPurchased = Number(reseller.seatsPurchased ?? reseller.maxUsers) || 0;
+  const clientLoginUrl =
+    String(reseller.brandedExtension?.loginUrl || "").trim() ||
+    (reseller.websiteUrl ? `${String(reseller.websiteUrl).replace(/\/$/, "")}/login` : "");
 
   return {
     brandName: reseller.brandName,
@@ -241,6 +240,7 @@ export async function buildResellerIntegration(reseller: {
     expiresAt: reseller.expiresAt,
     apiBaseUrl: `${appUrl}/api/reseller/v1`,
     extensionDownloadUrl,
+    clientLoginUrl: clientLoginUrl || undefined,
     assignedSlots: reseller.assignedSlots,
     maxUsers: seatsPurchased,
     seatsPurchased,

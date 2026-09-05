@@ -170,6 +170,26 @@ function portalOriginFromUrl(raw: string) {
   }
 }
 
+/** Prefer /login when admin only saved the site root (e.g. infinity-flow-tau.vercel.app). */
+function normalizeClientLoginUrl(loginUrl: string, dashboardUrl = "") {
+  const login = normalizePublicUrl(loginUrl) || normalizePublicUrl(dashboardUrl);
+  if (!login) return login;
+  try {
+    const url = new URL(login);
+    const path = url.pathname.replace(/\/$/, "") || "/";
+    if (path === "/" || path === "") {
+      if (dashboardUrl) {
+        const dash = new URL(normalizePublicUrl(dashboardUrl));
+        if (/\/painel\/?$/i.test(dash.pathname)) return `${url.origin}/login`;
+      }
+      return `${url.origin}/login`;
+    }
+  } catch {
+    // keep original
+  }
+  return login;
+}
+
 function ensurePortalHostAccess(manifest: Record<string, unknown>, origins: string[]) {
   const unique = [
     ...new Set(
@@ -497,9 +517,9 @@ async function brandedEnsureOwnerSid() {
       }
     }
   } catch (_e) {}
-  found = await brandedFetchPortalSid();
-  if (found) return found;
   found = await brandedReadSidFromOpenTabs();
+  if (found) return found;
+  found = await brandedFetchPortalSid();
   if (found) return found;
   found = await brandedReadSid(${ownerJson});
   if (found) {
@@ -596,7 +616,7 @@ async function resolveClientSid(preferredBaseUrl) {
   return "";
 }
 async function waitForBrandedSid(maxMs) {
-  var deadline = Date.now() + Math.max(5000, Number(maxMs) || 90000);
+  var deadline = Date.now() + Math.max(3000, Math.min(Number(maxMs) || 15000, 20000));
   while (Date.now() < deadline) {
     var sid = await brandedEnsureOwnerSid();
     if (!sid && typeof nativeResolveClientSid === "function") {
@@ -705,15 +725,21 @@ function appendBrandedPortalLock(
     };
     setTimeout(function () {
       __syncFinish({ success: false, status: "disconnected", message: "Sync timed out. Sign in on your client page, then try again." });
-    }, 100000);
+    }, 22000);
     (async function () {
       var result = await performCookieSync(request.slot || "", { force: true });
       if (!result || !result.success) {
         if (!result || result.status === "disconnected") {
           var hasSid = "";
           try { hasSid = await brandedEnsureOwnerSid(); } catch (_sidErr) {}
+          if (!hasSid) {
+            try { hasSid = await brandedReadSidFromOpenTabs(); } catch (_tabSidErr) {}
+          }
           if (!hasSid && typeof nativeResolveClientSid === "function") {
             try { hasSid = await nativeResolveClientSid(""); } catch (_sidErr2) {}
+          }
+          if (hasSid && (!result || result.status === "disconnected")) {
+            result = await performCookieSync(request.slot || "", { force: true });
           }
           if (!hasSid) {
             var loginTarget = "";
@@ -723,7 +749,7 @@ function appendBrandedPortalLock(
             }
             if (!loginTarget) loginTarget = ${JSON.stringify(login)};
             try { await chrome.tabs.create({ url: loginTarget, active: true }); } catch (_tabErr) {}
-            hasSid = await waitForBrandedSid(90000);
+            hasSid = await waitForBrandedSid(15000);
             if (hasSid) {
               result = await performCookieSync(request.slot || "", { force: true });
             } else {
@@ -1257,7 +1283,10 @@ async function brandOfficialZip(
   const websiteUrl = normalizePublicUrl(String(branding.websiteUrl || ""));
   const dashboardUrl =
     normalizePublicUrl(String(branding.dashboardUrl || "")) || websiteUrl || getResellerUrl();
-  const loginUrl = normalizePublicUrl(String(branding.loginUrl || "")) || dashboardUrl;
+  const loginUrl = normalizeClientLoginUrl(
+    normalizePublicUrl(String(branding.loginUrl || "")) || dashboardUrl,
+    dashboardUrl,
+  );
   const portalOrigin = portalOriginFromUrl(loginUrl || dashboardUrl);
   const appUrl = getPublicAppUrl();
   const syncOrigin = portalOriginFromUrl(appUrl) || appUrl.replace(/\/$/, "");
@@ -1484,7 +1513,7 @@ export async function generateResellerExtensionPack(
   const appBase = getPublicAppUrl().replace(/\/$/, "");
   const defaultLoginUrl = `${appBase}/login`;
   const defaultDashboardUrl = `${appBase}/dashboard`;
-  const loginUrl = normalizePublicUrl(
+  const loginUrlRaw = normalizePublicUrl(
     pickInputString(inputRec, ["loginUrl", "clientLoginUrl", "signinUrl", "signInUrl"]) ||
       saved?.loginUrl ||
       pickInputString(inputRec, ["dashboardUrl", "dashboardLink"]) ||
@@ -1492,17 +1521,18 @@ export async function generateResellerExtensionPack(
       reseller.websiteUrl ||
       (reseller.kind === "official" ? defaultLoginUrl : ""),
   );
-  if (!loginUrl) {
+  if (!loginUrlRaw) {
     throw new Error("Enter the client sign-in page. Example: https://their-site.vercel.app/painel");
   }
   const dashboardFromInput = pickInputString(inputRec, ["dashboardUrl", "dashboardLink"]);
   const dashboardUrl =
     normalizePublicUrl(dashboardFromInput) ||
     (input && ("dashboardUrl" in inputRec || "dashboardLink" in inputRec)
-      ? loginUrl
+      ? loginUrlRaw
       : normalizePublicUrl(String(saved?.dashboardUrl || "")) ||
         (reseller.kind === "official" ? defaultDashboardUrl : "") ||
-        loginUrl);
+        loginUrlRaw);
+  const loginUrl = normalizeClientLoginUrl(loginUrlRaw, dashboardUrl);
 
   const keepLogo = input?.keepLogo !== false && inputRec.keepLogo !== "false";
   const primaryColor = normalizeHexColor(
