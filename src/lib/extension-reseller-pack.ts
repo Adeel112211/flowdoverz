@@ -105,17 +105,50 @@ function rotateHashes(previous: string[] | undefined, oldHash: string | null | u
   return out;
 }
 
+const TECHNICAL_BRAND_TOKENS = [
+  "X-FlowDoverz-Sid",
+  "x-flowdoverz-sid",
+  "flowdoverz_sid",
+  "flowdoverz-auth-bridge",
+  "flowdoverz-auth-bridge-update",
+] as const;
+
+function protectTechnicalBrandTokens(text: string) {
+  let out = String(text || "");
+  const slots: string[] = [];
+  for (const token of TECHNICAL_BRAND_TOKENS) {
+    const slot = `__FDTECH_${slots.length}__`;
+    if (out.includes(token)) {
+      out = out.split(token).join(slot);
+      slots.push(token);
+    }
+  }
+  return { text: out, slots };
+}
+
+function restoreTechnicalBrandTokens(text: string, slots: string[]) {
+  let out = String(text || "");
+  slots.forEach((token, index) => {
+    out = out.split(`__FDTECH_${index}__`).join(token);
+  });
+  // Older branded builds renamed the sync header (e.g. X-INFINITY FLOW-Sid) — always restore.
+  out = out.replace(/X-[A-Za-z0-9][A-Za-z0-9 -]*-Sid/g, "X-FlowDoverz-Sid");
+  return out;
+}
+
 function replaceVisibleBrand(text: string, displayName: string) {
   const name = String(displayName || "").trim();
   if (!name) return text;
   // Do not touch identifiers like FlowDoverzGuard / FlowDoverzProtect.
   // Replacing those with "INFINITY FLOWGuard" makes background.js unparsable,
   // the service worker never starts, and the popup shows "Sync timed out".
-  return String(text || "")
+  const protectedTokens = protectTechnicalBrandTokens(text);
+  let out = protectedTokens.text
     .replace(/Flow[\s-]*Doverz(?![A-Za-z0-9_])/g, name)
     .replace(/FLOW[\s-]*DOVERZ(?![A-Za-z0-9_])/g, name.toUpperCase())
     .replace(/Google Flow Workspace/gi, `${name} workspace`)
     .replace(/GOOGLE FLOW WORKSPACE/g, `${name.toUpperCase()} WORKSPACE`);
+  return restoreTechnicalBrandTokens(out, protectedTokens.slots);
 }
 
 const DEFAULT_BRAND_BG = "#080810";
@@ -798,9 +831,9 @@ function rewriteSyncTimeoutCopy(text: string) {
     /showToast\("Could not connect[^"]*"\)/g,
     'showToast(result.message || "Could not connect. Sign in on your client page, then Sync.")',
   );
-  out = out.replace(/\},\s*20000\)/, "}, 90000)");
-  out = out.replace(/\},\s*45000\)/, "}, 90000)");
-  out = out.replace(/\},\s*12000\)/, "}, 90000)");
+  // Keep branded popup sync feedback fast — do not stretch to 90s.
+  out = out.replace(/\},\s*90000\)/, "}, 22000)");
+  out = out.replace(/\},\s*45000\)/, "}, 22000)");
   return out;
 }
 
