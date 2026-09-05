@@ -17,6 +17,8 @@ export async function GET(request: NextRequest) {
         pack = await getResellerExtensionPack(resellerId);
       } catch (error) {
         console.error("Branded extension auto-build failed:", error);
+        const message = error instanceof Error ? error.message : "Branded extension auto-build failed.";
+        return NextResponse.json({ success: false, error: message }, { status: 404 });
       }
     }
     if (!pack) {

@@ -1529,8 +1529,20 @@ export async function generateResellerExtensionPack(
     pickLogoFromUnknown(inputRec) || input?.logoBase64,
     pickInputString(inputRec, ["logoMime"]) || input?.logoMime,
   );
-  if (!logo && keepLogo && saved?.logoBase64) {
-    logo = parseLogoInput(saved.logoBase64, saved.logoMime);
+  if (!logo && keepLogo && saved) {
+    if (saved.logoBase64) {
+      logo = parseLogoInput(saved.logoBase64, saved.logoMime);
+    }
+    if (!logo && saved.logoStoragePath) {
+      const { loadResellerLogo } = await import("./reseller-pack-storage");
+      const loaded = await loadResellerLogo({
+        logoStoragePath: saved.logoStoragePath,
+        logoMime: saved.logoMime,
+      });
+      if (loaded?.base64) {
+        logo = parseLogoInput(loaded.base64, loaded.mime);
+      }
+    }
   }
   if (!logo) {
     throw new Error("Upload a logo image. It replaces the FlowDoverz icons in the popup and in Chrome.");
