@@ -13,7 +13,7 @@ import {
   remainingTrialSeats,
   registerClientForReseller,
 } from "@/lib/reseller-store";
-import { getUserRecord, issueResellerClientSession } from "@/lib/user-store";
+import { getUserRecord, issueResellerClientSession, getUserStatus } from "@/lib/user-store";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -25,6 +25,36 @@ export async function OPTIONS(request: NextRequest) {
 export async function GET(request: NextRequest) {
   const auth = await authenticateReseller(request);
   if (!auth.ok) return auth.response;
+
+  const email = request.nextUrl.searchParams.get("email")?.trim().toLowerCase() || "";
+  if (email) {
+    const record = await getUserRecord(email);
+    if (!record || String(record.resellerId || "") !== auth.reseller.id) {
+      return jsonSafe(
+        { success: false, error: "Client not found." },
+        { status: 404, headers: auth.headers },
+      );
+    }
+    const status = await getUserStatus(email);
+    return jsonSafe(
+      {
+        success: true,
+        user: {
+          email,
+          name: String(record.name || ""),
+          plan: String(record.subscriptionPlan || "none"),
+          subscriptionPlan: String(record.subscriptionPlan || "none"),
+          assignedSlot: String(record.assignedSlot || "") || null,
+          trialExpiresAt: record.trialExpiresAt ? String(record.trialExpiresAt) : null,
+          subscriptionExpiresAt: record.subscriptionExpiresAt ? String(record.subscriptionExpiresAt) : null,
+          active: status?.active === true,
+          trialActive: String(record.subscriptionPlan || "").toLowerCase() === "trial",
+          subscriptionActive: status?.subscriptionActive === true,
+        },
+      },
+      { headers: auth.headers },
+    );
+  }
 
   const users = await listResellerUsers(auth.reseller.id);
   const usage = await countResellerSeatUsage(auth.reseller.id);
