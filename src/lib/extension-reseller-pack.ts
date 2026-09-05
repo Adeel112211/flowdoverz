@@ -24,7 +24,7 @@ export {
 const BRANDING_COLLECTION = "extension_reseller_branding";
 const MAX_ZIP_BYTES = 700_000;
 /** Bump when branded pack builder logic changes so stale ZIPs auto-regenerate on download. */
-export const BRANDED_PACK_BUILD_REVISION = 1;
+export const BRANDED_PACK_BUILD_REVISION = 3;
 const PREVIOUS_HASH_LIMIT = 20;
 const MAX_LOGO_BYTES = 400_000;
 const TEXT_FILE = /\.(js|mjs|cjs|json|html|htm|css|svg|txt|md)$/i;
@@ -385,9 +385,11 @@ function brandedPortalLockScript(portalOrigin: string, ownerOrigin: string, logi
   const origin = String(portalOrigin || "").replace(/\/$/, "");
   const owner = String(ownerOrigin || "").replace(/\/$/, "") || "https://flow.doverz.com";
   const login = String(loginUrl || `${origin}/login`).trim() || `${origin}/login`;
+  const painelUrl = (origin || login.replace(/\/login\/?$/i, "")).replace(/\/$/, "") + "/painel";
   const originJson = JSON.stringify(origin);
   const ownerJson = JSON.stringify(owner);
   const loginJson = JSON.stringify(login);
+  const painelJson = JSON.stringify(painelUrl);
   return `
 
 ;/* branded-portal-lock */
@@ -417,7 +419,7 @@ async function brandedReadSid(url) {
   }
 }
 async function brandedReadSidFromOpenTabs() {
-  var targets = [${loginJson}, ${originJson}, ${ownerJson}];
+  var targets = [${painelJson}, ${loginJson}, ${originJson}, ${ownerJson}];
   var roots = [];
   for (var ti = 0; ti < targets.length; ti++) {
     try {
@@ -455,7 +457,7 @@ async function brandedReadSidFromOpenTabs() {
   return "";
 }
 async function brandedFetchPortalSid() {
-  var targets = [${loginJson}, ${originJson}, ${ownerJson}];
+  var targets = [${painelJson}, ${loginJson}, ${originJson}, ${ownerJson}];
   for (var ti = 0; ti < targets.length; ti++) {
     var target = String(targets[ti] || "").trim();
     if (!target) continue;
@@ -506,6 +508,7 @@ async function brandedFetchPortalSid() {
 }
 async function brandedEnsureOwnerSid() {
   var found =
+    (await brandedReadSid(${painelJson})) ||
     (await brandedReadSid(${loginJson})) ||
     (await brandedReadSid(${originJson}));
   if (found) {
@@ -658,7 +661,7 @@ async function waitForBrandedSid(maxMs) {
       try { sid = await nativeResolveClientSid(""); } catch (_waitErr) {}
     }
     if (sid) return sid;
-    await new Promise(function (resolve) { setTimeout(resolve, 2000); });
+    await new Promise(function (resolve) { setTimeout(resolve, 800); });
   }
   return "";
 }
@@ -676,6 +679,7 @@ function appendBrandedPortalLock(
   const origin = String(portalOrigin || "").replace(/\/$/, "");
   const owner = String(ownerOrigin || "").replace(/\/$/, "") || "https://flow.doverz.com";
   const login = String(loginUrl || `${origin}/login`).trim() || `${origin}/login`;
+  const painelUrl = (origin || login.replace(/\/login\/?$/i, "")).replace(/\/$/, "") + "/painel";
   if (!origin && !owner) return text;
   let stripped = String(text || "").replace(/\n;\/\* branded-portal-lock \*\/[\s\S]*$/, "");
   stripped = stripped.replace(
@@ -783,8 +787,30 @@ function appendBrandedPortalLock(
               try { if (typeof portalLoginUrl === "function") loginTarget = portalLoginUrl(); } catch (_loginFn) {}
             }
             if (!loginTarget) loginTarget = ${JSON.stringify(login)};
-            try { await chrome.tabs.create({ url: loginTarget, active: true }); } catch (_tabErr) {}
-            hasSid = await waitForBrandedSid(15000);
+            var painelTarget = ${JSON.stringify(painelUrl)};
+            try {
+              var openedTab = await chrome.tabs.create({ url: painelTarget, active: true });
+              if (openedTab && openedTab.id) {
+                await new Promise(function (resolve) {
+                  var tabId = openedTab.id;
+                  var done = false;
+                  var finish = function () {
+                    if (done) return;
+                    done = true;
+                    try { chrome.tabs.onUpdated.removeListener(onUpdated); } catch (_rm) {}
+                    setTimeout(resolve, 600);
+                  };
+                  var timer = setTimeout(finish, 12000);
+                  function onUpdated(updatedId, info) {
+                    if (updatedId !== tabId || info.status !== "complete") return;
+                    clearTimeout(timer);
+                    finish();
+                  }
+                  chrome.tabs.onUpdated.addListener(onUpdated);
+                });
+              }
+            } catch (_tabErr) {}
+            hasSid = await waitForBrandedSid(18000);
             if (hasSid) {
               result = await performCookieSync(request.slot || "", { force: true });
             } else {
