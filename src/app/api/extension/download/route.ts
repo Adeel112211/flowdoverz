@@ -9,17 +9,14 @@ export async function GET(request: NextRequest) {
   const resellerId = request.nextUrl.searchParams.get("reseller")?.trim() || "";
 
   if (resellerId) {
-    const { getResellerExtensionPack, generateResellerExtensionPack } = await import("@/lib/extension-reseller-pack");
-    let pack = await getResellerExtensionPack(resellerId);
-    if (!pack) {
-      try {
-        await generateResellerExtensionPack(resellerId);
-        pack = await getResellerExtensionPack(resellerId);
-      } catch (error) {
-        console.error("Branded extension auto-build failed:", error);
-        const message = error instanceof Error ? error.message : "Branded extension auto-build failed.";
-        return NextResponse.json({ success: false, error: message }, { status: 404 });
-      }
+    const { ensureResellerExtensionPackForDownload } = await import("@/lib/extension-reseller-pack");
+    let pack: Awaited<ReturnType<typeof ensureResellerExtensionPackForDownload>> = null;
+    try {
+      pack = await ensureResellerExtensionPackForDownload(resellerId);
+    } catch (error) {
+      console.error("Branded extension download failed:", error);
+      const message = error instanceof Error ? error.message : "Branded extension download failed.";
+      return NextResponse.json({ success: false, error: message }, { status: 404 });
     }
     if (!pack) {
       return NextResponse.json({ success: false, error: "No branded extension available." }, { status: 404 });

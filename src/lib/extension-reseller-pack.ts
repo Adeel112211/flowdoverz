@@ -23,6 +23,8 @@ export {
 
 const BRANDING_COLLECTION = "extension_reseller_branding";
 const MAX_ZIP_BYTES = 700_000;
+/** Bump when branded pack builder logic changes so stale ZIPs auto-regenerate on download. */
+export const BRANDED_PACK_BUILD_REVISION = 1;
 const PREVIOUS_HASH_LIMIT = 20;
 const MAX_LOGO_BYTES = 400_000;
 const TEXT_FILE = /\.(js|mjs|cjs|json|html|htm|css|svg|txt|md)$/i;
@@ -1482,6 +1484,32 @@ export async function getResellerExtensionPack(resellerId: string): Promise<Rese
   };
 }
 
+export async function ensureResellerExtensionPackForDownload(
+  resellerId: string,
+): Promise<ResellerExtensionPack | null> {
+  const id = String(resellerId || "").trim();
+  if (!id) return null;
+
+  const db = getDb();
+  if (!db) return null;
+
+  const packSnap = await db.collection(PACKS_COLLECTION).doc(id).get();
+  const packData = packSnap.exists ? ((packSnap.data() || {}) as Record<string, unknown>) : null;
+  const revision = Number(packData?.packBuildRevision || 0);
+  const needsRebuild = !packSnap.exists || revision < BRANDED_PACK_BUILD_REVISION;
+
+  if (needsRebuild) {
+    try {
+      await generateResellerExtensionPack(id);
+    } catch (error) {
+      console.error("Branded extension auto-rebuild failed:", error);
+      if (!packSnap.exists) return null;
+    }
+  }
+
+  return getResellerExtensionPack(id);
+}
+
 async function saveResellerBrandedMeta(
   resellerId: string,
   meta: Pick<
@@ -1721,6 +1749,7 @@ export async function generateResellerExtensionPack(
 
   const packPayload: Record<string, unknown> = {
     ...meta,
+    packBuildRevision: BRANDED_PACK_BUILD_REVISION,
     primaryColor,
     accentColor,
     backgroundColor,
