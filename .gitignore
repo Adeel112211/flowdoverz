@@ -26,6 +26,8 @@
 
 # local cookie store (manual inject page)
 .data/
+cookies-merged*.json
+cookies-export-*.json
 
 # debug
 npm-debug.log*

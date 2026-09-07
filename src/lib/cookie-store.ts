@@ -6,6 +6,7 @@ import {
   googleAccountFingerprint,
   type FlowCookie,
 } from "@/lib/cookie-analysis";
+import { normalizeFlowCookies } from "@/lib/cookie-normalize";
 
 export type { FlowCookie } from "@/lib/cookie-analysis";
 export {
@@ -107,17 +108,11 @@ function buildCookie(row: Record<string, unknown>): FlowCookie {
   return cookie;
 }
 
-export function parseCookieJson(input: string): FlowCookie[] {
-  const trimmed = input.trim();
-  if (!trimmed) throw new Error("Paste a JSON cookie array first.");
+function cookieMergeKey(cookie: FlowCookie): string {
+  return `${cookie.name}@${cookie.domain || ""}@${cookie.path || "/"}`;
+}
 
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(trimmed);
-  } catch {
-    throw new Error("Invalid JSON. Paste a Cookie Editor / EditThisCookie export.");
-  }
-
+function extractCookieList(parsed: unknown, sourceLabel: string): unknown[] | null {
   const list = Array.isArray(parsed)
     ? parsed
     : parsed &&
@@ -127,21 +122,83 @@ export function parseCookieJson(input: string): FlowCookie[] {
       : null;
 
   if (!list) {
-    throw new Error("Expected a JSON array of cookies, or { \"cookies\": [...] }.");
+    throw new Error(
+      `${sourceLabel}: expected a JSON array of cookies, or { "cookies": [...] }.`,
+    );
   }
-  if (list.length === 0) throw new Error("The cookie list is empty.");
-  if (list.length > 500) throw new Error("Maximum 500 cookies per save.");
+  return list;
+}
+
+/** Parse one Cookie Editor export without merge/normalize (empty input → []). */
+export function parseCookieJsonPart(input: string, sourceLabel = "Export"): FlowCookie[] {
+  const trimmed = input.trim();
+  if (!trimmed) return [];
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(trimmed);
+  } catch {
+    throw new Error(`${sourceLabel}: invalid JSON. Paste a Cookie Editor export.`);
+  }
+
+  const list = extractCookieList(parsed, sourceLabel);
+  if (!list || list.length === 0) return [];
 
   const cookies: FlowCookie[] = [];
   for (const item of list) {
     if (!item || typeof item !== "object") {
-      throw new Error("Each cookie must be an object.");
+      throw new Error(`${sourceLabel}: each cookie must be an object.`);
     }
-    const row = item as Record<string, unknown>;
-    cookies.push(buildCookie(row));
+    cookies.push(buildCookie(item as Record<string, unknown>));
+  }
+  return cookies;
+}
+
+/** Merge google + flow + labs exports; later parts win on duplicate name/domain/path. */
+export function mergeCookieExportParts(parts: {
+  google?: string;
+  flow?: string;
+  labs?: string;
+}): FlowCookie[] {
+  const segments = [
+    { raw: parts.google, label: ".google.com export" },
+    { raw: parts.flow, label: "flow.google.com export" },
+    { raw: parts.labs, label: "labs.google export" },
+  ];
+
+  const byKey = new Map<string, FlowCookie>();
+  let nonEmptyParts = 0;
+
+  for (const { raw, label } of segments) {
+    const cookies = parseCookieJsonPart(raw || "", label);
+    if (cookies.length > 0) nonEmptyParts += 1;
+    for (const cookie of cookies) {
+      byKey.set(cookieMergeKey(cookie), cookie);
+    }
   }
 
-  return cookies;
+  if (nonEmptyParts === 0) {
+    throw new Error(
+      "Paste at least one export — .google.com, flow.google.com, or labs.google.",
+    );
+  }
+
+  const merged = [...byKey.values()];
+  if (merged.length === 0) {
+    throw new Error("No cookies found in the pasted exports.");
+  }
+  if (merged.length > 500) {
+    throw new Error("Maximum 500 cookies per save.");
+  }
+
+  return normalizeFlowCookies(merged);
+}
+
+export function parseCookieJson(input: string): FlowCookie[] {
+  const cookies = parseCookieJsonPart(input, "Cookies");
+  if (cookies.length === 0) throw new Error("Paste a JSON cookie array first.");
+  if (cookies.length > 500) throw new Error("Maximum 500 cookies per save.");
+  return normalizeFlowCookies(cookies);
 }
 
 const SLOTS_TTL_MS = 30 * 1000;

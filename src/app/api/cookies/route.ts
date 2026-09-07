@@ -5,11 +5,18 @@ import {
   compareAccountFingerprints,
   getSlotCookies,
   listSlots,
+  mergeCookieExportParts,
   parseCookieJson,
   saveSlotCookies,
 } from "@/lib/cookie-store";
 import { isAdminUiRequest, WORKSPACE_OWNER } from "@/lib/admin";
 import { logAdminActivity } from "@/lib/admin-activity";
+
+type CookiePartsBody = {
+  google?: string;
+  flow?: string;
+  labs?: string;
+};
 
 const VALID_SLOTS = new Set(["C1", "C2", "C3", "C4", "C5"]);
 
@@ -48,6 +55,9 @@ export async function GET(request: NextRequest) {
     cookies: wantFull ? record?.cookies ?? [] : undefined,
     hasLabsSession: analysis?.hasLabsSession ?? false,
     hasGoogleSid: analysis?.hasGoogleSid ?? false,
+    hasFlowHost: analysis?.hasFlowHost ?? false,
+    hasLabsHost: analysis?.hasLabsHost ?? false,
+    hasNextAuth: analysis?.hasNextAuth ?? false,
     freshness: analysis?.freshness ?? null,
     warnings: analysis?.warnings ?? [],
     account_fingerprint: record?.accountFingerprint ?? analysis?.accountFingerprint ?? null,
@@ -70,7 +80,12 @@ export async function POST(request: NextRequest) {
   const denied = await requireAdmin(request);
   if (denied) return denied;
 
-  let body: { slot?: string; cookies?: string | unknown; label?: string };
+  let body: {
+    slot?: string;
+    cookies?: string | unknown;
+    cookieParts?: CookiePartsBody;
+    label?: string;
+  };
   try {
     body = await request.json();
   } catch {
@@ -83,11 +98,24 @@ export async function POST(request: NextRequest) {
   const slot = normalizeSlot(body.slot);
 
   try {
-    const raw =
-      typeof body.cookies === "string"
-        ? body.cookies
-        : JSON.stringify(body.cookies ?? []);
-    const cookiesList = parseCookieJson(raw);
+    const parts = body.cookieParts;
+    const hasParts =
+      parts &&
+      [parts.google, parts.flow, parts.labs].some(
+        (value) => typeof value === "string" && value.trim().length > 0,
+      );
+
+    const cookiesList = hasParts
+      ? mergeCookieExportParts({
+          google: typeof parts?.google === "string" ? parts.google : "",
+          flow: typeof parts?.flow === "string" ? parts.flow : "",
+          labs: typeof parts?.labs === "string" ? parts.labs : "",
+        })
+      : parseCookieJson(
+          typeof body.cookies === "string"
+            ? body.cookies
+            : JSON.stringify(body.cookies ?? []),
+        );
     const previous = await getSlotCookies(WORKSPACE_OWNER, slot);
     const analysis = analyzeCookies(cookiesList);
     const accountMatch = compareAccountFingerprints(
@@ -112,10 +140,16 @@ export async function POST(request: NextRequest) {
       warnings: analysis.warnings,
       hasLabsSession: analysis.hasLabsSession,
       hasGoogleSid: analysis.hasGoogleSid,
+      hasFlowHost: analysis.hasFlowHost,
+      hasLabsHost: analysis.hasLabsHost,
+      hasNextAuth: analysis.hasNextAuth,
       freshness: analysis.freshness,
       account_match: accountMatch,
       account_fingerprint: record.accountFingerprint ?? analysis.accountFingerprint,
-      message: `Saved ${record.cookies.length} cookies to ${slot}. Clients will get them after they sign in.`,
+      merged_from_parts: hasParts ?? false,
+      message: hasParts
+        ? `Merged and saved ${record.cookies.length} cookies to ${slot}. Clients will get them after they sign in.`
+        : `Saved ${record.cookies.length} cookies to ${slot}. Clients will get them after they sign in.`,
     });
   } catch (error) {
     return NextResponse.json(

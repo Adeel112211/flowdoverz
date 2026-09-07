@@ -28,6 +28,10 @@ export function CookiesPage() {
   const [slot, setSlot] = useState("C1");
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [jsonText, setJsonText] = useState("");
+  const [googleText, setGoogleText] = useState("");
+  const [flowText, setFlowText] = useState("");
+  const [labsText, setLabsText] = useState("");
+  const [pasteMode, setPasteMode] = useState<"parts" | "single">("parts");
   const [status, setStatus] = useState<{ type: "ok" | "err"; text: string } | null>(
     null,
   );
@@ -108,6 +112,81 @@ export function CookiesPage() {
     });
   }, [admin, slot]);
 
+  function countPartJson(text: string): number {
+    const trimmed = text.trim();
+    if (!trimmed) return 0;
+    try {
+      const parsed = JSON.parse(trimmed) as unknown;
+      const list = Array.isArray(parsed)
+        ? parsed
+        : parsed &&
+            typeof parsed === "object" &&
+            Array.isArray((parsed as { cookies?: unknown[] }).cookies)
+          ? (parsed as { cookies: unknown[] }).cookies
+          : null;
+      return list?.length ?? 0;
+    } catch {
+      return -1;
+    }
+  }
+
+  async function saveCookiesFromParts() {
+    if (!googleText.trim() && !flowText.trim() && !labsText.trim()) {
+      setStatus({
+        type: "err",
+        text: "Paste at least one export — .google.com, flow.google.com, or labs.google.",
+      });
+      return false;
+    }
+
+    setSaving(true);
+    setStatus(null);
+    try {
+      const res = await fetch("/api/cookies", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          slot,
+          label: slotLabel || undefined,
+          cookieParts: {
+            google: googleText,
+            flow: flowText,
+            labs: labsText,
+          },
+        }),
+      });
+      const data = await res.json();
+      if (res.status === 401) {
+        setAdmin(false);
+        setStatus({ type: "err", text: "Admin session expired. Unlock again." });
+        return false;
+      }
+      if (!res.ok || !data.success) {
+        setStatus({ type: "err", text: data.error || "Save failed" });
+        return false;
+      }
+      setStatus({
+        type: data.warnings?.length ? "err" : "ok",
+        text:
+          data.warnings?.length
+            ? `Merged ${data.cookie_count} cookies with ${data.warnings.length} warning(s): ${data.warnings[0]}`
+            : data.message ||
+              `Merged and saved ${data.cookie_count} cookies to ${slot}.`,
+      });
+      setGoogleText("");
+      setFlowText("");
+      setLabsText("");
+      await refreshMeta(slot);
+      return true;
+    } catch {
+      setStatus({ type: "err", text: "Network error while saving." });
+      return false;
+    } finally {
+      setSaving(false);
+    }
+  }
+
   async function saveCookies(raw: string, targetSlot = slot) {
     const text = raw.trim();
     if (!text) {
@@ -135,10 +214,12 @@ export function CookiesPage() {
         return false;
       }
       setStatus({
-        type: "ok",
+        type: data.warnings?.length ? "err" : "ok",
         text:
-          data.message ||
-          `Replaced ${targetSlot} with ${data.cookie_count} cookies. Clients will get them after they sign in.`,
+          data.warnings?.length
+            ? `Saved ${data.cookie_count} cookies with ${data.warnings.length} warning(s): ${data.warnings[0]}`
+            : data.message ||
+              `Replaced ${targetSlot} with ${data.cookie_count} cookies. Clients will get them after they sign in.`,
       });
       setJsonText("");
       await refreshMeta(targetSlot);
@@ -237,8 +318,16 @@ export function CookiesPage() {
       setStatus({ type: "err", text: `No cookies saved in ${slot} yet.` });
       return;
     }
+    setPasteMode("single");
     setJsonText(JSON.stringify(data.cookies, null, 2));
     setStatus({ type: "ok", text: `Loaded ${data.cookies.length} cookies from ${slot} into the editor.` });
+  }
+
+  function handlePartsKeyDown(e: React.KeyboardEvent) {
+    if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
+      e.preventDefault();
+      void saveCookiesFromParts();
+    }
   }
 
   async function handleClear() {
@@ -289,12 +378,21 @@ export function CookiesPage() {
           title="Cookie Manager"
           description={
             <>
-              Paste cookies from the same Google account that owns the Flow projects.
-              Clients sign in on{" "}
-              <code className="font-mono text-cyan-400">/login</code> and their extension syncs
-              these automatically. When refreshing cookies, export from the{" "}
-              <strong className="text-slate-200">same account</strong> — projects stay; a different
-              account shows different projects.
+              Export from{" "}
+              <a
+                href="https://flow.google.com/"
+                target="_blank"
+                rel="noreferrer"
+                className="text-cyan-400 underline"
+              >
+                flow.google.com
+              </a>
+              {" "}while signed in and inside a project. Paste{" "}
+              <strong className="text-slate-200">three Cookie Editor exports</strong> (
+              <strong className="text-slate-200">.google.com</strong>,{" "}
+              <strong className="text-slate-200">flow.google.com</strong>,{" "}
+              <strong className="text-slate-200">labs.google</strong>) — admin merges on save.
+              Clients sync via extension after <code className="font-mono text-cyan-400">/login</code>.
             </>
           }
           actions={
@@ -322,12 +420,16 @@ export function CookiesPage() {
           <button
             type="button"
             disabled={saving}
-            onClick={() => pasteFromClipboard(true)}
+            onClick={() => (pasteMode === "parts" ? saveCookiesFromParts() : pasteFromClipboard(true))}
             className="rounded-2xl bg-gradient-to-r from-cyan-400 to-emerald-400 px-6 py-6 text-left shadow-[0_0_15px_rgba(34,211,238,0.2)] transition-all max-md:hover:-translate-y-0.5 max-md:hover:shadow-[0_0_25px_rgba(34,211,238,0.4)] md:hover:shadow-[0_10px_30px_rgba(34,211,238,0.45)] disabled:opacity-60 disabled:hover:translate-y-0 disabled:hover:shadow-[0_0_15px_rgba(34,211,238,0.2)]"
           >
-            <p className="text-xl font-black text-slate-950">Paste & Replace</p>
+            <p className="text-xl font-black text-slate-950">
+              {pasteMode === "parts" ? "Merge & Save" : "Paste & Replace"}
+            </p>
             <p className="mt-2 text-sm font-medium text-slate-800">
-              Clipboard → {slot} in one click
+              {pasteMode === "parts"
+                ? `3 exports → ${slot} (merge + normalize)`
+                : `Clipboard → ${slot} in one click`}
             </p>
           </button>
           <button
@@ -353,6 +455,17 @@ export function CookiesPage() {
             }}
           />
         </div>
+
+        {meta.warnings.length > 0 && (
+          <div className="rounded-xl border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
+            <p className="font-bold">Cookie export looks incomplete — Flow may not work for clients</p>
+            {meta.warnings.map((line) => (
+              <p key={line} className="mt-1 text-xs opacity-90">
+                {line}
+              </p>
+            ))}
+          </div>
+        )}
 
         {meta.freshness && meta.freshness.status !== "healthy" && meta.count > 0 && (
           <div
@@ -539,6 +652,113 @@ export function CookiesPage() {
             </p>
           )}
 
+          <div className="mb-4 flex gap-2">
+            <button
+              type="button"
+              onClick={() => setPasteMode("parts")}
+              className={`rounded-lg px-3 py-1.5 text-xs font-bold transition-colors ${
+                pasteMode === "parts"
+                  ? "bg-cyan-500/20 text-cyan-300"
+                  : "text-slate-500 hover:text-slate-300"
+              }`}
+            >
+              3 exports (recommended)
+            </button>
+            <button
+              type="button"
+              onClick={() => setPasteMode("single")}
+              className={`rounded-lg px-3 py-1.5 text-xs font-bold transition-colors ${
+                pasteMode === "single"
+                  ? "bg-cyan-500/20 text-cyan-300"
+                  : "text-slate-500 hover:text-slate-300"
+              }`}
+            >
+              Single merged JSON
+            </button>
+          </div>
+
+          {pasteMode === "parts" ? (
+            <div className="space-y-4">
+              <p className="text-xs text-slate-500">
+                Paste each Cookie Editor export in order. Duplicates are deduped; flow/labs OSID is
+                mirrored and stale OAuth cookies are dropped on save.
+              </p>
+              <div className="grid gap-4 lg:grid-cols-3">
+                {(
+                  [
+                    {
+                      id: "google",
+                      label: ".google.com",
+                      hint: "All Google login cookies (__Secure-1PSID, SSID, HSID…)",
+                      value: googleText,
+                      setValue: setGoogleText,
+                    },
+                    {
+                      id: "flow",
+                      label: "flow.google.com",
+                      hint: "OSID + __Secure-OSID from Flow tab",
+                      value: flowText,
+                      setValue: setFlowText,
+                    },
+                    {
+                      id: "labs",
+                      label: "labs.google",
+                      hint: "next-auth.session-token + csrf",
+                      value: labsText,
+                      setValue: setLabsText,
+                    },
+                  ] as const
+                ).map((field) => {
+                  const count = countPartJson(field.value);
+                  return (
+                    <div key={field.id}>
+                      <div className="mb-2 flex items-center justify-between">
+                        <label className="text-sm font-bold text-slate-300">{field.label}</label>
+                        <span
+                          className={`text-[10px] font-mono ${
+                            count < 0 ? "text-rose-400" : count > 0 ? "text-cyan-400" : "text-slate-600"
+                          }`}
+                        >
+                          {count < 0 ? "invalid JSON" : count > 0 ? `${count} cookies` : "empty"}
+                        </span>
+                      </div>
+                      <textarea
+                        value={field.value}
+                        onChange={(e) => field.setValue(e.target.value)}
+                        onKeyDown={handlePartsKeyDown}
+                        spellCheck={false}
+                        rows={8}
+                        placeholder={`Paste ${field.label} export…`}
+                        className="w-full min-h-[140px] resize-y rounded-xl border border-white/5 bg-[#080810]/50 p-3 font-mono text-[10px] leading-relaxed text-slate-400 outline-none focus:border-cyan-500/50 focus:ring-1 focus:ring-cyan-500/50"
+                      />
+                      <p className="mt-1 text-[10px] text-slate-600">{field.hint}</p>
+                    </div>
+                  );
+                })}
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  disabled={saving}
+                  onClick={() => saveCookiesFromParts()}
+                  className="rounded-xl bg-gradient-to-r from-cyan-400 to-emerald-400 px-6 py-2.5 text-sm font-bold text-slate-950 transition-all hover:shadow-[0_0_15px_rgba(34,211,238,0.4)] disabled:opacity-50"
+                >
+                  {saving ? "Merging…" : "Merge & Save (Ctrl+Enter)"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setGoogleText("");
+                    setFlowText("");
+                    setLabsText("");
+                  }}
+                  className="rounded-xl border border-white/10 px-4 py-2.5 text-sm text-slate-400 hover:bg-white/5"
+                >
+                  Clear all 3
+                </button>
+              </div>
+            </div>
+          ) : (
           <div
             onDragOver={(e) => {
               e.preventDefault();
@@ -584,12 +804,14 @@ export function CookiesPage() {
                 }}
                 spellCheck={false}
                 rows={12}
-                placeholder="Paste cookie array here, or drag & drop a .json file..."
+                placeholder="Paste pre-merged cookie array here, or drag & drop a .json file..."
                 className="w-full min-h-[180px] resize-y rounded-2xl border border-white/5 bg-[#080810]/50 p-4 font-mono text-[11px] leading-relaxed text-slate-400 outline-none focus:border-cyan-500/50 focus:ring-1 focus:ring-cyan-500/50 sm:min-h-[240px]"
               />
             </div>
           </div>
+          )}
 
+          {pasteMode === "single" && (
           <div className="relative z-10 mt-6 grid grid-cols-2 gap-2 justify-end sm:mt-8 sm:flex sm:flex-wrap">
             <button
               type="button"
@@ -621,6 +843,26 @@ export function CookiesPage() {
               Clear slot
             </button>
           </div>
+          )}
+
+          {pasteMode === "parts" && (
+          <div className="relative z-10 mt-6 flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={loadCurrentIntoEditor}
+              className="rounded-xl border border-white/10 px-4 py-2.5 text-sm text-slate-300 hover:bg-white/5"
+            >
+              Load merged JSON
+            </button>
+            <button
+              type="button"
+              onClick={handleClear}
+              className="rounded-xl border border-white/10 px-4 py-2.5 text-sm text-rose-300/80 hover:bg-white/5"
+            >
+              Clear slot
+            </button>
+          </div>
+          )}
         </div>
       </main>
 

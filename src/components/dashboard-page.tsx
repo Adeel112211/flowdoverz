@@ -578,7 +578,7 @@ export function DashboardPage() {
               Install the {brandName} extension and keep it connected. Then open Flow — we keep your session signed in automatically.
             </p>
             <a
-              href="https://labs.google/fx/tools/flow"
+              href="https://flow.google.com/"
               target="_blank"
               rel="noreferrer"
               className="inline-flex items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-cyan-400 to-emerald-400 px-8 sm:px-10 py-3.5 sm:py-4 text-sm sm:text-base font-black tracking-wide text-slate-950 transition-all shadow-[0_0_20px_rgba(34,211,238,0.3)] hover:-translate-y-0.5 hover:shadow-[0_0_30px_rgba(34,211,238,0.5)]"
