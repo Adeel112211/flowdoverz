@@ -87,14 +87,17 @@ export function analyzeCookieCoverage(cookies: FlowCookie[]): CookieCoverage {
   const hasGoogleSid = [...GOOGLE_IDENTITY_NAMES].some((name) => names.has(name));
   const hasLabsSession = [...LABS_SESSION_NAMES].some((name) => names.has(name));
   const hasFlowHost = hosts.has("flow.google.com");
-  const hasLabsHost = hosts.has("labs.google.com");
+  const hasLabsHost = hosts.has("labs.google.com") || hosts.has("labs.google");
   const hasNextAuth = NEXT_AUTH_NAMES.some((name) => names.has(name));
   const hasSid = names.has("SID");
+  /** Modern Chrome often omits SID/HSID/APISID; __Secure-1PSID + SSID + SAPISID is enough. */
+  const hasModernGoogleAuth =
+    names.has("__Secure-1PSID") && names.has("SSID") && names.has("SAPISID");
   const warnings: string[] = [];
 
   if (!hasGoogleSid) {
     warnings.push("Missing Google login cookies (SID / __Secure-1PSID). Export all .google.com cookies.");
-  } else if (!hasSid) {
+  } else if (!hasSid && !hasModernGoogleAuth) {
     warnings.push(
       "SID is missing — you only exported part of .google.com. In Cookie Editor, export the full .google.com domain.",
     );
@@ -106,13 +109,16 @@ export function analyzeCookieCoverage(cookies: FlowCookie[]): CookieCoverage {
     );
   }
 
-  if (!hasNextAuth) {
+  const flowOsidPresent = cookies.some(
+    (c) => c.name === "OSID" && hostFromDomain(c.domain) === "flow.google.com",
+  );
+  if (!hasNextAuth && !flowOsidPresent) {
     warnings.push(
-      "No next-auth.session-token — you may have exported from the landing page only. Open a project inside Flow, wait until it loads, then re-export.",
+      "No flow.google.com OSID and no next-auth token — export flow.google.com while Flow is open.",
     );
   }
 
-  if (!names.has("HSID") || !names.has("APISID")) {
+  if ((!names.has("HSID") || !names.has("APISID")) && !hasModernGoogleAuth) {
     warnings.push("Missing HSID or APISID — include the full .google.com cookie set, not just flow.google.com.");
   }
 
@@ -122,18 +128,33 @@ export function analyzeCookieCoverage(cookies: FlowCookie[]): CookieCoverage {
     );
   }
 
-  if (cookies.length < 20) {
+  if (cookies.length < 18 && !(hasGoogleSid && hasFlowHost && flowOsidPresent)) {
     warnings.push(
-      `Only ${cookies.length} cookies — a working Flow session usually has 25–40+. Export all cookies for .google.com and flow.google.com.`,
+      `Only ${cookies.length} cookies — export the full .google.com domain plus flow.google.com OSID.`,
     );
   }
 
   const flowOsid = cookies.find((c) => c.name === "OSID" && hostFromDomain(c.domain) === "flow.google.com")?.value;
   const labsOsid = cookies.find((c) => c.name === "OSID" && hostFromDomain(c.domain) === "labs.google")?.value;
+  const psid = cookies.find((c) => c.name === "__Secure-1PSID")?.value;
   if (flowOsid && labsOsid && flowOsid !== labsOsid) {
     warnings.push(
       "labs.google and flow.google.com OSID do not match — mixed exports from different times. Re-export all three domains within 2 minutes in one browser session.",
     );
+  }
+  if (hasNextAuth && flowOsid && !labsOsid) {
+    warnings.push(
+      "next-auth is on labs.google but OSID is missing on labs.google — only on labs.google.com or flow.google.com. Re-save after merge or update extension v1.0.24+.",
+    );
+  }
+  if (psid && flowOsid) {
+    const psidStem = psid.slice(0, 10);
+    const osidStem = flowOsid.slice(0, 10);
+    if (psidStem !== osidStem) {
+      warnings.push(
+        "__Secure-1PSID and flow.google.com OSID look like different Google accounts — re-export .google.com and flow.google.com within 2 minutes in the same browser.",
+      );
+    }
   }
 
   return {

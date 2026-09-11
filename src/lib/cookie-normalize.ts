@@ -1,7 +1,7 @@
 import type { FlowCookie } from "@/lib/cookie-analysis";
 
-/** Google Flow is served on flow.google.com; the extension still injects on labs.google.com. */
-export const FLOW_HOSTS = ["flow.google.com", "labs.google.com"] as const;
+/** Flow session cookies must exist on all three hosts — Chrome treats them separately. */
+export const FLOW_HOSTS = ["flow.google.com", "labs.google", "labs.google.com"] as const;
 
 const HOST_SESSION_NAMES = new Set(["OSID", "__Secure-OSID"]);
 
@@ -42,8 +42,8 @@ function cloneForHost(cookie: FlowCookie, host: string): FlowCookie {
 }
 
 /**
- * Mirror OSID session cookies between flow.google.com and labs.google.com.
- * When both hosts have different OSID values (mixed exports), flow.google.com wins.
+ * Mirror OSID across flow.google.com, labs.google, and labs.google.com.
+ * When flow and labs disagree, flow.google.com wins. Missing hosts are filled from flow OSID.
  */
 export function normalizeFlowCookies(cookies: FlowCookie[]): FlowCookie[] {
   const filtered = cookies.filter((cookie) => !DROP_COOKIE_NAMES.has(cookie.name));

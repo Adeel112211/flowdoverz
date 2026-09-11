@@ -10,10 +10,10 @@ import type { OfficialIntegrityAttestation, OfficialIntegrityProfile } from "@/l
  * Proof = SHA256(nonce + payload + live function sources).
  * Spoofing X-Extension-Integrity alone is not enough.
  */
-export const OFFICIAL_EXTENSION_VERSION = "1.0.0";
+export const OFFICIAL_EXTENSION_VERSION = "1.0.24";
 
 export const OFFICIAL_EXTENSION_INTEGRITY_HASH =
-  "0014ebe8c8eedaf67104f2c9854f0af43a13d6561b5aa12b247fa309225219c7";
+  "34ce85f501e7269b37381d5113a9a51c544bd0e0622e0d5c385f1e0c40c12f82";
 
 /** Shown by extension when server rejects a modified build. */
 export const EXTENSION_TAMPER_MESSAGE =

@@ -10,6 +10,40 @@ import type { CookieFreshness } from "@/lib/cookie-analysis";
 
 const SLOTS = ["C1", "C2", "C3", "C4", "C5"] as const;
 
+const EXPORT_STEPS = [
+  {
+    n: 1,
+    site: "flow.google.com",
+    url: "https://flow.google.com/",
+    action: "Open Flow, sign in, wait until the editor fully loads.",
+  },
+  {
+    n: 2,
+    site: ".google.com",
+    url: "https://flow.google.com/",
+    action: "Cookie Editor → export domain .google.com (all cookies). Need SID, HSID, APISID, __Secure-1PSID, SSID.",
+  },
+  {
+    n: 3,
+    site: "flow.google.com",
+    url: "https://flow.google.com/",
+    action: "Same tab → Cookie Editor → export domain flow.google.com. Need OSID + __Secure-OSID.",
+  },
+  {
+    n: 4,
+    site: "labs.google.com (optional)",
+    url: "https://labs.google/",
+    action: "Only if box 3 is missing OSID — export labs.google.com. Usually empty; merge mirrors OSID automatically.",
+  },
+] as const;
+
+const MERGE_ON_SAVE = [
+  "Combines .google.com + flow.google.com (+ optional labs export)",
+  "Mirrors flow OSID → labs.google, labs.google.com, flow.google.com",
+  "Drops stale OAuth pkce/state cookies",
+  "Dedupes same name + domain + path",
+] as const;
+
 type SlotInfo = {
   key: string;
   name: string;
@@ -131,10 +165,10 @@ export function CookiesPage() {
   }
 
   async function saveCookiesFromParts() {
-    if (!googleText.trim() && !flowText.trim() && !labsText.trim()) {
+    if (!googleText.trim() || !flowText.trim()) {
       setStatus({
         type: "err",
-        text: "Paste at least one export — .google.com, flow.google.com, or labs.google.",
+        text: "Required: paste both .google.com and flow.google.com exports. Labs box is optional.",
       });
       return false;
     }
@@ -378,21 +412,12 @@ export function CookiesPage() {
           title="Cookie Manager"
           description={
             <>
-              Export from{" "}
-              <a
-                href="https://flow.google.com/"
-                target="_blank"
-                rel="noreferrer"
-                className="text-cyan-400 underline"
-              >
-                flow.google.com
-              </a>
-              {" "}while signed in and inside a project. Paste{" "}
-              <strong className="text-slate-200">three Cookie Editor exports</strong> (
-              <strong className="text-slate-200">.google.com</strong>,{" "}
-              <strong className="text-slate-200">flow.google.com</strong>,{" "}
-              <strong className="text-slate-200">labs.google</strong>) — admin merges on save.
-              Clients sync via extension after <code className="font-mono text-cyan-400">/login</code>.
+              Working setup uses{" "}
+              <strong className="text-slate-200">2 required exports</strong> (
+              <strong className="text-slate-200">.google.com</strong> +{" "}
+              <strong className="text-slate-200">flow.google.com</strong>
+              ). Admin merges and mirrors OSID to labs hosts on save. Clients sync via extension
+              after <code className="font-mono text-cyan-400">/login</code>.
             </>
           }
           actions={
@@ -428,7 +453,7 @@ export function CookiesPage() {
             </p>
             <p className="mt-2 text-sm font-medium text-slate-800">
               {pasteMode === "parts"
-                ? `3 exports → ${slot} (merge + normalize)`
+                ? `.google.com + flow.google.com → ${slot} (auto-merge)`
                 : `Clipboard → ${slot} in one click`}
             </p>
           </button>
@@ -493,6 +518,75 @@ export function CookiesPage() {
             {slot} Google session looks healthy (~{meta.freshness.hoursRemaining}h until earliest cookie expires).
           </p>
         )}
+
+        <div className="grid gap-4 lg:grid-cols-2">
+          <div className="rounded-xl border border-cyan-500/20 bg-cyan-500/5 p-4 sm:p-5">
+            <p className="text-sm font-bold text-cyan-100">Export steps (do within 2 minutes)</p>
+            <ol className="mt-3 space-y-3">
+              {EXPORT_STEPS.map((step) => (
+                <li key={step.n} className="flex gap-3 text-xs text-slate-300">
+                  <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-cyan-500/20 font-bold text-cyan-300">
+                    {step.n}
+                  </span>
+                  <div>
+                    <p className="font-semibold text-slate-200">
+                      {step.site}
+                      {step.url ? (
+                        <>
+                          {" · "}
+                          <a
+                            href={step.url}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="text-cyan-400 underline"
+                          >
+                            open
+                          </a>
+                        </>
+                      ) : null}
+                    </p>
+                    <p className="mt-0.5 text-slate-400">{step.action}</p>
+                  </div>
+                </li>
+              ))}
+            </ol>
+          </div>
+          <div className="rounded-xl border border-white/10 bg-white/[0.02] p-4 sm:p-5">
+            <p className="text-sm font-bold text-slate-200">On Merge &amp; Save, admin automatically</p>
+            <ul className="mt-3 space-y-2">
+              {MERGE_ON_SAVE.map((line) => (
+                <li key={line} className="flex gap-2 text-xs text-slate-400">
+                  <span className="text-emerald-400">✓</span>
+                  {line}
+                </li>
+              ))}
+            </ul>
+            <div className="mt-4 rounded-lg border border-white/5 bg-[#080810]/60 p-3">
+              <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500">
+                Which websites&apos; cookies are stored
+              </p>
+              <div className="mt-2 grid grid-cols-2 gap-2 text-[11px]">
+                {[
+                  { host: ".google.com", need: "Login (SID, PSID, SSID…)", required: true },
+                  { host: "flow.google.com", need: "OSID session", required: true },
+                  { host: "labs.google", need: "OSID mirror (auto)", required: false },
+                  { host: "labs.google.com", need: "OSID mirror (auto)", required: false },
+                ].map((row) => (
+                  <div
+                    key={row.host}
+                    className="rounded-md border border-white/5 px-2 py-1.5"
+                  >
+                    <p className="font-mono text-cyan-300/90">{row.host}</p>
+                    <p className="text-slate-500">{row.need}</p>
+                    <p className={row.required ? "text-amber-400/80" : "text-slate-600"}>
+                      {row.required ? "You export" : "Auto on save"}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
 
         {slots.length > 0 && (
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-5">
@@ -662,7 +756,7 @@ export function CookiesPage() {
                   : "text-slate-500 hover:text-slate-300"
               }`}
             >
-              3 exports (recommended)
+              2 exports + optional (recommended)
             </button>
             <button
               type="button"
@@ -680,8 +774,8 @@ export function CookiesPage() {
           {pasteMode === "parts" ? (
             <div className="space-y-4">
               <p className="text-xs text-slate-500">
-                Paste each Cookie Editor export in order. Duplicates are deduped; flow/labs OSID is
-                mirrored and stale OAuth cookies are dropped on save.
+                Required: first two boxes. Third is optional — leave empty if flow export already has
+                OSID; admin mirrors to labs.google and labs.google.com on save.
               </p>
               <div className="grid gap-4 lg:grid-cols-3">
                 {(
@@ -689,21 +783,24 @@ export function CookiesPage() {
                     {
                       id: "google",
                       label: ".google.com",
-                      hint: "All Google login cookies (__Secure-1PSID, SSID, HSID…)",
+                      badge: "Required",
+                      hint: "SID, HSID, APISID, SSID, SAPISID, __Secure-1PSID, __Secure-3PSID…",
                       value: googleText,
                       setValue: setGoogleText,
                     },
                     {
                       id: "flow",
                       label: "flow.google.com",
-                      hint: "OSID + __Secure-OSID from Flow tab",
+                      badge: "Required",
+                      hint: "OSID + __Secure-OSID (export while Flow editor is open)",
                       value: flowText,
                       setValue: setFlowText,
                     },
                     {
                       id: "labs",
-                      label: "labs.google",
-                      hint: "next-auth.session-token + csrf",
+                      label: "labs.google / labs.google.com",
+                      badge: "Optional",
+                      hint: "Extra labs export or next-auth — usually skip; OSID is auto-mirrored",
                       value: labsText,
                       setValue: setLabsText,
                     },
@@ -712,8 +809,17 @@ export function CookiesPage() {
                   const count = countPartJson(field.value);
                   return (
                     <div key={field.id}>
-                      <div className="mb-2 flex items-center justify-between">
+                      <div className="mb-2 flex items-center justify-between gap-2">
                         <label className="text-sm font-bold text-slate-300">{field.label}</label>
+                        <span
+                          className={`shrink-0 rounded-full px-2 py-0.5 text-[9px] font-bold uppercase ${
+                            field.badge === "Required"
+                              ? "bg-amber-500/15 text-amber-300"
+                              : "bg-white/5 text-slate-500"
+                          }`}
+                        >
+                          {field.badge}
+                        </span>
                         <span
                           className={`text-[10px] font-mono ${
                             count < 0 ? "text-rose-400" : count > 0 ? "text-cyan-400" : "text-slate-600"

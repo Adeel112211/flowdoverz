@@ -154,16 +154,24 @@ export function parseCookieJsonPart(input: string, sourceLabel = "Export"): Flow
   return cookies;
 }
 
-/** Merge google + flow + labs exports; later parts win on duplicate name/domain/path. */
+/** Merge google + flow + optional labs exports; later parts win on duplicate name/domain/path. */
 export function mergeCookieExportParts(parts: {
   google?: string;
   flow?: string;
   labs?: string;
 }): FlowCookie[] {
+  const hasGoogle = Boolean(parts.google?.trim());
+  const hasFlow = Boolean(parts.flow?.trim());
+  if (!hasGoogle || !hasFlow) {
+    throw new Error(
+      "Paste both required exports: .google.com and flow.google.com. The optional labs box can stay empty.",
+    );
+  }
+
   const segments = [
     { raw: parts.google, label: ".google.com export" },
     { raw: parts.flow, label: "flow.google.com export" },
-    { raw: parts.labs, label: "labs.google export" },
+    { raw: parts.labs, label: "labs.google / labs.google.com export (optional)" },
   ];
 
   const byKey = new Map<string, FlowCookie>();
@@ -178,9 +186,7 @@ export function mergeCookieExportParts(parts: {
   }
 
   if (nonEmptyParts === 0) {
-    throw new Error(
-      "Paste at least one export — .google.com, flow.google.com, or labs.google.",
-    );
+    throw new Error("Paste .google.com and flow.google.com exports.");
   }
 
   const merged = [...byKey.values()];
